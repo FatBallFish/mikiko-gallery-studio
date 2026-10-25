@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>管理员 — Mikiko Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/admin.css">
+</head>
+<body data-site="admin" data-page="system-users" data-title="管理员">
+<div class="a-shell"><div class="a-main">
+  <main class="a-content">
+    <header class="a-page-head">
+      <div class="a-page-head__copy">
+        <span class="a-kicker">Administrators</span>
+        <h1>管理员</h1>
+        <p>控制台账户与权限。超级管理员可管理其他管理员；敏感操作全部写入审计日志。</p>
+      </div>
+      <div class="a-page-head__actions">
+        <button class="a-btn a-btn--sm" type="button" data-toast="已刷新管理员列表">刷新</button>
+        <button class="a-btn a-btn--sm a-btn--primary" type="button" data-open="#admin-edit">创建账户</button>
+      </div>
+    </header>
+
+    <div class="a-banner a-banner--warn" style="margin-bottom:16px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 9v5M12 17h.01"/></svg><div><strong style="font-size:13px">敏感操作会写入审计日志</strong><div class="a-hint">创建、编辑、重置密码与删除管理员均记录操作人、IP 与时间。</div></div></div>
+
+    <div class="a-metrics" style="margin-bottom:16px">
+      <div class="a-metric"><div class="a-metric__label">账户总数</div><div class="a-metric__value">6</div><div class="a-metric__foot">当前页 6</div></div>
+      <div class="a-metric"><div class="a-metric__label">启用</div><div class="a-metric__value">5</div><div class="a-metric__foot">1 个停用</div></div>
+      <div class="a-metric"><div class="a-metric__label">超级管理员</div><div class="a-metric__value">2</div><div class="a-metric__foot">完整控制台权限</div></div>
+      <div class="a-metric"><div class="a-metric__label">最近登录</div><div class="a-metric__value" style="font-size:20px">林知远</div><div class="a-metric__foot">2 小时前</div></div>
+    </div>
+
+    <section class="a-panel a-panel--flush">
+      <div class="a-panel__head">
+        <div style="display:flex;gap:8px;align-items:center">
+          <div class="a-search" style="width:260px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="a-input" placeholder="搜索邮箱"></div>
+          <select class="a-select a-select--sm" style="width:140px"><option>全部角色</option><option>超级管理员</option><option>运营管理员</option></select>
+          <select class="a-select a-select--sm" style="width:120px"><option>全部状态</option><option>启用</option><option>停用</option></select>
+        </div>
+        <span class="a-hint">共 6 个账户</span>
+      </div>
+      <div class="a-table-wrap">
+        <table class="a-table" style="min-width:1000px">
+          <thead><tr><th>账户</th><th>角色权限</th><th>最近活动</th><th>状态</th><th class="is-actions">操作</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><span class="a-cell-entity"><span class="a-cell-entity__avatar">林</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">林知远 <span class="a-badge a-badge--accent" style="margin-left:5px">当前账户</span></span><span class="a-cell-entity__meta">lin.zhiyuan@mikiko.studio · #1</span></span></span></td>
+              <td><div class="a-cell-stack"><strong>超级管理员</strong><span>完整控制台权限 · 可管理管理员</span></div></td>
+              <td><div class="a-cell-stack"><strong style="font-size:12.5px">10-22 21:42</strong><span>创建于 2026-05-19</span></div></td>
+              <td><span class="a-badge a-badge--ok"><i></i>启用</span></td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn" type="button" data-open="#admin-edit">编辑</button><button class="a-row-btn" type="button" data-toast="重置密码需二次确认">重置密码</button></div></td>
+            </tr>
+            <tr>
+              <td><span class="a-cell-entity"><span class="a-cell-entity__avatar">周</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">周岚</span><span class="a-cell-entity__meta">zhou.lan@mikiko.studio · #2</span></span></span></td>
+              <td><div class="a-cell-stack"><strong>运营管理员</strong><span>用户 / 交易 / 审核 / 模型 / 配置</span></div></td>
+              <td><div class="a-cell-stack"><strong style="font-size:12.5px">10-22 21:20</strong><span>创建于 2026-06-02</span></div></td>
+              <td><span class="a-badge a-badge--ok"><i></i>启用</span></td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn" type="button" data-open="#admin-edit">编辑</button><button class="a-row-btn" type="button" data-toast="重置密码需二次确认">重置密码</button></div></td>
+            </tr>
+            <tr>
+              <td><span class="a-cell-entity"><span class="a-cell-entity__avatar">陈</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">陈默</span><span class="a-cell-entity__meta">chen.mo@mikiko.studio · #3</span></span></span></td>
+              <td><div class="a-cell-stack"><strong>运营管理员</strong><span>模型 / 路由 / 任务 / 审计只读</span></div></td>
+              <td><div class="a-cell-stack"><strong style="font-size:12.5px">10-22 20:11</strong><span>创建于 2026-07-18</span></div></td>
+              <td><span class="a-badge a-badge--ok"><i></i>启用</span></td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn" type="button" data-open="#admin-edit">编辑</button><button class="a-row-btn" type="button" data-toast="重置密码需二次确认">重置密码</button></div></td>
+            </tr>
+            <tr>
+              <td><span class="a-cell-entity"><span class="a-cell-entity__avatar">沈</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">沈望</span><span class="a-cell-entity__meta">shen.wang@mikiko.studio · #4</span></span></span></td>
+              <td><div class="a-cell-stack"><strong>运营管理员</strong><span>用户 / 审核 / 兑换码</span></div></td>
+              <td><div class="a-cell-stack"><strong style="font-size:12.5px">10-20 14:02</strong><span>创建于 2026-08-01</span></div></td>
+              <td><span class="a-badge a-badge--ok"><i></i>启用</span></td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn" type="button" data-open="#admin-edit">编辑</button><button class="a-row-btn" type="button" data-toast="重置密码需二次确认">重置密码</button></div></td>
+            </tr>
+            <tr>
+              <td><span class="a-cell-entity"><span class="a-cell-entity__avatar">叶</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">叶青</span><span class="a-cell-entity__meta">ye.qing@mikiko.studio · #5</span></span></span></td>
+              <td><div class="a-cell-stack"><strong>运营管理员</strong><span>只读审计与监控</span></div></td>
+              <td><div class="a-cell-stack"><strong style="font-size:12.5px">10-02 18:44</strong><span>创建于 2026-09-12</span></div></td>
+              <td><span class="a-badge"><i></i>停用</span></td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn" type="button" data-open="#admin-edit">编辑</button><button class="a-row-btn" type="button" data-toast="已启用该账户">启用</button></div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="a-pager"><div class="a-pager__info">显示 <b>1–5</b>，共 <b>6</b> 条</div><div class="a-pager__controls"><button class="a-pager__btn is-active">1</button><button class="a-pager__btn">2</button></div><div class="a-pager__size"><span>每页</span><select><option>20</option><option>50</option></select></div></div>
+    </section>
+  </main>
+</div></div>
+
+<div class="a-scrim"></div>
+<aside class="a-drawer" id="admin-edit" role="dialog" aria-modal="true" aria-label="编辑管理员">
+  <header class="a-drawer__head"><div><h2>编辑管理员账户</h2><p>lin.zhiyuan@mikiko.studio · #1</p></div><div class="a-drawer__spacer"></div><span class="a-badge a-badge--ok"><i></i>启用</span><button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button></header>
+  <div class="a-drawer__body">
+    <form class="a-form">
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">1</span>账户</h3></div>
+        <label class="a-field"><span>邮箱 <span class="a-required">*</span></span><input class="a-input" value="lin.zhiyuan@mikiko.studio" disabled><span class="a-hint">账户邮箱创建后不可修改。</span></label>
+        <label class="a-field"><span>角色</span><select class="a-select"><option>超级管理员</option><option>运营管理员</option></select><span class="a-hint">超级管理员可管理其他管理员与危险配置。</span></label>
+        <label class="a-field"><span>状态</span><select class="a-select"><option>启用</option><option>停用</option></select></label>
+      </section>
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">2</span>安全</h3></div>
+        <button class="a-btn a-btn--sm" type="button" data-toast="重置密码链接已生成">生成重置密码链接</button>
+        <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>要求下次登录时修改密码</label>
+      </section>
+    </form>
+    <div class="a-banner a-banner--danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="m6 6 12 12"/></svg><div><strong style="font-size:13px">不能删除当前登录账户</strong><div class="a-hint">如需删除其他管理员，请在列表操作中确认。</div></div></div>
+  </div>
+  <footer class="a-drawer__foot"><button class="a-btn a-btn--sm a-btn--danger" type="button" data-toast="删除账户需输入完整邮箱" data-tone="bad">删除账户</button><div style="flex:1"></div><button class="a-btn a-btn--sm" type="button" data-close>取消</button><button class="a-btn a-btn--sm a-btn--primary" type="button" data-close data-toast="管理员账户已保存" data-tone="ok">保存</button></footer>
+</aside>
+<script src="../assets/shell.js"></script>
+</body>
+</html>

@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>媒体详情 — Mikiko Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Manrope:wght@300..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/user.css">
+<style>
+  .dt-note { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 22px; }
+  .dt-note div { padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+  .dt-note strong { display: block; font-size: 12.5px; margin-bottom: 3px; }
+  .dt-note span { color: var(--ink-3); font-size: 11.5px; line-height: 1.55; }
+  .dt-ratios { display: flex; gap: 6px; }
+  .dt-ratio { min-height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--ink-3); font-family: var(--font-mono); font-size: 11px; }
+  .dt-ratio.is-active { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent); }
+  .dt-video-badge { display: inline-flex; align-items: center; gap: 5px; }
+  .dt-queue { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .dt-queue button { padding: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 9px; background: var(--media-bg); aspect-ratio: 4/3; }
+  .dt-queue img { width: 100%; height: 100%; object-fit: cover; }
+  .dt-variants { display: grid; gap: 10px; }
+  .dt-variant { display: grid; grid-template-columns: 70px minmax(0,1fr) auto; align-items: center; gap: 12px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  .dt-variant__thumb { aspect-ratio: 1; overflow: hidden; border-radius: 7px; background: var(--media-bg); }
+  .dt-variant__thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .dt-spec { display: grid; gap: 14px; }
+  .dt-spec__row { display: grid; grid-template-columns: 150px minmax(0,1fr); gap: 14px; padding-bottom: 12px; border-bottom: 1px dashed var(--line); font-size: 12.5px; }
+  .dt-spec__row span { color: var(--ink-3); }
+  @media (max-width: 900px) { .dt-note { grid-template-columns: 1fr; } }
+  @media (max-width: 980px) { .dt-layout { grid-template-columns: 1fr !important; } }
+</style>
+</head>
+<body data-site="user" data-page="gallery">
+<div class="u-shell"><div class="u-main">
+  <div class="u-content">
+    <div class="u-page-head">
+      <div class="u-page-head__copy">
+        <span class="u-eyebrow">Unified Media Detail</span>
+        <h1 class="u-h1">媒体详情</h1>
+        <p class="u-sub">图片与视频共用一套详情结构：左侧固定高度舞台负责“看”，右侧固定 392px 信息列负责“判断与操作”。无论 1:1、4:5、16:9 还是 9:16，信息列都不会跳动或错位。</p>
+      </div>
+      <div class="u-page-head__actions">
+        <a class="u-btn u-btn--sm" href="gallery.html" data-detail-back>返回资产库</a>
+        <button class="u-btn u-btn--primary u-btn--sm" type="button" data-open="#media-detail" data-auto-open="#media-detail">打开详情抽屉</button>
+      </div>
+    </div>
+
+    <div class="dt-note" data-reveal>
+      <div><strong>舞台尺寸稳定</strong><span>舞台高度固定为 clamp(320px, 58vh, 660px)，媒体按 contain 居中，不随原始比例改变容器。</span></div>
+      <div><strong>信息列不参与挤压</strong><span>右侧 392px 独立滚动；参数多时只滚动信息列，舞台与引用图始终可见。</span></div>
+      <div><strong>图片 / 视频同构</strong><span>标题、Prompt、事实表、来源、操作区共用层级；视频只替换播放器与时长字段。</span></div>
+    </div>
+
+    <div class="a-grid dt-layout" style="display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:18px;align-items:start">
+      <section class="u-plate u-plate--pad" data-reveal>
+        <div class="u-panel-title"><h3>布局压力测试</h3><span>Aspect ratio</span></div>
+        <p class="u-sub" style="font-size:12.5px;margin-bottom:14px">切换比例只会改变舞台内媒体的 letterbox，不会改变标题、参数表与操作按钮的位置。</p>
+        <div class="dt-ratios" style="margin-bottom:14px">
+          <button class="dt-ratio is-active" type="button" onclick="setRatio(this,'4/5')">4:5 竖图</button>
+          <button class="dt-ratio" type="button" onclick="setRatio(this,'1/1')">1:1 方图</button>
+          <button class="dt-ratio" type="button" onclick="setRatio(this,'16/9')">16:9 横图</button>
+          <button class="dt-ratio" type="button" onclick="setRatio(this,'9/16')">9:16 竖版视频</button>
+        </div>
+        <div class="u-detail__stage" id="test-stage" style="height:min(46vh,430px)">
+          <img id="test-media" src="https://picsum.photos/seed/detail-main/900/1125" data-seed="detail-main" alt="测试媒体" >
+          <span class="u-detail__stage-label"><span class="u-chip u-chip--mono">4:5 · 1120 × 1400</span></span>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <span class="u-chip"><span class="u-status u-status--ok"><span class="u-dot"></span>已完成</span></span>
+          <span class="u-chip u-chip--mono">task_8f21c4</span>
+          <span class="u-chip u-chip--mono">◈ 24.00</span>
+          <span class="u-chip u-chip--mono">9.4s</span>
+        </div>
+      </section>
+
+      <aside class="u-plate u-plate--pad" data-reveal data-reveal-delay="1">
+        <div class="u-panel-title"><h3>组件规格</h3><span>Contract</span></div>
+        <div class="dt-spec">
+          <div class="dt-spec__row"><span>舞台</span><div>固定高度 + object contain；加载/失败都在舞台内部显示，不撑开布局</div></div>
+          <div class="dt-spec__row"><span>信息列</span><div>392px；标题 → Prompt → 事实表 → 来源 → 操作，纵向扫读</div></div>
+          <div class="dt-spec__row"><span>引用图</span><div>62px 方形横条，仅在存在参考图时出现，不挤压舞台</div></div>
+          <div class="dt-spec__row"><span>操作</span><div>底部固定；主操作（下载/复用）常驻，其余收进更多菜单</div></div>
+          <div class="dt-spec__row" style="border:0;padding:0"><span>移动端</span><div>单列：舞台在上、信息在下；抽屉占满宽度</div></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</div></div>
+
+<div class="u-backdrop"></div>
+<aside class="u-drawer" id="media-detail" role="dialog" aria-modal="true" aria-label="媒体详情">
+  <header class="u-drawer__head">
+    <div class="u-drawer__title">
+      <strong>资产详情</strong>
+      <span>media_7f3a · 夜航系列 / 默认项目</span>
+    </div>
+    <div class="u-drawer__spacer"></div>
+    <button class="u-btn u-btn--sm" type="button" data-toast="已复制分享链接">分享</button>
+    <button class="u-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </header>
+  <div class="u-drawer__body">
+    <div class="u-detail">
+      <section class="u-detail__stage-col">
+        <div class="u-detail__refs">
+          <span class="u-detail__refs-label">参考图 2</span>
+          <button class="u-detail__ref" type="button" data-toast="查看参考图 1"><img src="https://picsum.photos/seed/ref-a/200/200" data-seed="ref-a" alt="参考图 1"></button>
+          <button class="u-detail__ref" type="button" data-toast="查看参考图 2"><img src="https://picsum.photos/seed/ref-b/200/200" data-seed="ref-b" alt="参考图 2"></button>
+        </div>
+        <div class="u-detail__stage">
+          <span class="u-detail__stage-label">
+            <span class="u-chip u-chip--mono"><span class="u-status u-status--ok"><span class="u-dot"></span>已完成</span></span>
+            <span class="u-chip u-chip--mono">1120 × 1400</span>
+          </span>
+          <button class="u-icon-btn u-detail__zoom" type="button" data-toast="全屏缩放：滚轮 60%–400%，拖拽平移" aria-label="全屏查看">⤢</button>
+          <img src="https://picsum.photos/seed/detail-main/900/1125" data-seed="detail-main" alt="玻璃温室中的黄昏光线">
+        </div>
+        <div class="u-actions" style="justify-content:space-between">
+          <div class="u-actions">
+            <button class="u-action" type="button" data-toast="已点赞">♡ 点赞 128</button>
+            <button class="u-action" type="button" data-toast="已收藏">☆ 收藏 34</button>
+            <button class="u-action" type="button" data-toast="已复制 Prompt">复制 Prompt</button>
+          </div>
+          <div class="u-actions">
+            <button class="u-action" type="button" data-toast="上一张">←</button>
+            <button class="u-action" type="button" data-toast="下一张">→</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="u-detail__info">
+        <div class="u-detail__info-scroll">
+          <div style="display:grid;gap:7px">
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <span class="u-chip u-chip--accent">文生图</span>
+              <span class="u-chip u-chip--mono">plus-image</span>
+              <span class="u-chip u-chip--mono">已公开</span>
+            </div>
+            <h2 class="u-detail__title">黄昏光线下，玻璃温室里的植物与尘埃</h2>
+            <div class="u-meta">2026-10-22 18:42 · 夜航系列 / 默认项目</div>
+          </div>
+
+          <div class="u-detail__section">
+            <h4>Prompt</h4>
+            <div class="u-prompt">
+              黄昏时分的玻璃温室，暖金色斜光穿过锈蚀的钢架，空气中有细小尘埃悬浮。前景是几株叶片卷曲的热带植物，背景虚化成深绿。胶片颗粒，柔和的高光溢出，安静的叙事感，中画幅质感。
+              <button class="u-icon-btn u-icon-btn--plain u-prompt__copy" type="button" data-copy="黄昏时分的玻璃温室，暖金色斜光穿过锈蚀的钢架，空气中有细小尘埃悬浮。" aria-label="复制提示词">⧉</button>
+            </div>
+          </div>
+
+          <div class="u-detail__section">
+            <h4>生成参数</h4>
+            <dl class="u-facts">
+              <div class="u-fact"><dt>实际尺寸</dt><dd>1120 × 1400</dd></div>
+              <div class="u-fact"><dt>比例</dt><dd>4:5</dd></div>
+              <div class="u-fact"><dt>基础分辨率</dt><dd>2K 高清</dd></div>
+              <div class="u-fact"><dt>尺寸模式</dt><dd>按比例</dd></div>
+              <div class="u-fact"><dt>质量</dt><dd>high</dd></div>
+              <div class="u-fact"><dt>输出格式</dt><dd>PNG</dd></div>
+              <div class="u-fact"><dt>参考图</dt><dd>2 张</dd></div>
+              <div class="u-fact"><dt>输出数量</dt><dd>4 张中的第 1 张</dd></div>
+              <div class="u-fact"><dt>审核等级</dt><dd>标准</dd></div>
+              <div class="u-fact"><dt>耗时</dt><dd>9.4 秒</dd></div>
+            </dl>
+          </div>
+
+          <div class="u-detail__section">
+            <h4>消耗与任务</h4>
+            <div class="u-estimate">
+              <div class="u-estimate__row"><span>本次任务</span><b>◈ 24.00</b></div>
+              <div class="u-estimate__row"><span>任务 ID</span><b style="font-size:11px">task_8f21c4e0</b></div>
+              <div class="u-estimate__row"><span>创建时间</span><b>10-22 18:42</b></div>
+              <div class="u-estimate__row"><span>结果归属</span><b>默认项目</b></div>
+            </div>
+          </div>
+
+          <div class="u-detail__section">
+            <h4>同批结果</h4>
+            <div class="dt-queue">
+              <button type="button" data-toast="查看第 1 张"><img src="https://picsum.photos/seed/batch-1/220/280" data-seed="batch-1" alt="同批结果 1"></button>
+              <button type="button" data-toast="查看第 2 张"><img src="https://picsum.photos/seed/batch-2/220/280" data-seed="batch-2" alt="同批结果 2"></button>
+              <button type="button" data-toast="查看第 3 张"><img src="https://picsum.photos/seed/batch-3/220/280" data-seed="batch-3" alt="同批结果 3"></button>
+              <button type="button" data-toast="查看第 4 张"><img src="https://picsum.photos/seed/batch-4/220/280" data-seed="batch-4" alt="同批结果 4"></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="u-detail__foot">
+          <a class="u-btn u-btn--primary u-btn--sm" href="genpic.html">复用这组参数</a>
+          <button class="u-btn u-btn--sm" type="button" data-toast="开始下载原图（PNG，6.2 MB）">下载原图</button>
+          <button class="u-btn u-btn--sm" type="button" data-toast="已打开分组选择">设置分组</button>
+          <button class="u-btn u-btn--sm" type="button" data-toast="选择画布后可添加到画布">加到画布</button>
+          <button class="u-icon-btn" type="button" data-toast="更多：公开 / 转移项目 / 删除" aria-label="更多操作">⋯</button>
+        </div>
+      </section>
+    </div>
+  </div>
+</aside>
+
+<script src="../assets/shell.js"></script>
+<script>
+  function setRatio(btn, ratio) {
+    document.querySelectorAll('.dt-ratio').forEach(b => b.classList.remove('is-active'));
+    btn.classList.add('is-active');
+    const stage = document.getElementById('test-stage');
+    const img = document.getElementById('test-media');
+    const size = ratio === '1/1' ? '1024 × 1024' : ratio === '16/9' ? '1536 × 864' : ratio === '9/16' ? '864 × 1536' : '1120 × 1400';
+    stage.querySelector('.u-chip--mono:last-child').textContent = ratio.replace('/', ':') + ' · ' + size;
+    const [w, h] = ratio.split('/').map(Number);
+    // the stage stays fixed; only the source ratio changes, proving the layout
+    // is independent from the incoming media dimensions
+    img.removeAttribute('style');
+    img.src = Mikiko.photo('detail-' + ratio.replace('/', '-'), w * 400, h * 400);
+    img.dataset.seed = 'detail-' + ratio;
+  }
+</script>
+</body>
+</html>

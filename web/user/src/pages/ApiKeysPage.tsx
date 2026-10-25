@@ -7,6 +7,8 @@ import { openDocsEntry } from '../docsUrl'
 import { Check, Copy, Edit, RotateCcw, Trash2, X } from '../ui/icons'
 import { errorMessage, useApiResource } from '../useApiResource'
 import {
+  allApiKeyScopes,
+  defaultApiKeyScopes,
   apiKeyCreatePayload,
   apiKeyDeleteConfirmText,
   apiKeyEditForm,
@@ -20,7 +22,7 @@ import {
   apiKeyUpdatePayload,
 } from './apiKeyRows'
 
-const allScopes = ['images:write', 'images:read', 'balance:read', 'profile:read']
+const allScopes = allApiKeyScopes
 
 function apiKeyStatusTone(status?: string) {
   if (status === 'active') return 'u-status--ok'
@@ -101,7 +103,7 @@ export function ApiKeysPage() {
             <div className="u-page-head__copy">
               <span className="u-eyebrow">API Access</span>
               <h1 className="u-h1" style={{ fontSize: 'clamp(32px, 3.4vw, 38px)' }}>API 密钥</h1>
-              <p className="u-sub">用于服务端调用与第三方集成。Secret 只显示一次；轮换后旧密钥立即失效。</p>
+              <p className="u-sub">用于服务端调用与第三方集成。仅使用 Authorization: Bearer sk-… 调用。Secret 只显示一次；轮换后旧密钥立即失效。</p>
             </div>
             <div className="u-page-head__actions">
               <button className="u-btn u-btn--primary u-btn--sm" type="button" onClick={() => setCreating(true)}>
@@ -149,7 +151,7 @@ export function ApiKeysPage() {
             <div className="acct-keys-head">
               <div style={{ display: 'grid', gap: 4, minWidth: 0 }}>
                 <h2 className="u-h3">密钥列表</h2>
-                <span className="u-meta">Secret 创建或重置后仍只展示掩码预览。</span>
+                <span className="u-meta">Access Key 仅用于识别；请求只需 Bearer Secret，无需签名。</span>
               </div>
               <button className="u-btn u-btn--sm" type="button" disabled={keys.loading} onClick={() => void keys.reload()}>刷新</button>
             </div>
@@ -289,7 +291,7 @@ function CreateKeyModal({ onClose, onCreated }: { onClose: () => void; onCreated
   const [expiresAt, setExpiresAt] = useState('')
   const [totalQuotaPoints, setTotalQuotaPoints] = useState('')
   const [dailyQuotaPoints, setDailyQuotaPoints] = useState('')
-  const [scopes, setScopes] = useState<string[]>(['images:write', 'images:read'])
+  const [scopes, setScopes] = useState<string[]>(defaultApiKeyScopes)
   const [busy, setBusy] = useState(false)
 
   function toggleScope(scope: string) {
@@ -376,6 +378,7 @@ function EditKeyModal({ keyItem, onClose, onSaved }: { keyItem: ApiKey; onClose:
   const app = useApp()
   const initial = apiKeyEditForm(keyItem)
   const [name, setName] = useState(initial.name)
+  const [scopes, setScopes] = useState<string[]>(initial.scopes ?? defaultApiKeyScopes)
   const [rpm, setRpm] = useState(initial.rpmLimit)
   const [expiresAt, setExpiresAt] = useState(initial.expiresAt)
   const [totalQuotaPoints, setTotalQuotaPoints] = useState(initial.totalQuotaPoints)
@@ -386,7 +389,7 @@ function EditKeyModal({ keyItem, onClose, onSaved }: { keyItem: ApiKey; onClose:
     event.preventDefault()
     setBusy(true)
     try {
-      const key = await userApi.updateApiKey(keyItem.id, apiKeyUpdatePayload({ name, rpmLimit: rpm, expiresAt, totalQuotaPoints, dailyQuotaPoints, groupCode: initial.groupCode }))
+      const key = await userApi.updateApiKey(keyItem.id, apiKeyUpdatePayload({ name, scopes, rpmLimit: rpm, expiresAt, totalQuotaPoints, dailyQuotaPoints, groupCode: initial.groupCode }))
       app.notify('success', '密钥配置已更新')
       await onSaved(key)
     } catch (err) {
@@ -425,6 +428,13 @@ function EditKeyModal({ keyItem, onClose, onSaved }: { keyItem: ApiKey; onClose:
           <span className="u-label">过期时间 <span className="u-label__hint">可选</span></span>
           <input className="u-input" type="date" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} />
         </label>
+        <fieldset style={{ border: 0, padding: 0, display: 'grid', gap: 7 }}>
+          <legend className="u-label">权限范围（删除权限需单独授权）</legend>
+          {allScopes.map((scope) => <label className="u-switch" key={scope}>
+            <input type="checkbox" checked={scopes.includes(scope)} onChange={() => setScopes((items) => items.includes(scope) ? items.filter((item) => item !== scope) : [...items, scope])} />
+            <span className="u-switch__track" aria-hidden="true" />{scope} · {apiKeyScopeLabel(scope)}
+          </label>)}
+        </fieldset>
         <p className="u-meta" style={{ margin: 0 }}>{apiKeyGroupReadOnlyHint}</p>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
           <button className="u-btn" type="button" onClick={onClose} disabled={busy}>关闭</button>

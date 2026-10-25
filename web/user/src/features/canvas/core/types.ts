@@ -1,4 +1,4 @@
-export type CanvasNodeType = 'prompt' | 'image' | 'video' | 'audio' | 'image_generation' | 'video_generation' | 'note'
+export type CanvasNodeType = 'image_v2' | 'video_v2' | 'prompt' | 'image' | 'video' | 'audio' | 'image_generation' | 'video_generation' | 'note'
 export type CanvasInputRole = 'prompt' | 'reference' | 'first_frame' | 'last_frame' | 'reference_image' | 'reference_video' | 'reference_audio' | 'result'
 export type CanvasPoint = { x: number; y: number }
 export type CanvasSize = { width: number; height: number }
@@ -46,7 +46,7 @@ export type CanvasCommandState = {
   dirty: boolean
 }
 
-export type CanvasResult = { asset_id: string; media_type: 'image' | 'video' }
+export type CanvasResult = { asset_id: string; media_type: 'image' | 'video'; width?: number; height?: number }
 
 export type CanvasClipboard = {
   nodes: CanvasNode[]

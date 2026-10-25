@@ -94,6 +94,12 @@ func (_c *APIKeyCreate) SetNillableSecretCiphertext(v *string) *APIKeyCreate {
 	return _c
 }
 
+// SetScopes sets the "scopes" field.
+func (_c *APIKeyCreate) SetScopes(v []string) *APIKeyCreate {
+	_c.mutation.SetScopes(v)
+	return _c
+}
+
 // SetName sets the "name" field.
 func (_c *APIKeyCreate) SetName(v string) *APIKeyCreate {
 	_c.mutation.SetName(v)
@@ -311,6 +317,10 @@ func (_c *APIKeyCreate) defaults() {
 		v := apikey.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := _c.mutation.Scopes(); !ok {
+		v := apikey.DefaultScopes
+		_c.mutation.SetScopes(v)
+	}
 	if _, ok := _c.mutation.Status(); !ok {
 		v := apikey.DefaultStatus
 		_c.mutation.SetStatus(v)
@@ -364,6 +374,9 @@ func (_c *APIKeyCreate) check() error {
 		if err := apikey.SecretCiphertextValidator(v); err != nil {
 			return &ValidationError{Name: "secret_ciphertext", err: fmt.Errorf(`ent: validator failed for field "APIKey.secret_ciphertext": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.Scopes(); !ok {
+		return &ValidationError{Name: "scopes", err: errors.New(`ent: missing required field "APIKey.scopes"`)}
 	}
 	if _, ok := _c.mutation.Name(); !ok {
 		return &ValidationError{Name: "name", err: errors.New(`ent: missing required field "APIKey.name"`)}
@@ -456,6 +469,10 @@ func (_c *APIKeyCreate) createSpec() (*APIKey, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.SecretCiphertext(); ok {
 		_spec.SetField(apikey.FieldSecretCiphertext, field.TypeString, value)
 		_node.SecretCiphertext = &value
+	}
+	if value, ok := _c.mutation.Scopes(); ok {
+		_spec.SetField(apikey.FieldScopes, field.TypeJSON, value)
+		_node.Scopes = value
 	}
 	if value, ok := _c.mutation.Name(); ok {
 		_spec.SetField(apikey.FieldName, field.TypeString, value)

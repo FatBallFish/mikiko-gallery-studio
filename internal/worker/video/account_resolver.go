@@ -26,6 +26,7 @@ type ExecutionAccount struct {
 	CallbackSecret       string
 	Timeout              time.Duration
 	ArtifactAllowedHosts []string
+	ArtifactHostsEnabled *bool
 }
 
 type ExecutionAccountStore interface {
@@ -59,7 +60,7 @@ func (r *ExecutionAccountResolver) Resolve(ctx context.Context, ref ProviderRef)
 	if err != nil {
 		return ResolvedExecution{}, err
 	}
-	return ResolvedExecution{Provider: provider, ArtifactAllowedHosts: append([]string(nil), account.ArtifactAllowedHosts...)}, nil
+	return ResolvedExecution{Provider: provider, ArtifactAllowedHosts: append([]string(nil), account.ArtifactAllowedHosts...), ArtifactHostsEnabled: account.ArtifactHostsEnabled}, nil
 }
 
 func buildExecutionProvider(account ExecutionAccount) (providervideo.Provider, error) {

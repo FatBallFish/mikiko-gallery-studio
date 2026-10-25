@@ -9,9 +9,9 @@ import './canvas.css'
 
 type Template = 'blank' | 'image_exploration' | 'image_to_video'
 const templates: Array<{ template: Template; title: string; detail: string; icon: React.ReactNode }> = [
-  { template: 'blank', title: '空白画布', detail: '从提示词节点开始', icon: <FilePlus2 size={18} /> },
-  { template: 'image_exploration', title: '图片探索', detail: '提示词 → 4 组图片生成', icon: <ImageIcon size={18} /> },
-  { template: 'image_to_video', title: '图片转视频', detail: '图片节点 → 视频生成', icon: <Film size={18} /> },
+  { template: 'blank', title: '空白画布', detail: '添加图片、视频或便签开始创作', icon: <FilePlus2 size={18} /> },
+  { template: 'image_exploration', title: '图片探索', detail: '4 个独立图片节点，多方向探索', icon: <ImageIcon size={18} /> },
+  { template: 'image_to_video', title: '图片转视频', detail: '图片参考与视频生成工作区', icon: <Film size={18} /> },
 ]
 
 export function CanvasListPage({ onOpen }: { onOpen: (canvasID: string) => void }) {
@@ -151,7 +151,7 @@ export function CanvasListPage({ onOpen }: { onOpen: (canvasID: string) => void 
         <div className="u-page-head__copy">
           <span className="u-eyebrow">Creative Canvas</span>
           <h1 className="u-h1">创意画布</h1>
-          <p className="u-sub">把提示词、参考图、生成任务与视频节点放在同一张无限画布上。每个节点都保留自己的参数与运行状态。</p>
+          <p className="u-sub">把图片、视频与参考素材放在同一张无限画布上。选中空节点即可展开生成操作台，生成结果直接留在节点中。</p>
         </div>
         <div className="u-page-head__actions">
           <ProjectSelector />
@@ -315,8 +315,8 @@ function CanvasPreview({ item }: { item: CreativeCanvas }) {
 }
 
 function canvasNodeClass(type: string) {
-  if (type === 'image' || type === 'image_generation') return 'cv-card__node cv-card__node--img'
-  if (type === 'video' || type === 'video_generation') return 'cv-card__node cv-card__node--vid'
+  if (type === 'image_v2' || type === 'image' || type === 'image_generation') return 'cv-card__node cv-card__node--img'
+  if (type === 'video_v2' || type === 'video' || type === 'video_generation') return 'cv-card__node cv-card__node--vid'
   if (type === 'note') return 'cv-card__node cv-card__node--note'
   return 'cv-card__node cv-card__node--txt'
 }

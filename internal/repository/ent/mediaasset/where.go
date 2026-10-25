@@ -96,6 +96,11 @@ func NameKey(v string) predicate.MediaAsset {
 	return predicate.MediaAsset(sql.FieldEQ(FieldNameKey, v))
 }
 
+// GroupID applies equality check predicate on the "group_id" field. It's identical to GroupIDEQ.
+func GroupID(v uuid.UUID) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldEQ(FieldGroupID, v))
+}
+
 // GroupName applies equality check predicate on the "group_name" field. It's identical to GroupNameEQ.
 func GroupName(v string) predicate.MediaAsset {
 	return predicate.MediaAsset(sql.FieldEQ(FieldGroupName, v))
@@ -119,6 +124,16 @@ func Status(v string) predicate.MediaAsset {
 // VisibilityStatus applies equality check predicate on the "visibility_status" field. It's identical to VisibilityStatusEQ.
 func VisibilityStatus(v string) predicate.MediaAsset {
 	return predicate.MediaAsset(sql.FieldEQ(FieldVisibilityStatus, v))
+}
+
+// PublicationReviewReason applies equality check predicate on the "publication_review_reason" field. It's identical to PublicationReviewReasonEQ.
+func PublicationReviewReason(v string) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldEQ(FieldPublicationReviewReason, v))
+}
+
+// PublishedAt applies equality check predicate on the "published_at" field. It's identical to PublishedAtEQ.
+func PublishedAt(v time.Time) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldEQ(FieldPublishedAt, v))
 }
 
 // StorageConfigID applies equality check predicate on the "storage_config_id" field. It's identical to StorageConfigIDEQ.
@@ -606,6 +621,56 @@ func NameKeyContainsFold(v string) predicate.MediaAsset {
 	return predicate.MediaAsset(sql.FieldContainsFold(FieldNameKey, v))
 }
 
+// GroupIDEQ applies the EQ predicate on the "group_id" field.
+func GroupIDEQ(v uuid.UUID) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldEQ(FieldGroupID, v))
+}
+
+// GroupIDNEQ applies the NEQ predicate on the "group_id" field.
+func GroupIDNEQ(v uuid.UUID) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldNEQ(FieldGroupID, v))
+}
+
+// GroupIDIn applies the In predicate on the "group_id" field.
+func GroupIDIn(vs ...uuid.UUID) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldIn(FieldGroupID, vs...))
+}
+
+// GroupIDNotIn applies the NotIn predicate on the "group_id" field.
+func GroupIDNotIn(vs ...uuid.UUID) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldNotIn(FieldGroupID, vs...))
+}
+
+// GroupIDGT applies the GT predicate on the "group_id" field.
+func GroupIDGT(v uuid.UUID) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldGT(FieldGroupID, v))
+}
+
+// GroupIDGTE applies the GTE predicate on the "group_id" field.
+func GroupIDGTE(v uuid.UUID) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldGTE(FieldGroupID, v))
+}
+
+// GroupIDLT applies the LT predicate on the "group_id" field.
+func GroupIDLT(v uuid.UUID) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldLT(FieldGroupID, v))
+}
+
+// GroupIDLTE applies the LTE predicate on the "group_id" field.
+func GroupIDLTE(v uuid.UUID) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldLTE(FieldGroupID, v))
+}
+
+// GroupIDIsNil applies the IsNil predicate on the "group_id" field.
+func GroupIDIsNil() predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldIsNull(FieldGroupID))
+}
+
+// GroupIDNotNil applies the NotNil predicate on the "group_id" field.
+func GroupIDNotNil() predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldNotNull(FieldGroupID))
+}
+
 // GroupNameEQ applies the EQ predicate on the "group_name" field.
 func GroupNameEQ(v string) predicate.MediaAsset {
 	return predicate.MediaAsset(sql.FieldEQ(FieldGroupName, v))
@@ -929,6 +994,121 @@ func VisibilityStatusEqualFold(v string) predicate.MediaAsset {
 // VisibilityStatusContainsFold applies the ContainsFold predicate on the "visibility_status" field.
 func VisibilityStatusContainsFold(v string) predicate.MediaAsset {
 	return predicate.MediaAsset(sql.FieldContainsFold(FieldVisibilityStatus, v))
+}
+
+// PublicationReviewReasonEQ applies the EQ predicate on the "publication_review_reason" field.
+func PublicationReviewReasonEQ(v string) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldEQ(FieldPublicationReviewReason, v))
+}
+
+// PublicationReviewReasonNEQ applies the NEQ predicate on the "publication_review_reason" field.
+func PublicationReviewReasonNEQ(v string) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldNEQ(FieldPublicationReviewReason, v))
+}
+
+// PublicationReviewReasonIn applies the In predicate on the "publication_review_reason" field.
+func PublicationReviewReasonIn(vs ...string) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldIn(FieldPublicationReviewReason, vs...))
+}
+
+// PublicationReviewReasonNotIn applies the NotIn predicate on the "publication_review_reason" field.
+func PublicationReviewReasonNotIn(vs ...string) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldNotIn(FieldPublicationReviewReason, vs...))
+}
+
+// PublicationReviewReasonGT applies the GT predicate on the "publication_review_reason" field.
+func PublicationReviewReasonGT(v string) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldGT(FieldPublicationReviewReason, v))
+}
+
+// PublicationReviewReasonGTE applies the GTE predicate on the "publication_review_reason" field.
+func PublicationReviewReasonGTE(v string) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldGTE(FieldPublicationReviewReason, v))
+}
+
+// PublicationReviewReasonLT applies the LT predicate on the "publication_review_reason" field.
+func PublicationReviewReasonLT(v string) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldLT(FieldPublicationReviewReason, v))
+}
+
+// PublicationReviewReasonLTE applies the LTE predicate on the "publication_review_reason" field.
+func PublicationReviewReasonLTE(v string) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldLTE(FieldPublicationReviewReason, v))
+}
+
+// PublicationReviewReasonContains applies the Contains predicate on the "publication_review_reason" field.
+func PublicationReviewReasonContains(v string) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldContains(FieldPublicationReviewReason, v))
+}
+
+// PublicationReviewReasonHasPrefix applies the HasPrefix predicate on the "publication_review_reason" field.
+func PublicationReviewReasonHasPrefix(v string) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldHasPrefix(FieldPublicationReviewReason, v))
+}
+
+// PublicationReviewReasonHasSuffix applies the HasSuffix predicate on the "publication_review_reason" field.
+func PublicationReviewReasonHasSuffix(v string) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldHasSuffix(FieldPublicationReviewReason, v))
+}
+
+// PublicationReviewReasonEqualFold applies the EqualFold predicate on the "publication_review_reason" field.
+func PublicationReviewReasonEqualFold(v string) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldEqualFold(FieldPublicationReviewReason, v))
+}
+
+// PublicationReviewReasonContainsFold applies the ContainsFold predicate on the "publication_review_reason" field.
+func PublicationReviewReasonContainsFold(v string) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldContainsFold(FieldPublicationReviewReason, v))
+}
+
+// PublishedAtEQ applies the EQ predicate on the "published_at" field.
+func PublishedAtEQ(v time.Time) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldEQ(FieldPublishedAt, v))
+}
+
+// PublishedAtNEQ applies the NEQ predicate on the "published_at" field.
+func PublishedAtNEQ(v time.Time) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldNEQ(FieldPublishedAt, v))
+}
+
+// PublishedAtIn applies the In predicate on the "published_at" field.
+func PublishedAtIn(vs ...time.Time) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldIn(FieldPublishedAt, vs...))
+}
+
+// PublishedAtNotIn applies the NotIn predicate on the "published_at" field.
+func PublishedAtNotIn(vs ...time.Time) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldNotIn(FieldPublishedAt, vs...))
+}
+
+// PublishedAtGT applies the GT predicate on the "published_at" field.
+func PublishedAtGT(v time.Time) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldGT(FieldPublishedAt, v))
+}
+
+// PublishedAtGTE applies the GTE predicate on the "published_at" field.
+func PublishedAtGTE(v time.Time) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldGTE(FieldPublishedAt, v))
+}
+
+// PublishedAtLT applies the LT predicate on the "published_at" field.
+func PublishedAtLT(v time.Time) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldLT(FieldPublishedAt, v))
+}
+
+// PublishedAtLTE applies the LTE predicate on the "published_at" field.
+func PublishedAtLTE(v time.Time) predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldLTE(FieldPublishedAt, v))
+}
+
+// PublishedAtIsNil applies the IsNil predicate on the "published_at" field.
+func PublishedAtIsNil() predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldIsNull(FieldPublishedAt))
+}
+
+// PublishedAtNotNil applies the NotNil predicate on the "published_at" field.
+func PublishedAtNotNil() predicate.MediaAsset {
+	return predicate.MediaAsset(sql.FieldNotNull(FieldPublishedAt))
 }
 
 // StorageConfigIDEQ applies the EQ predicate on the "storage_config_id" field.

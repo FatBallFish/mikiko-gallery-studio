@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>组件与规范 — Mikiko Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Manrope:wght@300..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/user.css">
+<style>
+  .uc-grid { display: grid; gap: 16px; }
+  .uc-swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+  .uc-swatch { display: grid; gap: 5px; }
+  .uc-swatch i { height: 48px; border-radius: 9px; border: 1px solid var(--line); }
+  .uc-swatch b { font-size: 11px; }
+  .uc-swatch span { color: var(--ink-3); font-family: var(--font-mono); font-size: 9.5px; }
+  .uc-row { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
+  .uc-type { display: grid; gap: 0; }
+  .uc-type > div { display: grid; grid-template-columns: 150px 80px 1fr; align-items: baseline; gap: 12px; padding: 11px 0; border-bottom: 1px dashed var(--line); }
+  .uc-type > div:last-child { border-bottom: 0; }
+  .uc-type span { color: var(--ink-3); font-family: var(--font-mono); font-size: 10px; }
+  .uc-anatomy { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .uc-anatomy__frame { position: relative; display: grid; place-items: center; min-height: 180px; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--media-bg); }
+  .uc-anatomy__frame img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  .uc-chip-note { position: absolute; left: 8px; top: 8px; z-index: 2; }
+  .uc-rule { display: flex; gap: 9px; font-size: 12.5px; line-height: 1.6; color: var(--ink-2); }
+  .uc-rule b { display: inline-grid; place-items: center; min-width: 19px; height: 19px; border-radius: 5px; background: var(--surface-3); color: var(--accent); font-family: var(--font-mono); font-size: 9.5px; }
+  @media (max-width: 900px) {
+    .uc-swatches { grid-template-columns: repeat(3, 1fr); }
+    .uc-anatomy { grid-template-columns: 1fr; }
+    .uc-type > div { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; }
+    .uc-type > div > div { grid-column: 1 / -1; }
+    .uc-grid .u-grid { grid-template-columns: 1fr !important; }
+  }
+</style>
+</head>
+<body data-site="user" data-page="gallery">
+<div class="u-shell"><div class="u-main">
+  <div class="u-content">
+    <div class="u-page-head">
+      <div class="u-page-head__copy">
+        <span class="u-eyebrow">Design System · Luminous Vault v2</span>
+        <h1 class="u-h1">组件与规范</h1>
+        <p class="u-sub">用户端重构后的基础组件与状态。所有页面都应复用这里的层级、间距与交互，不在单页里另造一套。</p>
+      </div>
+      <div class="u-page-head__actions"><a class="u-btn u-btn--sm" href="../index.html">返回原型索引</a></div>
+    </div>
+
+    <div class="uc-grid">
+      <section class="u-plate u-plate--pad">
+        <div class="u-panel-title"><h3>字体层级</h3><span>Type scale</span></div>
+        <div class="uc-type">
+          <div><span>Eyebrow / 10.5</span><span>mono</span><div class="u-eyebrow">Unified Media Detail</div></div>
+          <div><span>Display / 54</span><span>Fraunces</span><div style="font-family:var(--font-display);font-size:42px;line-height:1;letter-spacing:-.03em">回到下一张图像</div></div>
+          <div><span>H2 / 33</span><span>400</span><div style="font-family:var(--font-display);font-size:30px;line-height:1.05">精选灵感</div></div>
+          <div><span>Body / 15</span><span>400</span><div style="font-size:15px;line-height:1.6">正文使用 Manrope，中文回退到 PingFang SC，保证长段落可读。</div></div>
+          <div><span>Meta / 11</span><span>mono</span><div class="u-meta">1120 × 1400 · 4:5 · ◈ 24.00</div></div>
+        </div>
+      </section>
+
+      <div class="u-grid" style="grid-template-columns:1fr 1fr;gap:16px">
+        <section class="u-plate u-plate--pad">
+          <div class="u-panel-title"><h3>色彩</h3><span>单一强调</span></div>
+          <div class="uc-swatches">
+            <div class="uc-swatch"><i style="background:#08090d"></i><b>bg</b><span>#08090D</span></div>
+            <div class="uc-swatch"><i style="background:#10131a"></i><b>surface</b><span>#10131A</span></div>
+            <div class="uc-swatch"><i style="background:#f5f0e7"></i><b>ink</b><span>#F5F0E7</span></div>
+            <div class="uc-swatch"><i style="background:#d9a86a"></i><b>accent</b><span>#D9A86A</span></div>
+            <div class="uc-swatch"><i style="background:#62c3a2"></i><b>success</b><span>#62C3A2</span></div>
+            <div class="uc-swatch"><i style="background:#e18a63"></i><b>danger</b><span>#E18A63</span></div>
+          </div>
+        </section>
+        <section class="u-plate u-plate--pad">
+          <div class="u-panel-title"><h3>按钮</h3><span>40 / 32</span></div>
+          <div class="uc-row" style="margin-bottom:12px">
+            <button class="u-btn u-btn--primary" type="button">开始创作</button>
+            <button class="u-btn" type="button">次操作</button>
+            <button class="u-btn u-btn--quiet" type="button">轻量</button>
+            <button class="u-icon-btn" type="button">⋯</button>
+          </div>
+          <div class="uc-row">
+            <button class="u-btn u-btn--primary u-btn--sm" type="button">小按钮</button>
+            <button class="u-btn u-btn--sm" type="button">下载</button>
+            <button class="u-btn u-btn--sm u-btn--danger" type="button">删除</button>
+            <span class="u-chip u-chip--accent">已选中</span>
+            <span class="u-chip u-chip--mono">task_8f21c4e0</span>
+          </div>
+        </section>
+      </div>
+
+      <section class="u-plate u-plate--pad">
+        <div class="u-panel-title"><h3>状态与表单</h3><span>States</span></div>
+        <div class="u-grid" style="grid-template-columns:repeat(3,1fr);gap:14px">
+          <div style="display:grid;gap:9px">
+            <span class="u-status u-status--run"><span class="u-dot"></span>生成中 2 / 4</span>
+            <span class="u-status u-status--ok"><span class="u-dot"></span>已完成</span>
+            <span class="u-status u-status--bad"><span class="u-dot"></span>失败 · 余额不足</span>
+            <span class="u-status u-status--warn"><span class="u-dot"></span>待审核</span>
+          </div>
+          <label class="u-field"><span class="u-label">模型</span><select class="u-select"><option>Plus Image</option><option>Pro Image</option></select><span class="u-meta">当前分组可见 14 个模型</span></label>
+          <div style="display:grid;gap:9px">
+            <div class="u-segment"><button class="is-active" type="button">按比例</button><button type="button">按像素</button><button type="button">自动</button></div>
+            <label class="u-switch"><input type="checkbox" checked><span class="u-switch__track"></span>生成音频</label>
+          </div>
+        </div>
+      </section>
+
+      <section class="u-plate u-plate--pad">
+        <div class="u-panel-title"><h3>媒体舞台：加载 / 完成 / 失败</h3><span>固定容器</span></div>
+        <div class="uc-anatomy">
+          <div class="uc-anatomy__frame"><span class="u-chip u-chip--mono uc-chip-note">加载中</span><div class="u-skeleton" style="position:absolute;inset:24px;border-radius:8px"></div></div>
+          <div class="uc-anatomy__frame"><span class="u-chip u-chip--mono uc-chip-note">1120 × 1400 · 4:5</span><img src="https://picsum.photos/seed/uc-detail/900/1125" data-seed="uc-detail" alt="媒体完成态"></div>
+          <div class="uc-anatomy__frame"><span class="u-chip u-chip--mono uc-chip-note">资源失效</span><div style="display:grid;gap:8px;place-items:center;color:var(--ink-3);font-size:12px;text-align:center"><strong style="color:var(--ink)">图片暂时无法显示</strong><span>资源可能已失效，或网络无法完成加载。</span><button class="u-btn u-btn--sm" type="button" data-toast="正在重试">重试加载</button></div></div>
+          <div class="uc-anatomy__frame"><span class="u-chip u-chip--mono uc-chip-note">空状态</span><div style="display:grid;gap:8px;place-items:center;color:var(--ink-3);font-size:12px;text-align:center"><span style="font-size:24px">◫</span><strong style="color:var(--ink)">还没有结果</strong><span>调整参数后开始第一次生成。</span></div></div>
+        </div>
+        <div class="uc-rule" style="margin-top:12px"><b>!</b><span>舞台高度固定，媒体一律 object-fit: contain；任何比例都不改变信息列或操作栏位置。</span></div>
+      </section>
+
+      <div class="u-grid" style="grid-template-columns:1.2fr .8fr;gap:16px">
+        <section class="u-plate u-plate--pad">
+          <div class="u-panel-title"><h3>画廊卡片</h3><span>Hover</span></div>
+          <a class="u-card" href="#media-detail" data-open="#media-detail" style="max-width:320px" tabindex="0">
+            <div class="u-card__media"><img src="https://picsum.photos/seed/uc-card/720/540" data-seed="uc-card" alt="卡片示例">
+              <span class="u-card__tag">图片</span>
+              <div class="u-card__ops"><button class="u-card__op" type="button" data-toast="已点赞">♥</button><button class="u-card__op" type="button" data-toast="已收藏">★</button></div>
+            </div>
+            <div class="u-card__body"><div class="u-card__title">黄昏光线下，玻璃温室里的植物与尘埃</div><div class="u-card__meta"><span>plus-image</span><span>2 分钟前</span></div></div>
+          </a>
+          <div class="uc-rule" style="margin-top:12px"><b>1</b><span>裁切统一 4:3；原始比例只在详情里完整呈现。</span></div>
+        </section>
+        <section class="u-plate u-plate--pad">
+          <div class="u-panel-title"><h3>详情结构</h3><span>Anatomy</span></div>
+          <div class="uc-rule"><b>1</b><span>头部：标题 + 状态 + 关闭</span></div>
+          <div class="uc-rule"><b>2</b><span>左：引用图 + 固定舞台 + 互动</span></div>
+          <div class="uc-rule"><b>3</b><span>右：Prompt → 参数 → 来源 → 同批结果</span></div>
+          <div class="uc-rule"><b>4</b><span>底部：复用 / 下载 / 分组 / 加画布</span></div>
+          <a class="u-btn u-btn--primary u-btn--sm" href="detail.html" style="margin-top:12px">查看完整详情原型</a>
+        </section>
+      </div>
+
+      <div class="u-grid" style="grid-template-columns:1fr 1fr;gap:16px">
+        <section class="u-plate u-plate--pad">
+          <div class="u-panel-title"><h3>提示与反馈</h3><span>Toast</span></div>
+          <div style="display:grid;gap:8px">
+            <div class="u-toast u-toast--ok" style="animation:none">已下载原图 · 6.2 MB</div>
+            <div class="u-toast" style="animation:none">已复制分享链接</div>
+            <div class="u-toast u-toast--bad" style="animation:none">生成失败：余额不足</div>
+          </div>
+        </section>
+        <section class="u-plate u-plate--pad">
+          <div class="u-panel-title"><h3>空状态</h3><span>Empty</span></div>
+          <div class="u-empty" style="padding:26px 16px">
+            <span class="u-empty__icon">◫</span>
+            <h3>还没有公开作品</h3>
+            <p>在资产详情中申请公开，审核通过后会出现在广场。</p>
+            <a class="u-btn u-btn--sm" href="gallery.html">前往资产库</a>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+</div></div>
+<script src="../assets/shell.js"></script>
+</body>
+</html>

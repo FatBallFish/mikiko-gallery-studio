@@ -1,3 +1,5 @@
+import { canHideHistoryRecord } from '../../pages/historyRecordActions'
+import { useHistoryRecordActions } from '../../pages/HistoryRecordControls'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Ban, ChevronUp, Copy, Download, FastForward, Film, Image as ImageIcon, Info, LoaderCircle, Play, RefreshCw, RotateCcw, Sparkles, Volume2, VolumeX, X } from 'lucide-react'
 import type { CapabilityModelGroup, MediaAsset, PromptReferenceBinding, ReferenceAsset, VideoCapability, VideoEstimateRequest, VideoTask, VideoTaskType } from '../../../../shared/api-types'
@@ -56,6 +58,9 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
   const [fieldErrors, setFieldErrors] = useState<VideoFieldErrors>({})
   const [submitting, setSubmitting] = useState(false)
   const [taskAction, setTaskAction] = useState('')
+  const historyActions = useHistoryRecordActions()
+  const currentProjectRef = useRef(projects.selectedProjectID)
+  currentProjectRef.current = projects.selectedProjectID
   const [selectedAssets, setSelectedAssets] = useState<Record<string, MediaAsset>>({})
   const [pickerRole, setPickerRole] = useState<VideoDraftInputRole | null>(null)
   const [previewAsset, setPreviewAsset] = useState<MediaAsset | null>(null)
@@ -335,7 +340,7 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
     void hydrateInputAssets(reused)
     setDraft(reused)
     setQuote(null)
-    app.notify('info', '已复用任务参数')
+    app.notify('info', '已复用提示词、兼容参数与引用资源')
   }
 
   // Reused tasks carry their input asset ids; fetch the asset records so the
@@ -347,7 +352,8 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
         const asset = await userApi.getMediaAsset(input.asset_id)
         setSelectedAssets((current) => ({ ...current, [asset.id]: asset }))
       } catch {
-        // Leave the row empty; the stale input is dropped on next estimate.
+        setDraft((current) => current ? { ...current, inputs: current.inputs.filter((item) => item.asset_id !== input.asset_id) } : current)
+        app.notify('info', '部分引用已失效或无权访问，未恢复该素材')
       }
     }))
   }
@@ -418,6 +424,44 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  async function retryHistoryTask(task: VideoTask) {
+    if (task.status !== 'failed') return
+    const projectID = projects.selectedProjectID
+    await historyActions.run(async () => {
+      const created = await userApi.retryVideoTask(task.id)
+      if (currentProjectRef.current !== projectID) return
+      setTasks((items) => [created, ...items.filter((item) => item.id !== created.id)])
+      setSelectedTaskID(created.id)
+      setTaskTab('current')
+      app.notify('success', '已创建新的重试任务，原记录已保留')
+      await app.refreshAccount()
+    })
+  }
+
+  function confirmHideHistoryTask(task: VideoTask) {
+    if (!canHideHistoryRecord(task.status)) return
+    historyActions.confirm(false, async () => {
+      await userApi.hideVideoTaskHistory(task.id)
+      setTasks((items) => items.filter((item) => item.id !== task.id))
+      setDetailTask((current) => current?.id === task.id ? null : current)
+      setSelectedTaskID((id) => id === task.id ? undefined : id)
+      app.notify('success', '历史记录已删除，素材已保留')
+    })
+  }
+
+  function confirmClearFailedHistory() {
+    const projectID = projects.selectedProjectID
+    historyActions.confirm(true, async () => {
+      const result = await userApi.clearFailedVideoTaskHistory({ project_id: projectID })
+      if (currentProjectRef.current === projectID) {
+        const page = await userApi.listVideoTasks({ project_id: projectID, limit: 20 })
+        if (currentProjectRef.current === projectID) setTasks(page.items)
+        setDetailTask(null)
+      }
+      app.notify('success', `已清空 ${result.hidden_count} 条失败记录`)
+    })
   }
 
   async function cancelTask(task: VideoTask) {
@@ -607,7 +651,7 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
         <div className="cr-canvas-panel">
           {taskTab === 'current' ? (
             currentTask ? (
-              <VideoCurrentTaskCard task={currentTask} busy={taskAction === currentTask.id} editing={editingAsset} onCancel={() => void cancelTask(currentTask)} onDetail={() => setDetailTask(currentTask)} onReuse={() => reuseDraft(currentTask)} onResult={(assetID) => void openResultPreview(assetID)} onExtend={(assetID) => void editFromResult(assetID)} onDownload={(assetID) => void downloadResult(assetID)} onCopyPrompt={() => { void copyText(currentTask.prompt_template).then(() => app.notify('success', '提示词已复制')).catch(() => app.notify('error', '复制失败')) }} />
+              <VideoCurrentTaskCard task={currentTask} busy={historyActions.busy || taskAction === currentTask.id} onRetry={() => void retryHistoryTask(currentTask)} editing={editingAsset} onCancel={() => void cancelTask(currentTask)} onDetail={() => setDetailTask(currentTask)} onReuse={() => reuseDraft(currentTask)} onResult={(assetID) => void openResultPreview(assetID)} onExtend={(assetID) => void editFromResult(assetID)} onDownload={(assetID) => void downloadResult(assetID)} onCopyPrompt={() => { void copyText(currentTask.prompt_template).then(() => app.notify('success', '提示词已复制')).catch(() => app.notify('error', '复制失败')) }} />
             ) : (
               <div className="u-stage cr-stage--empty">
                 <div className="u-empty cr-stage-empty">
@@ -628,10 +672,11 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
                   <option value="failed">失败</option>
                   <option value="cancelled">已取消</option>
                 </select>
+                <button className="u-btn u-btn--sm" type="button" disabled={historyActions.busy || !projects.selectedProjectID} onClick={confirmClearFailedHistory}>{historyActions.busy ? '处理中...' : '清空全部失败记录'}</button>
               </div>
               {historyTasks.length ? (
                 <div className="vd-history">
-                  {historyTasks.map((task) => <VideoHistoryCard key={task.id} task={task} busy={taskAction === task.id} onRefresh={() => void refreshTask(task)} onDetail={() => setDetailTask(task)} onReuse={() => reuseDraft(task)} onResult={(assetID) => void openResultPreview(assetID)} />)}
+                  {historyTasks.map((task) => <VideoHistoryCard key={task.id} task={task} busy={historyActions.busy || taskAction === task.id} onRetry={() => void retryHistoryTask(task)} onHide={() => confirmHideHistoryTask(task)} onRefresh={() => void refreshTask(task)} onDetail={() => setDetailTask(task)} onReuse={() => reuseDraft(task)} onResult={(assetID) => void openResultPreview(assetID)} />)}
                 </div>
               ) : <EmptyState title="暂无历史创作" detail="完成一次视频创作后，记录会展示在这里。" icon={<Film size={24} />} />}
             </>
@@ -639,6 +684,7 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
         </div>
       </section>
 
+      {historyActions.feedback}
       {pickerRole ? <MediaAssetPicker projectID={projects.selectedProjectID} mediaTypes={[PICKER_MEDIA_TYPES[pickerRole]]} title={PICKER_TITLES[pickerRole]} onClose={() => setPickerRole(null)} onConfirm={(assets) => {
         const asset = assets[0]
         if (!asset) return
@@ -646,8 +692,8 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
         patchDraft({ inputs: replaceInput(draft.inputs, pickerRole, asset.id) })
         setPickerRole(null)
       }} /> : null}
-      {previewAsset ? <MediaPreviewDialog asset={previewAsset} projects={projects.projects} creationActions={[]} onClose={() => setPreviewAsset(null)} onChanged={(asset) => { setPreviewAsset(asset); setSelectedAssets((current) => ({ ...current, [asset.id]: asset })) }} onDeleted={(asset) => { setPreviewAsset(null); setSelectedAssets((current) => { const next = { ...current }; delete next[asset.id]; return next }) }} onContinue={() => undefined} /> : null}
-      {detailTask ? <VideoTaskDetailDialog task={detailTask} onClose={() => setDetailTask(null)} onReuse={() => { const reused = applyVideoCapability(reuseVideoTask(detailTask), capability).draft; void hydrateInputAssets(reused); setDraft(reused); setQuote(null); setDetailTask(null); app.notify('info', '已复用任务参数') }} onResult={(assetID) => void userApi.getMediaAsset(assetID).then(setPreviewAsset).catch((caught) => app.notify('error', errorMessage(caught)))} /> : null}
+      {previewAsset ? <MediaPreviewDialog asset={previewAsset} projects={projects.projects} creationActions={undefined} onClose={() => setPreviewAsset(null)} onChanged={(asset) => { setPreviewAsset(asset); setSelectedAssets((current) => ({ ...current, [asset.id]: asset })) }} onDeleted={(asset) => { setPreviewAsset(null); setSelectedAssets((current) => { const next = { ...current }; delete next[asset.id]; return next }) }} /> : null}
+      {detailTask ? <VideoTaskDetailDialog task={detailTask} onClose={() => setDetailTask(null)} onReuse={() => { reuseDraft(detailTask); setDetailTask(null) }} onResult={(assetID) => void userApi.getMediaAsset(assetID).then(setPreviewAsset).catch((caught) => app.notify('error', errorMessage(caught)))} /> : null}
       {promptExpanded ? (
         <PromptEditorDialog
           prompt={draft.prompt_template}
@@ -682,6 +728,10 @@ function estimateRequest(projectId: string, draft: VideoDraft, assets: Record<st
   // the structured inputs list, so only bind assets the prompt mentions.
   const referenced = promptReferenceNames(draft.prompt_template)
   const bindings = new Map<string, string>()
+  for (const binding of draft.reference_bindings ?? []) {
+    const name = binding.name.trim().normalize('NFC')
+    if (referenced.has(name) && draft.inputs.some((input) => input.asset_id === binding.asset_id) && assets[binding.asset_id]) bindings.set(name, binding.asset_id)
+  }
   for (const input of draft.inputs) {
     const asset = assets[input.asset_id]
     if (!asset || !input.asset_id.trim()) continue
@@ -943,7 +993,7 @@ function videoAspectRatioStyle(ratio: string | undefined) {
   return { '--video-result-ratio': `${w} / ${h}` } as React.CSSProperties
 }
 
-function VideoCurrentTaskCard({ task, busy, onCancel, onDetail, onReuse, onResult, onExtend, onDownload, onCopyPrompt, editing }: { task: VideoTask; busy: boolean; onCancel: () => void; onDetail: () => void; onReuse: () => void; onResult: (assetID: string) => void; onExtend: (assetID: string) => void; onDownload: (assetID: string) => void; onCopyPrompt: () => void; editing: boolean }) {
+function VideoCurrentTaskCard({ task, onRetry, busy, onCancel, onDetail, onReuse, onResult, onExtend, onDownload, onCopyPrompt, editing }: { task: VideoTask; onRetry: () => void; busy: boolean; onCancel: () => void; onDetail: () => void; onReuse: () => void; onResult: (assetID: string) => void; onExtend: (assetID: string) => void; onDownload: (assetID: string) => void; onCopyPrompt: () => void; editing: boolean }) {
   const terminal = isVideoTaskTerminal(task)
   const stage = task.progress_stage || task.status
   const statusLabel = stageLabels[stage] ?? stage
@@ -981,6 +1031,7 @@ function VideoCurrentTaskCard({ task, busy, onCancel, onDetail, onReuse, onResul
             <span className="u-meta inline-flex items-center gap-1">任务ID: {task.id}<InlineCopyButton text={task.id} label="复制任务ID" /></span>
             <div className="cr-task-actions">
               <button className="u-btn u-btn--sm u-btn--primary" type="button" onClick={onDetail}>详情</button>
+              {task.status === 'failed' ? <button className="u-btn u-btn--sm" type="button" disabled={busy} onClick={onRetry}>{busy ? '提交中...' : '重试（新任务）'}</button> : null}
               <button className="u-btn u-btn--sm" type="button" onClick={onReuse}>复用参数</button>
             </div>
           </div>
@@ -1096,7 +1147,7 @@ function VideoResultFigure({ assetID, ordinal, aspectRatio, caption, editing, on
   )
 }
 
-function VideoHistoryCard({ task, busy, onRefresh, onDetail, onReuse, onResult }: { task: VideoTask; busy: boolean; onRefresh: () => void; onDetail: () => void; onResult: (assetID: string) => void; onReuse: () => void }) {
+function VideoHistoryCard({ task, busy, onRetry, onHide, onRefresh, onDetail, onReuse, onResult }: { task: VideoTask; busy: boolean; onRetry: () => void; onHide: () => void; onRefresh: () => void; onDetail: () => void; onResult: (assetID: string) => void; onReuse: () => void }) {
   const terminal = isVideoTaskTerminal(task)
   const stage = task.progress_stage || task.status
   const resultItem = task.items.find((item) => item.result_asset_id)
@@ -1114,7 +1165,9 @@ function VideoHistoryCard({ task, busy, onRefresh, onDetail, onReuse, onResult }
         </div>
         <div className="cr-task-actions">
           <button className="u-btn u-btn--sm" type="button" onClick={onDetail}>详情</button>
-          {terminal ? <button className="u-btn u-btn--sm" type="button" onClick={onReuse}>复用</button> : <button className="u-btn u-btn--sm" type="button" disabled={busy} onClick={onRefresh}><RefreshCw className={busy ? 'animate-spin' : undefined} size={14} />刷新</button>}
+          {task.status === 'failed' ? <button className="u-btn u-btn--sm" type="button" disabled={busy} onClick={onRetry}>{busy ? '处理中...' : '重试（新任务）'}</button> : null}
+          {terminal ? <button className="u-btn u-btn--sm" type="button" disabled={busy} onClick={onHide}>删除记录</button> : null}
+          {terminal ? <button className="u-btn u-btn--sm" type="button" onClick={onReuse}>复用参数</button> : <button className="u-btn u-btn--sm" type="button" disabled={busy} onClick={onRefresh}><RefreshCw className={busy ? 'animate-spin' : undefined} size={14} />刷新</button>}
         </div>
         <div className="u-meta inline-flex items-center gap-1"><span title={task.id}>任务ID: {task.id.slice(0, 8)}…</span><InlineCopyButton text={task.id} label="复制任务ID" /></div>
       </div>

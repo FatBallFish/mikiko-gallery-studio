@@ -12,6 +12,7 @@ import { CheckoutPage } from './pages/CheckoutPage'
 import { ApiKeysPage } from './pages/ApiKeysPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { SettingsPage } from './pages/SettingsPage'
+import { OAuthConsentPage } from './pages/OAuthConsentPage'
 import { ProjectsPage } from './pages/ProjectsPage'
 import { ProjectProvider } from './ProjectContext'
 import { parseUserHashState, userHashForRoute, type UserRouteOptions } from './routeState'
@@ -355,6 +356,9 @@ function UserApplication() {
         installSession({ token: result.access_token, profile }, { applyProfileTheme: true })
         notify('success', '登录成功，欢迎回到 Mikiko Studio')
         const target = sanitizeOIDCReturnTo(result.return_to)
+        // Restore the query as well as the hash: MCP consent carries its
+        // server-side request ID in ?oauth_request, outside the SPA route.
+        window.history.replaceState(null, '', target)
         const parsed = parseUserHashState(new URL(target).hash || '#/home')
         writeHash(parsed.route === 'login' || parsed.route === 'landing' ? 'home' : parsed.route, {
           imageId: parsed.imageId,
@@ -437,6 +441,8 @@ function UserApplication() {
         return <Shell><ApiKeysPage /></Shell>
       case 'profile':
         return <Shell scrollMode="document"><ProfilePage /></Shell>
+      case 'oauth-consent':
+        return <OAuthConsentPage />
       case 'settings':
         return <Shell><SettingsPage /></Shell>
       case 'landing':
@@ -454,7 +460,7 @@ function UserApplication() {
   return (
     <AppContext.Provider value={appValue}>
       {session && projectUserID ? (
-        <ProjectProvider key={projectUserID} userID={projectUserID}>{page}{featureFlags.media_upload ? <UploadTray /> : null}</ProjectProvider>
+        <ProjectProvider key={projectUserID} userID={projectUserID}>{page}{featureFlags.media_upload ? <UploadTray hidden={route === 'creative-canvas' && Boolean(routeCanvasId)} /> : null}</ProjectProvider>
       ) : page}
       <ToastViewport toasts={toasts} onExpire={(id) => setToasts((items) => items.filter((toast) => toast.id !== id))} />
     </AppContext.Provider>

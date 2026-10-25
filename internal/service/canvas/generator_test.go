@@ -1,7 +1,19 @@
 package canvas
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"github.com/fatballfish/pic-gallery/internal/config"
+	domainassets "github.com/fatballfish/pic-gallery/internal/domain/assets"
+	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
+	image "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
+	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
+	media "github.com/fatballfish/pic-gallery/internal/service/mediaasset"
+	"github.com/fatballfish/pic-gallery/internal/storage"
+	"github.com/fatballfish/pic-gallery/pkg/errs"
+	"reflect"
 	"testing"
 
 	domaincanvas "github.com/fatballfish/pic-gallery/internal/domain/canvas"
@@ -189,5 +201,139 @@ func TestVideoRequestCarriesReferenceMediaInputs(t *testing.T) {
 		if got.AssetID != expect.assetID || got.Role != expect.role || got.Ordinal != expect.ordinal {
 			t.Fatalf("input[%d] = %#v, want asset %s role %s", index, got, expect.assetID, expect.role)
 		}
+	}
+}
+
+func TestIntegratedInlineDraftVariablesAndStableReferenceAliases(t *testing.T) {
+	assetID := uuid.NewString()
+	submission := GenerationSubmission{Node: domaincanvas.Node{Type: domaincanvas.NodeTypeImageV2, Payload: json.RawMessage(`{"title":"display","draft":{"route_model_code":"model","prompt_template":"${subject} with {{@stable}}","variables":{"subject":"cat"}}}`)}, Inputs: []GenerationInput{{Role: domaincanvas.InputRoleReference, Node: domaincanvas.Node{Type: domaincanvas.NodeTypeImageV2, AssetID: assetID, Payload: json.RawMessage(`{"name":"stable","title":"renamed display"}`)}}}}
+	request, err := imageRequest(submission)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.PromptTemplate != "{{$subject}} with {{@stable}}" || len(request.PromptVariables) != 1 || request.PromptVariables[0].Value != "cat" || len(request.ReferenceBindings) != 1 || request.ReferenceBindings[0].AssetID != assetID {
+		t.Fatalf("inline request %#v", request)
+	}
+	submission.Node.Type = domaincanvas.NodeTypeVideoV2
+	submission.Node.Payload = json.RawMessage(`{"draft":{"quote_token":"real-quote","prompt_template":"${subject}","variables":{"subject":"cat"}}}`)
+	video, err := videoRequest(submission)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if video.QuoteToken != "real-quote" || video.PromptTemplate != "{{$subject}}" || len(video.PromptVariables) != 1 {
+		t.Fatalf("video inline %#v", video)
+	}
+	submission.Inputs = append(submission.Inputs, GenerationInput{Role: domaincanvas.InputRoleReference, Node: domaincanvas.Node{AssetID: uuid.NewString(), Payload: json.RawMessage(`{"name":"stable"}`)}})
+	submission.Node.Type = domaincanvas.NodeTypeImageV2
+	submission.Node.Payload = json.RawMessage(`{"draft":{"route_model_code":"model","prompt_template":"{{@stable}}"}}`)
+	if _, err := imageRequest(submission); err == nil {
+		t.Fatal("ambiguous aliases accepted")
+	}
+}
+
+type canvasNoReadBackend struct {
+	storage.Backend
+	reads int
+}
+
+func (b *canvasNoReadBackend) Get(context.Context, string) ([]byte, error) {
+	b.reads++
+	return nil, errors.New("quote attempted binary download")
+}
+
+type canvasAliasStore struct {
+	asset   media.Asset
+	alias   domainassets.ReferenceAsset
+	imports int
+}
+
+func (s *canvasAliasStore) GetByUserAndHash(context.Context, int64, string) (domainassets.ReferenceAsset, error) {
+	return domainassets.ReferenceAsset{}, repoerr.ErrNotFound
+}
+func (s *canvasAliasStore) Save(context.Context, int64, domainassets.ReferenceAsset) error {
+	return nil
+}
+func (s *canvasAliasStore) DeleteByUserAndID(context.Context, int64, string) error { return nil }
+func (s *canvasAliasStore) GetByUserAndID(_ context.Context, user int64, id string) (domainassets.ReferenceAsset, error) {
+	if user != s.asset.UserID || id != s.alias.ID || id == "" {
+		return domainassets.ReferenceAsset{}, repoerr.ErrNotFound
+	}
+	return s.alias, nil
+}
+func (s *canvasAliasStore) ImportMediaAssetAlias(_ context.Context, user int64, a media.Asset) (domainassets.ReferenceAsset, error) {
+	s.imports++
+	if s.alias.ID == "" {
+		s.alias = domainassets.ReferenceAsset{ID: uuid.NewString(), MediaAssetID: a.ID.String(), Status: "ready", MimeType: a.MIMEType, ObjectKey: a.ObjectKey, Name: "different persisted name"}
+	}
+	return s.alias, nil
+}
+func (s *canvasAliasStore) GetAsset(_ context.Context, user int64, id uuid.UUID) (media.Asset, error) {
+	if user != s.asset.UserID || id != s.asset.ID {
+		return media.Asset{}, repoerr.ErrNotFound
+	}
+	return s.asset, nil
+}
+
+type canvasImagePreflight struct{ estimated, created image.CreateRequest }
+
+func (p *canvasImagePreflight) PreflightMetadata(_ context.Context, r image.CreateRequest) (domainbilling.EstimateResult, error) {
+	p.estimated = r
+	return domainbilling.EstimateResult{}, nil
+}
+func (p *canvasImagePreflight) CreateTask(_ context.Context, r image.CreateRequest) (image.Task, error) {
+	p.created = r
+	return image.Task{ID: uuid.NewString(), Status: image.StatusQueued}, nil
+}
+func (p *canvasImagePreflight) GetByID(context.Context, int64, string) (image.Task, error) {
+	return image.Task{}, nil
+}
+func TestCanvasCanonicalReferenceAliasEstimateGenerateParity(t *testing.T) {
+	ctx := context.Background()
+	store := &canvasAliasStore{asset: media.Asset{ID: uuid.New(), UserID: 31, MediaType: "image", Status: "ready", MIMEType: "image/png", ObjectKey: "canonical.png"}}
+	backend := &canvasNoReadBackend{Backend: storage.NewLocalBackend(t.TempDir())}
+	refs := assetservice.NewServiceWithStoreAndBackend(config.StorageConfig{}, config.GenerationLimitsConfig{}, store, backend)
+	images := &canvasImagePreflight{}
+	g := NewTaskGenerator(images, nil, nil)
+	g.SetReferenceAssets(refs, store)
+	submission := GenerationSubmission{UserID: 31, Kind: TaskKindImage, Node: domaincanvas.Node{Type: domaincanvas.NodeTypeImageV2, Payload: json.RawMessage(`{"draft":{"route_model_code":"model","prompt_template":"${subject} with {{@stable}}","variables":{"subject":"cat"}}}`)}, Inputs: []GenerationInput{{Role: domaincanvas.InputRoleReference, Node: domaincanvas.Node{AssetID: store.asset.ID.String(), Payload: json.RawMessage(`{"name":"stable","title":"display rename"}`)}}}}
+	if _, err := g.Estimate(ctx, submission); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.Generate(ctx, submission); err != nil {
+		t.Fatal(err)
+	}
+	if backend.reads != 0 {
+		t.Fatalf("estimate loaded binary objects %d times", backend.reads)
+	}
+	a, b := images.estimated, images.created
+	a.TaskID = ""
+	b.TaskID = ""
+	if !reflect.DeepEqual(a, b) {
+		t.Fatalf("estimate/create differ: %#v %#v", a, b)
+	}
+	if a.ReferenceAssetIDs[0] == store.asset.ID.String() || a.ReferenceAssetIDs[0] != store.alias.ID || a.ReferenceBindings[0].AssetID != store.alias.ID || a.ReferenceBindings[0].Name != "stable" {
+		t.Fatalf("canonical alias mapping failed: %#v", a)
+	}
+	for _, tc := range []struct {
+		name    string
+		user    int64
+		status  string
+		missing bool
+		code    int
+	}{{"foreign", 32, "ready", false, 404}, {"missing", 31, "ready", true, 404}, {"unavailable", 31, "processing", false, 409}} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := submission
+			s.UserID = tc.user
+			store.asset.Status = tc.status
+			if tc.missing {
+				s.Inputs = append([]GenerationInput(nil), s.Inputs...)
+				s.Inputs[0].Node.AssetID = uuid.NewString()
+			}
+			_, err := g.Estimate(ctx, s)
+			var e *errs.Error
+			if !errors.As(err, &e) || e.StatusCode != tc.code || e.Details["field"] != "reference_asset_ids" {
+				t.Fatalf("error = %#v", err)
+			}
+		})
 	}
 }

@@ -142,6 +142,9 @@ func (s *MemoryStore) SaveDocument(_ context.Context, req SaveDocumentRecord) (C
 	if item.Revision != req.ExpectedRevision {
 		return cloneCanvas(item), ErrRevisionChanged
 	}
+	if validation := domaincanvas.ValidateMutation(item.Document, req.Document); validation != nil {
+		return Canvas{}, validation
+	}
 	item.Document = cloneDocument(req.Document)
 	item.AssetReferences = append([]uuid.UUID(nil), req.AssetReferences...)
 	item.DocumentBytes = len(req.CanonicalJSON)
@@ -207,6 +210,14 @@ func (s *MemoryStore) CreateRun(_ context.Context, run Run) (Run, bool, error) {
 			return cloneRun(existing), true, nil
 		}
 	}
+	if run.SubmittedRevision != item.Revision || !CanAttachToSource(run, item.Document) {
+		return Run{}, false, ErrRevisionChanged
+	}
+	for _, existing := range s.runs {
+		if existing.CanvasID == run.CanvasID && existing.NodeID == run.NodeID && existing.Status.Active() {
+			return Run{}, false, ErrCanvasBusy
+		}
+	}
 	s.runs[run.ID] = cloneRun(run)
 	if run.Status.Active() {
 		item.RunningTaskCount++
@@ -249,6 +260,9 @@ func (s *MemoryStore) UpdateRun(_ context.Context, req RunUpdate) (Run, error) {
 	if !ok || run.UserID != req.UserID || run.CanvasID != req.CanvasID {
 		return Run{}, ErrNotFound
 	}
+	if run.Status == RunStatusAttached || run.Status == RunStatusUnplaced {
+		return cloneRun(run), nil
+	}
 	wasActive := run.Status.Active()
 	run.Status = req.Status
 	if req.TaskID != nil {
@@ -280,7 +294,10 @@ func (s *MemoryStore) AttachResults(_ context.Context, req AttachRecord) (Run, e
 	if run.Status == RunStatusAttached || (run.Status == RunStatusUnplaced && !req.RecoverUnplaced) {
 		return cloneRun(run), nil
 	}
-	if !req.RecoverUnplaced && !documentHasNode(item.Document, run.NodeID) {
+	if run.Status != RunStatusSucceeded && run.Status != RunStatusUnplaced {
+		return Run{}, fmt.Errorf("run is not ready to attach")
+	}
+	if !req.RecoverUnplaced && !CanAttachToSource(run, item.Document) {
 		run.Status = RunStatusUnplaced
 		run.UpdatedAt = time.Now().UTC()
 		s.runs[run.ID] = run
@@ -295,6 +312,7 @@ func (s *MemoryStore) AttachResults(_ context.Context, req AttachRecord) (Run, e
 		s.runs[run.ID] = run
 		return cloneRun(run), nil
 	}
+	item.Document = cloneDocument(item.Document)
 	existingNodeIndexes := make(map[string]int, len(item.Document.Nodes))
 	for index, node := range item.Document.Nodes {
 		existingNodeIndexes[node.ID] = index
@@ -321,6 +339,9 @@ func (s *MemoryStore) AttachResults(_ context.Context, req AttachRecord) (Run, e
 		if _, exists := existingEdges[edge.ID]; !exists {
 			item.Document.Edges = append(item.Document.Edges, edge)
 		}
+	}
+	if validation := domaincanvas.ValidateDocument(item.Document, domaincanvas.DefaultLimits()); validation != nil {
+		return Run{}, validation
 	}
 	item.AssetReferences = parseAssetReferences(item.Document)
 	item.NodeCount, item.EdgeCount = len(item.Document.Nodes), len(item.Document.Edges)

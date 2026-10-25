@@ -63,14 +63,15 @@ audio.activate('second', () => paused.push('second'))
 if (paused.join(',') !== 'first') throw new Error('starting audio must pause the previously active player')
 
 const imageActions = mediaCreationActions({ id: 'image-1', media_type: 'image', source_task_kind: 'image', source_task_id: 'image-task-1' })
-if (imageActions.length !== 2 || imageActions[0].label !== '继续生图' || imageActions[0].options.media !== 'image' || imageActions[0].options.taskId !== 'image-task-1') {
+if (imageActions.length !== 3 || imageActions[1].label !== '复用配置' || imageActions[1].options.media !== 'image' || imageActions[1].options.taskId !== 'image-task-1') {
   throw new Error(`generated images must offer image continuation with their source task: ${JSON.stringify(imageActions)}`)
 }
-if (imageActions[1].label !== '生成视频' || imageActions[1].options.media !== 'video' || imageActions[1].options.assetId !== 'image-1') {
+if (imageActions[2].label !== '首帧生视频' || imageActions[2].options.media !== 'video' || imageActions[2].options.assetId !== 'image-1') {
   throw new Error(`images must offer image-to-video with their asset id: ${JSON.stringify(imageActions)}`)
 }
+if (imageActions[0].label !== '编辑图片' || imageActions[0].options.assetId !== 'image-1' || imageActions[0].options.taskId) throw new Error('editing must select the output image rather than replay its source task')
 const videoActions = mediaCreationActions({ id: 'video-1', media_type: 'video', source_task_kind: 'video', source_task_id: 'video-task-1' })
-if (videoActions.length !== 1 || videoActions[0].label !== '复用视频参数' || videoActions[0].options.taskId !== 'video-task-1' || videoActions[0].options.assetId) {
+if (videoActions.length !== 1 || videoActions[0].label !== '复用配置' || videoActions[0].options.taskId !== 'video-task-1' || videoActions[0].options.assetId) {
   throw new Error(`generated videos must reuse source task parameters without becoming frame input: ${JSON.stringify(videoActions)}`)
 }
 if (mediaCreationActions({ id: 'upload-1', media_type: 'video' }).length !== 0 || mediaCreationActions({ id: 'audio-1', media_type: 'audio' }).length !== 0) {

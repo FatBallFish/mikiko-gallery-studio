@@ -1,5 +1,42 @@
 import type { MediaCompletedPart, MediaType, MediaUploadSession } from '../../../../shared/api-types'
 
+export const MEDIA_UPLOAD_INIT_TIMEOUT_MS = 25_000
+
+// Race cancellation as well as passing the signal: auth refresh may still be pending.
+export async function boundedUploadRequest<T>(operation: (signal: AbortSignal) => Promise<T>, parent: AbortSignal, timeoutMS = MEDIA_UPLOAD_INIT_TIMEOUT_MS): Promise<T> {
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let onAbort: () => void = () => undefined
+  const cancelled = new Promise<never>((_, reject) => {
+    onAbort = () => {
+      controller.abort()
+      reject(new DOMException('Upload paused', 'AbortError'))
+    }
+    parent.addEventListener('abort', onAbort, { once: true })
+    timer = setTimeout(() => {
+      controller.abort()
+      reject(new Error('请求超时，请重试；将继续使用同一上传会话'))
+    }, timeoutMS)
+  })
+  try {
+    if (parent.aborted) onAbort()
+    return await Promise.race([cancelled, Promise.resolve().then(() => {
+      controller.signal.throwIfAborted()
+      return operation(controller.signal)
+    })])
+  } finally {
+    clearTimeout(timer)
+    parent.removeEventListener('abort', onAbort)
+  }
+}
+
+export type UploadStage = 'initializing' | 'uploading' | 'completing'
+export function uploadFailure(error: unknown, stage: UploadStage): Pick<UploadSnapshot, 'status' | 'error'> {
+  if (error instanceof DOMException && error.name === 'AbortError') return { status: 'paused', error: undefined }
+  const label = { initializing: '创建上传会话失败', uploading: '上传分片失败', completing: '完成上传失败' }[stage]
+  return { status: 'failed', error: `${label}：${error instanceof Error ? error.message : '请重试'}` }
+}
+
 export const MEDIA_UPLOAD_SESSION_KEY = 'mgs.media.uploads.v2'
 export const MEDIA_UPLOAD_MAX_BYTES = 1 << 30
 export const MEDIA_UPLOAD_CONCURRENCY = 3
@@ -18,6 +55,7 @@ export type UploadTarget = { canvasID: string; nodeID: string }
 
 export type UploadSnapshot = {
   localID: string
+  initializationKey?: string
   uploadID?: string
   assetID?: string
   projectID: string
@@ -124,6 +162,11 @@ export function reconcileUploadSession(snapshot: UploadSnapshot, session: MediaU
   }
 }
 
+export function replaceExpiredUpload(snapshot: UploadSnapshot, now = Date.now()): UploadSnapshot {
+  if (snapshot.status === 'completed' || !snapshot.expiresAt || new Date(snapshot.expiresAt).getTime() > now) return snapshot
+  return { ...snapshot, initializationKey: crypto.randomUUID(), uploadID: undefined, assetID: undefined, completedParts: [], progress: 0, expiresAt: undefined }
+}
+
 export function serializeUploadSnapshots(snapshots: UploadSnapshot[]) {
   return JSON.stringify(snapshots.filter((item) => item.status !== 'cancelled'))
 }
@@ -135,15 +178,14 @@ export function restoreUploadSnapshots(raw: string | null): UploadSnapshot[] {
     if (!Array.isArray(items)) return []
     const now = Date.now()
     return items.filter((item) => item && typeof item.localID === 'string').map((item) => {
-      const expired = item.expiresAt ? new Date(item.expiresAt).getTime() <= now : false
+      const expired = item.status !== 'completed' && (item.expiresAt ? new Date(item.expiresAt).getTime() <= now : false)
       const target = item.target && typeof item.target.canvasID === 'string' && item.target.canvasID.trim() && typeof item.target.nodeID === 'string' && item.target.nodeID.trim()
         ? { canvasID: item.target.canvasID, nodeID: item.target.nodeID }
         : undefined
       return {
-        ...item,
+        ...replaceExpiredUpload(item, now),
         target,
         transport: item.transport === 'proxy' ? 'proxy' : 'direct',
-        ...(expired ? { uploadID: undefined, completedParts: [], progress: 0, expiresAt: undefined } : {}),
         completedParts: expired ? [] : Array.isArray(item.completedParts) ? item.completedParts : [],
         status: item.status === 'completed' ? 'completed' : item.status === 'failed' && !expired ? 'failed' : 'needs_file',
         error: expired ? '上传会话已过期，请重新选择文件' : item.error,

@@ -108,6 +108,18 @@ func TestVideoWorkerStoreResolvesOnlyVerifiedExactExecutionAccount(t *testing.T)
 	if err != nil || resolved.APIKey != "secret" || resolved.CallbackSecret != "callback-secret" || resolved.Timeout != 45*time.Second || len(resolved.ArtifactAllowedHosts) != 1 || resolved.ArtifactAllowedHosts[0] != "cdn.seedance.example" {
 		t.Fatalf("GetExecutionAccount() = %#v err=%v", resolved, err)
 	}
+	if resolved.ArtifactHostsEnabled != nil {
+		t.Fatal("legacy switch must remain absent")
+	}
+	for _, enabled := range []bool{false, true} {
+		if _, err := client.ModelAccount.UpdateOneID(account.ID).SetExtra(map[string]any{"video_artifact_hosts_enabled": enabled, "video_artifact_hosts": []string{"cdn.seedance.example"}}).Save(ctx); err != nil {
+			t.Fatal(err)
+		}
+		updated, err := store.GetExecutionAccount(ctx, ref)
+		if err != nil || updated.ArtifactHostsEnabled == nil || *updated.ArtifactHostsEnabled != enabled || len(updated.ArtifactAllowedHosts) != 1 {
+			t.Fatalf("policy not propagated: %#v err=%v", updated, err)
+		}
+	}
 	if _, err := store.GetExecutionAccount(ctx, worker.ProviderRef{RouteCandidateID: ref.RouteCandidateID, AccountModelID: ref.AccountModelID, ModelAccountID: ref.ModelAccountID + 1, ProviderCode: ref.ProviderCode, ModelCode: ref.ModelCode}); err == nil {
 		t.Fatal("expected mismatched model account rejection")
 	}

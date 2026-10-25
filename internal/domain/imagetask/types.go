@@ -66,6 +66,7 @@ type ExecuteRequest struct {
 }
 
 type CreateRequest struct {
+	RequestFingerprint    string `json:"-"`
 	TaskID                string
 	UserID                int64
 	ProjectID             string
@@ -93,6 +94,7 @@ type CreateRequest struct {
 	OutputImageCount      int
 	ReferenceImageCount   int
 	ReferenceAssetIDs     []string
+	MaskAssetID           string `json:"mask_asset_id,omitempty"`
 	ReferenceStrength     int
 	Seed                  *int64
 	UserGroupCode         string
@@ -206,6 +208,7 @@ type GenerationSnapshot struct {
 }
 
 type Task struct {
+	RequestFingerprint    string                        `json:"-"`
 	UserID                int64                         `json:"-"`
 	ProjectID             string                        `json:"project_id"`
 	Project               *domainproject.Snapshot       `json:"project,omitempty"`
@@ -252,6 +255,7 @@ type Task struct {
 	OutputImageCount      int                           `json:"requested_output_image_count"`
 	ReferenceImageCount   int                           `json:"reference_image_count"`
 	ReferenceAssetIDs     []string                      `json:"reference_asset_ids,omitempty"`
+	MaskAssetID           string                        `json:"mask_asset_id,omitempty"`
 	ReferenceStrength     int                           `json:"reference_strength,omitempty"`
 	Seed                  *int64                        `json:"seed,omitempty"`
 	EstimatedPoints       string                        `json:"estimated_points,omitempty"`
@@ -288,6 +292,7 @@ type PromptReferenceBinding struct {
 }
 
 type PromptBindingSnapshot struct {
+	Variables     []PromptVariableInput    `json:"variables,omitempty"`
 	References    []PromptReferenceBinding `json:"references,omitempty"`
 	VariableNames []string                 `json:"variable_names,omitempty"`
 }
@@ -298,6 +303,8 @@ type ExecuteResult struct {
 }
 
 type GalleryImage struct {
+	Name              string                  `json:"name,omitempty"`
+	MediaAssetID      string                  `json:"media_asset_id,omitempty"`
 	ID                string                  `json:"id"`
 	TaskID            string                  `json:"task_id"`
 	UserID            int64                   `json:"user_id,omitempty"`

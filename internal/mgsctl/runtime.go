@@ -321,7 +321,7 @@ func materializeNginxConfig(plan InstallPlan, template []byte) ([]byte, error) {
 	}
 	apiSection := configContent[apiStart:apiEnd]
 	const canonicalProxy = "proxy_pass http://pic_gallery_api;"
-	if bytes.Count(apiSection, []byte(canonicalProxy)) != 8 {
+	if bytes.Count(apiSection, []byte(canonicalProxy)) != 16 {
 		return nil, fmt.Errorf("embedded Nginx API proxy count is not canonical")
 	}
 	basePath := strings.TrimSuffix(publicAPI.EscapedPath(), "/")

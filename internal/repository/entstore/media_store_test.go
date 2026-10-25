@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"log/slog"
 	"strconv"
 	"strings"
 	"testing"
@@ -59,6 +60,10 @@ func TestDeleteMediaAssetEnqueuesOriginalAndDerivativeCleanup(t *testing.T) {
 }
 
 func TestMediaUploadServiceIsIdempotentAndCompletesAssetTransaction(t *testing.T) {
+	var timingLogs bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&timingLogs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
 	ctx := t.Context()
 	client, err := repoent.Open(dialect.SQLite, "file:media-upload-complete?mode=memory&cache=shared&_fk=1")
 	if err != nil {
@@ -81,11 +86,21 @@ func TestMediaUploadServiceIsIdempotentAndCompletesAssetTransaction(t *testing.T
 	})
 	request := mediaassetservice.InitUploadRequest{
 		UserID: 41, ProjectID: project.ID, Filename: "voice.wav", MediaType: domainmedia.MediaTypeAudio,
-		MIMEType: "audio/wav", SizeBytes: 10, IdempotencyKey: "upload-one",
+		MIMEType: "audio/wav", SizeBytes: 10, IdempotencyKey: "upload-one", GroupName: "Upload group",
 	}
 	session, err := service.InitUpload(ctx, request)
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, stage := range []string{"runtimePolicy", "findIdempotency", "defaultWriter", "createMultipart", "CreateUpload", "total"} {
+		if !strings.Contains(timingLogs.String(), `"stage":"`+stage+`"`) {
+			t.Fatalf("missing stage %s in %s", stage, timingLogs.String())
+		}
+	}
+	for _, secret := range []string{request.Filename, request.IdempotencyKey, request.GroupName, session.ObjectKey, session.BackendUploadID} {
+		if secret != "" && strings.Contains(timingLogs.String(), secret) {
+			t.Fatalf("upload timing leaked metadata")
+		}
 	}
 	replayed, err := service.InitUpload(ctx, request)
 	if err != nil || replayed.ID != session.ID {
@@ -103,12 +118,33 @@ func TestMediaUploadServiceIsIdempotentAndCompletesAssetTransaction(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
+	locked, err := NewMediaStore(client).MarkUploadCompleting(ctx, 41, session.ID, []storage.CompletedPart{part})
+	if err != nil || locked.Status != "completing" {
+		t.Fatalf("lock completion: %#v %v", locked, err)
+	}
+	refreshed, err := NewMediaStore(client).RecordCompletedParts(ctx, 41, session.ID, []storage.CompletedPart{part})
+	if err != nil || refreshed.Status != "completing" {
+		t.Fatalf("part record unlocked completion: %#v %v", refreshed, err)
+	}
+	status, err := service.Status(ctx, 41, session.ID)
+	if err != nil || status.Status != "completing" {
+		t.Fatalf("status unlocked completion: %#v %v", status, err)
+	}
+	if _, err := service.UploadPart(ctx, 41, session.ID, 1, bytes.NewReader(content), int64(len(content)), hex.EncodeToString(checksum[:])); err == nil {
+		t.Fatal("completing upload writable")
+	}
+	if _, err := service.SignPart(ctx, 41, session.ID, 1, hex.EncodeToString(checksum[:])); err == nil {
+		t.Fatal("completing upload signable")
+	}
 	asset, err := service.CompleteUpload(ctx, 41, session.ID, []storage.CompletedPart{part})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if asset.UserID != 41 || asset.ProjectID != project.ID || asset.MediaType != domainmedia.MediaTypeAudio || asset.Status != "processing" || asset.FileSizeBytes != 10 {
 		t.Fatalf("unexpected completed asset: %#v", asset)
+	}
+	if asset.GroupID == nil || asset.GroupName != "Upload group" {
+		t.Fatalf("upload grouping inconsistent: %#v", asset)
 	}
 	completedAgain, err := service.CompleteUpload(ctx, 41, session.ID, []storage.CompletedPart{part})
 	if err != nil || completedAgain.ID != asset.ID {
@@ -203,8 +239,26 @@ func TestMediaUploadStoreEnforcesProjectOwnerAndReservedQuota(t *testing.T) {
 	if _, err := service.InitUpload(ctx, intruder); err == nil {
 		t.Fatal("expected project owner isolation")
 	}
+	// Active assets count alongside reservations; deleted assets do not.
+	for index, status := range []string{"ready", "deleted"} {
+		_, err := client.MediaAsset.Create().SetUserID(42).SetProjectID(project.ID).SetName(status).SetNameKey(status).SetMediaType("audio").SetSourceType("uploaded").SetStatus(status).SetStorageDriver("local").SetObjectKey(status).SetMimeType("audio/mpeg").SetFileSizeBytes(int64(3 + index*100)).Save(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	boundary := base
+	boundary.SizeBytes = 2
+	boundary.IdempotencyKey = "quota-boundary"
+	if _, err := service.InitUpload(ctx, boundary); err != nil {
+		t.Fatalf("exact quota with assets and reservation: %v", err)
+	}
+	boundary.IdempotencyKey = "quota-over-boundary"
+	boundary.SizeBytes = 1
+	if _, err := service.InitUpload(ctx, boundary); err == nil {
+		t.Fatal("asset plus reserved quota must reject one byte over")
+	}
 	count, err := client.MediaUploadSession.Query().Count(ctx)
-	if err != nil || count != 1 {
+	if err != nil || count != 2 {
 		t.Fatalf("persisted upload count=%d err=%v", count, err)
 	}
 }

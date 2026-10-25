@@ -168,15 +168,8 @@ function jsonRequestExample(operation: Record<string, unknown>): unknown | undef
 function docsAuthHeaders(operation: Record<string, unknown>) {
   const schemes = securitySchemeNames(operation)
   if (!schemes.length) return []
-  if (schemes.includes('accessKeyAuth') || schemes.includes('accessSignature')) {
-    return [
-      '  -H "X-Access-Key: <your_access_key>"',
-      '  -H "X-Timestamp: <rfc3339_timestamp>"',
-      '  -H "X-Body-SHA256: <base64url_body_sha256>"',
-      '  -H "X-Signature: <hmac_sha256_signature>"',
-    ]
-  }
-  if (schemes.includes('compatBearerAuth')) return ['  -H "Authorization: Bearer <your_sk_key>"']
+  if (schemes.includes('developerBearerAuth') || schemes.includes('compatBearerAuth')) return ['  -H "Authorization: Bearer <your_api_key>"']
+  if (schemes.includes('mcpOAuth')) return ['  -H "Authorization: Bearer <your_oauth_access_token>"']
   if (schemes.includes('bearerAuth')) return ['  -H "Authorization: Bearer <your_access_token>"']
   return []
 }

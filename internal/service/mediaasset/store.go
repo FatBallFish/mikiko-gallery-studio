@@ -51,6 +51,7 @@ type Asset struct {
 	ProjectID        uuid.UUID             `json:"project_id"`
 	LegacyImageID    *uuid.UUID            `json:"legacy_image_id,omitempty"`
 	Name             string                `json:"name"`
+	GroupID          *uuid.UUID            `json:"group_id"`
 	GroupName        string                `json:"group_name"`
 	MediaType        domainmedia.MediaType `json:"media_type"`
 	SourceType       string                `json:"source_type"`
@@ -104,6 +105,7 @@ type UpdateAssetRequest struct {
 	UserID          int64
 	AssetID         uuid.UUID
 	Name            *string
+	GroupID         *uuid.UUID // nil preserves assignment; uuid.Nil clears it.
 	GroupName       *string
 	ProjectID       *uuid.UUID
 	ExpectedVersion int64

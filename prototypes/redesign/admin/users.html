@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>用户管理 — Mikiko Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/admin.css">
+</head>
+<body data-site="admin" data-page="users" data-title="用户管理">
+<div class="a-shell"><div class="a-main">
+  <main class="a-content">
+    <header class="a-page-head">
+      <div class="a-page-head__copy">
+        <span class="a-kicker">Users</span>
+        <h1>用户管理</h1>
+        <p>按关键词、状态与分组定位用户。列表直接展示名称、邮箱与分组，详情在右侧抽屉里分页签查看。</p>
+      </div>
+      <div class="a-page-head__actions">
+        <button class="a-btn a-btn--sm" type="button" data-open="#user-create">新增用户</button>
+        <button class="a-btn a-btn--sm a-btn--primary" type="button" data-toast="已刷新用户列表">刷新</button>
+      </div>
+    </header>
+
+    <div class="a-metrics" style="margin-bottom:16px" data-reveal>
+      <div class="a-metric"><div class="a-metric__label">当前结果</div><div class="a-metric__value">12,847</div><div class="a-metric__foot">筛选后 326</div></div>
+      <div class="a-metric"><div class="a-metric__label">正常</div><div class="a-metric__value">11,902</div><div class="a-metric__foot">92.6%</div></div>
+      <div class="a-metric"><div class="a-metric__label">待验证</div><div class="a-metric__value">682</div><div class="a-metric__foot">7 天内注册占 41%</div></div>
+      <div class="a-metric"><div class="a-metric__label">权益分组</div><div class="a-metric__value">4</div><div class="a-metric__foot">plus · pro · base · free</div></div>
+    </div>
+
+    <section class="a-filters" data-reveal>
+      <div class="a-filters__row">
+        <label class="a-field"><span>关键词</span><div class="a-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="a-input" placeholder="用户名 / 邮箱 / 用户 ID"></div></label>
+        <label class="a-field"><span>用户状态</span><select class="a-select"><option>全部状态</option><option>正常</option><option>待验证</option><option>禁用</option><option>已关闭</option></select></label>
+        <label class="a-field"><span>所属分组</span><select class="a-select"><option>全部分组</option><option>plus</option><option>pro</option><option>base</option><option>free</option></select></label>
+        <label class="a-field"><span>排序</span><select class="a-select"><option>最近活跃 ↓</option><option>积分余额 ↓</option><option>注册时间 ↓</option><option>注册时间 ↑</option></select></label>
+      </div>
+      <div class="a-filters__row a-filters__more">
+        <label class="a-field"><span>注册时间从</span><input class="a-input" type="date" value="2026-09-01"></label>
+        <label class="a-field"><span>注册时间至</span><input class="a-input" type="date" value="2026-10-22"></label>
+        <label class="a-field"><span>最低余额</span><input class="a-input" inputmode="decimal" placeholder="例如 1000"></label>
+        <label class="a-field"><span>仅看有未结任务</span><select class="a-select"><option>否</option><option>是</option></select></label>
+      </div>
+      <div class="a-filters__foot">
+        <span class="a-filters__result">共 <b style="color:var(--a-ink);font-family:var(--font-admin-mono)">326</b> 条 · 第 1 / 17 页</span>
+        <div class="a-filters__actions">
+          <button class="a-btn a-btn--sm a-btn--quiet" type="button" data-filter-more>更多筛选</button>
+          <button class="a-btn a-btn--sm" type="button" data-toast="已重置筛选条件">重置</button>
+          <button class="a-btn a-btn--sm a-btn--primary" type="button" data-toast="已应用筛选">查询</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="a-panel a-panel--flush" style="margin-top:16px" data-reveal>
+      <div class="a-panel__head">
+        <div><h2>用户列表</h2><p>点击任意行打开用户详情；点击名称可快速查看账户摘要。</p></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="a-btn a-btn--sm a-btn--quiet" type="button" data-toast="已导出手头 326 条用户">导出</button>
+          <button class="a-icon-btn" type="button" data-toast="列显示设置">⚙</button>
+        </div>
+      </div>
+      <div class="a-table-wrap">
+        <table class="a-table" style="min-width:1080px">
+          <thead><tr><th>用户</th><th>所属分组</th><th class="is-num">账户余额</th><th>最后活跃</th><th>状态</th><th>注册时间</th><th class="is-actions">操作</th></tr></thead>
+          <tbody>
+            <tr data-row-open="#user-detail" style="cursor:pointer">
+              <td><button class="a-cell-entity" type="button" data-open="#user-peek" data-row-ignore><span class="a-cell-entity__avatar">岑</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">岑屿</span><span class="a-cell-entity__meta">cenyu@atelier.moe · #10241</span></span></button></td>
+              <td><span class="a-badge a-badge--accent">plus</span></td>
+              <td class="is-num">3,280.00</td>
+              <td class="is-muted">2 分钟前</td>
+              <td><span class="a-badge a-badge--ok"><i></i>正常</span></td>
+              <td class="is-muted">2026-08-14</td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#user-detail">详情</button><button class="a-row-btn" type="button" data-open="#points-adjust" data-row-ignore>积分</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="更多：分组 / 限额 / 重置密码 / 禁用" data-row-ignore>⋯</button></div></td>
+            </tr>
+            <tr data-row-open="#user-detail" style="cursor:pointer">
+              <td><button class="a-cell-entity" type="button" data-open="#user-peek" data-row-ignore><span class="a-cell-entity__avatar">沈</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">沈砚白</span><span class="a-cell-entity__meta">shen.yanbai@studio.moe · #10240</span></span></button></td>
+              <td><span class="a-badge a-badge--accent">pro</span></td>
+              <td class="is-num">12,940.00</td>
+              <td class="is-muted">18 分钟前</td>
+              <td><span class="a-badge a-badge--ok"><i></i>正常</span></td>
+              <td class="is-muted">2026-07-02</td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#user-detail">详情</button><button class="a-row-btn" type="button" data-open="#points-adjust" data-row-ignore>积分</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="更多操作" data-row-ignore>⋯</button></div></td>
+            </tr>
+            <tr data-row-open="#user-detail" style="cursor:pointer">
+              <td><button class="a-cell-entity" type="button" data-open="#user-peek" data-row-ignore><span class="a-cell-entity__avatar">林</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">林知远</span><span class="a-cell-entity__meta">lin.zhiyuan@studio.moe · #10236</span></span></button></td>
+              <td><span class="a-badge a-badge--accent">plus</span></td>
+              <td class="is-num">4,820.50</td>
+              <td class="is-muted">刚刚</td>
+              <td><span class="a-badge a-badge--ok"><i></i>正常</span></td>
+              <td class="is-muted">2026-05-19</td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#user-detail">详情</button><button class="a-row-btn" type="button" data-open="#points-adjust" data-row-ignore>积分</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="更多操作" data-row-ignore>⋯</button></div></td>
+            </tr>
+            <tr data-row-open="#user-detail" style="cursor:pointer">
+              <td><button class="a-cell-entity" type="button" data-open="#user-peek" data-row-ignore><span class="a-cell-entity__avatar">苏</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">苏迟</span><span class="a-cell-entity__meta">suchi@inkroom.cn · #10239</span></span></button></td>
+              <td><span class="a-badge">free</span></td>
+              <td class="is-num">220.00</td>
+              <td class="is-muted">3 小时前</td>
+              <td><span class="a-badge a-badge--warn"><i></i>待验证</span></td>
+              <td class="is-muted">2026-10-21</td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#user-detail">详情</button><button class="a-row-btn" type="button" data-open="#points-adjust" data-row-ignore>积分</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="更多操作" data-row-ignore>⋯</button></div></td>
+            </tr>
+            <tr data-row-open="#user-detail" style="cursor:pointer">
+              <td><button class="a-cell-entity" type="button" data-open="#user-peek" data-row-ignore><span class="a-cell-entity__avatar">陆</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">陆小满</span><span class="a-cell-entity__meta">luxiaoman@mikiko.ai · #10238</span></span></button></td>
+              <td><span class="a-badge">base</span></td>
+              <td class="is-num">980.00</td>
+              <td class="is-muted">昨天</td>
+              <td><span class="a-badge a-badge--bad"><i></i>禁用</span></td>
+              <td class="is-muted">2026-10-02</td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#user-detail">详情</button><button class="a-row-btn" type="button" data-open="#points-adjust" data-row-ignore>积分</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="更多操作" data-row-ignore>⋯</button></div></td>
+            </tr>
+            <tr data-row-open="#user-detail" style="cursor:pointer">
+              <td><button class="a-cell-entity" type="button" data-open="#user-peek" data-row-ignore><span class="a-cell-entity__avatar">何</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">何弦</span><span class="a-cell-entity__meta">hexian@studio.moe · #10231</span></span></button></td>
+              <td><span class="a-badge a-badge--accent">plus</span></td>
+              <td class="is-num">6,420.00</td>
+              <td class="is-muted">10-20</td>
+              <td><span class="a-badge a-badge--ok"><i></i>正常</span></td>
+              <td class="is-muted">2026-06-11</td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#user-detail">详情</button><button class="a-row-btn" type="button" data-open="#points-adjust" data-row-ignore>积分</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="更多操作" data-row-ignore>⋯</button></div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="a-pager">
+        <div class="a-pager__info">显示 <b>1–20</b>，共 <b>326</b> 条</div>
+        <div class="a-pager__controls"><button class="a-pager__btn" disabled>‹</button><button class="a-pager__btn is-active">1</button><button class="a-pager__btn">2</button><button class="a-pager__btn">3</button><button class="a-pager__btn">…</button><button class="a-pager__btn">17</button><button class="a-pager__btn">›</button></div>
+        <div class="a-pager__size"><span>每页</span><select><option>20</option><option>50</option><option>100</option></select></div>
+      </div>
+    </section>
+  </main>
+</div></div>
+
+<!-- user detail drawer -->
+<div class="a-scrim"></div>
+<aside class="a-drawer a-drawer--wide" id="user-detail" role="dialog" aria-modal="true" aria-label="用户详情">
+  <header class="a-drawer__head">
+    <div style="display:flex;align-items:center;gap:12px">
+      <span class="a-cell-entity__avatar" style="width:42px;height:42px;border-radius:11px;font-size:14px">岑</span>
+      <div>
+        <h2>岑屿</h2>
+        <p>cenyu@atelier.moe · #10241 · 注册于 2026-08-14</p>
+      </div>
+    </div>
+    <div class="a-drawer__spacer"></div>
+    <span class="a-badge a-badge--ok"><i></i>正常</span>
+    <span class="a-badge a-badge--accent">plus</span>
+    <button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </header>
+  <div class="a-drawer__body" style="padding-bottom:0">
+    <div class="a-tabs" data-tabs="user-detail">
+      <button class="a-tab is-active" data-tab="overview">概览</button>
+      <button class="a-tab" data-tab="points">积分与流水 <span class="a-tab__count">12</span></button>
+      <button class="a-tab" data-tab="resources">关联资源 <span class="a-tab__count">38</span></button>
+      <button class="a-tab" data-tab="security">账户与安全</button>
+    </div>
+
+    <div data-tab-panels="user-detail">
+      <div data-panel="overview" style="display:grid;gap:16px">
+        <div class="a-metrics" style="grid-template-columns:repeat(3,1fr)">
+          <div class="a-metric"><div class="a-metric__label">可用积分</div><div class="a-metric__value" style="font-size:22px">3,280.00</div><div class="a-metric__foot">冻结 24.00</div></div>
+          <div class="a-metric"><div class="a-metric__label">本月生成</div><div class="a-metric__value" style="font-size:22px">184</div><div class="a-metric__foot">成功率 98.4%</div></div>
+          <div class="a-metric"><div class="a-metric__label">存储占用</div><div class="a-metric__value" style="font-size:22px">1.8 GB</div><div class="a-metric__foot">配额 20 GB</div></div>
+        </div>
+        <section class="a-drawer__section">
+          <h3>基础资料 <button class="a-row-btn" type="button" data-toast="编辑资料">编辑</button></h3>
+          <dl class="a-kv">
+            <div><dt>用户 ID</dt><dd><span class="a-mono">#10241</span> <button class="a-row-btn" style="min-height:24px;padding:0 6px;font-size:11px" type="button" data-copy="10241">复制</button></dd></div>
+            <div><dt>邮箱</dt><dd>cenyu@atelier.moe <span class="a-badge a-badge--ok" style="margin-left:6px"><i></i>已验证</span></dd></div>
+            <div><dt>所属分组</dt><dd><span class="a-badge a-badge--accent">plus</span> <span class="a-hint">计费倍率 ×1.2 · 可见 12 个路由</span></dd></div>
+            <div><dt>注册时间</dt><dd>2026-08-14 10:22</dd></div>
+            <div><dt>最后活跃</dt><dd>2026-10-22 21:36 · IP 203.0.113.24</dd></div>
+            <div><dt>限额</dt><dd>RPM 60 · 并发 4</dd></div>
+          </dl>
+        </section>
+        <section class="a-drawer__section">
+          <h3>最近任务 <a class="a-row-btn" href="call-records.html">查看全部</a></h3>
+          <div class="a-table-wrap" style="border:1px solid var(--a-line);border-radius:8px">
+            <table class="a-table" style="min-width:520px">
+              <thead><tr><th>任务</th><th>模型</th><th class="is-num">积分</th><th>状态</th></tr></thead>
+              <tbody>
+                <tr><td><div class="a-cell-stack"><strong>task_8f21c4e0</strong><span>10-22 18:42</span></div></td><td>plus-image</td><td class="is-num">24.00</td><td><span class="a-badge a-badge--ok"><i></i>成功</span></td></tr>
+                <tr><td><div class="a-cell-stack"><strong>vtask_4d19b2</strong><span>10-22 17:10</span></div></td><td>seedance-2.5</td><td class="is-num">52.00</td><td><span class="a-badge a-badge--info"><i></i>执行中</span></td></tr>
+                <tr><td><div class="a-cell-stack"><strong>task_2a0c11f9</strong><span>10-21 22:04</span></div></td><td>pro-image</td><td class="is-num">48.00</td><td><span class="a-badge a-badge--bad"><i></i>失败</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div data-panel="points" hidden style="display:grid;gap:16px">
+        <div class="a-grid a-grid--4" style="gap:10px">
+          <div class="a-panel a-panel--pad"><div class="a-metric__label">体验额度</div><div class="a-metric__value" style="font-size:20px">0.00</div><div class="a-metric__foot">2026-09-01 到期</div></div>
+          <div class="a-panel a-panel--pad"><div class="a-metric__label">充值余额</div><div class="a-metric__value" style="font-size:20px">2,980.00</div><div class="a-metric__foot">不过期</div></div>
+          <div class="a-panel a-panel--pad"><div class="a-metric__label">订阅额度</div><div class="a-metric__value" style="font-size:20px">300.00</div><div class="a-metric__foot">2026-11-20 到期</div></div>
+          <div class="a-panel a-panel--pad"><div class="a-metric__label">冻结积分</div><div class="a-metric__value" style="font-size:20px">24.00</div><div class="a-metric__foot">1 个任务</div></div>
+        </div>
+        <section class="a-panel a-panel--flush">
+          <div class="a-panel__head"><div><h2>积分流水</h2><p>最近 30 天</p></div><button class="a-btn a-btn--sm" type="button" data-open="#points-adjust">调整积分</button></div>
+          <div class="a-table-wrap">
+            <table class="a-table" style="min-width:680px">
+              <thead><tr><th>类型</th><th>余额桶 / 来源</th><th class="is-num">变更</th><th class="is-num">余额</th><th>时间</th></tr></thead>
+              <tbody>
+                <tr><td>生成扣费</td><td class="is-muted">充值余额 · task_8f21c4e0</td><td class="is-num" style="color:var(--a-danger)">−24.00</td><td class="is-num">3,280.00</td><td class="is-muted">10-22 18:42</td></tr>
+                <tr><td>生成预冻结</td><td class="is-muted">充值余额 · vtask_4d19b2</td><td class="is-num" style="color:var(--a-danger)">−52.00</td><td class="is-num">3,304.00</td><td class="is-muted">10-22 17:10</td></tr>
+                <tr><td>充值到账</td><td class="is-muted">充值余额 · 创作者包</td><td class="is-num" style="color:var(--a-success)">+5,200.00</td><td class="is-num">3,356.00</td><td class="is-muted">10-18 09:18</td></tr>
+                <tr><td>冻结退回</td><td class="is-muted">充值余额 · task_2a0c11f9</td><td class="is-num" style="color:var(--a-success)">+48.00</td><td class="is-num">−1,844.00</td><td class="is-muted">10-21 22:16</td></tr>
+                <tr><td>兑换码到账</td><td class="is-muted">赠送额度 · REDEEM-7Q4M</td><td class="is-num" style="color:var(--a-success)">+1,000.00</td><td class="is-num">1,000.00</td><td class="is-muted">10-02 14:02</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div data-panel="resources" hidden style="display:grid;gap:16px">
+        <div class="a-tabs" style="margin:0" data-tabs="res"><button class="a-tab is-active" data-tab="res-task">生图任务 <span class="a-tab__count">142</span></button><button class="a-tab" data-tab="res-order">订单 <span class="a-tab__count">6</span></button><button class="a-tab" data-tab="res-key">API 密钥 <span class="a-tab__count">2</span></button></div>
+        <div data-tab-panels="res">
+          <div data-panel="res-task">
+            <div class="a-table-wrap" style="border:1px solid var(--a-line);border-radius:8px">
+              <table class="a-table" style="min-width:640px"><thead><tr><th>任务</th><th>类型</th><th>模型</th><th class="is-num">积分</th><th>状态</th></tr></thead><tbody>
+                <tr><td class="a-mono" style="font-size:11.5px">task_8f21c4e0</td><td>文生图</td><td>plus-image</td><td class="is-num">24.00</td><td><span class="a-badge a-badge--ok"><i></i>成功</span></td></tr>
+                <tr><td class="a-mono" style="font-size:11.5px">task_2a0c11f9</td><td>参考图生图</td><td>pro-image</td><td class="is-num">48.00</td><td><span class="a-badge a-badge--bad"><i></i>失败</span></td></tr>
+                <tr><td class="a-mono" style="font-size:11.5px">task_0c82be31</td><td>图片编辑</td><td>plus-image</td><td class="is-num">12.00</td><td><span class="a-badge a-badge--ok"><i></i>成功</span></td></tr>
+              </tbody></table>
+            </div>
+          </div>
+          <div data-panel="res-order" hidden>
+            <div class="a-table-wrap" style="border:1px solid var(--a-line);border-radius:8px">
+              <table class="a-table" style="min-width:640px"><thead><tr><th>订单</th><th>类型</th><th class="is-num">金额</th><th class="is-num">积分</th><th>状态</th></tr></thead><tbody>
+                <tr><td class="a-mono" style="font-size:11.5px">MK202610180918</td><td>积分包</td><td class="is-num">¥ 50.00</td><td class="is-num">5,200</td><td><span class="a-badge a-badge--ok"><i></i>已支付</span></td></tr>
+                <tr><td class="a-mono" style="font-size:11.5px">MK202609021133</td><td>订阅套餐</td><td class="is-num">¥ 99.00</td><td class="is-num">8,000</td><td><span class="a-badge a-badge--ok"><i></i>已完成</span></td></tr>
+              </tbody></table>
+            </div>
+          </div>
+          <div data-panel="res-key" hidden>
+            <div class="a-table-wrap" style="border:1px solid var(--a-line);border-radius:8px">
+              <table class="a-table" style="min-width:640px"><thead><tr><th>名称</th><th>Access Key</th><th>状态</th><th>最近使用</th></tr></thead><tbody>
+                <tr><td>生产服务</td><td class="a-mono" style="font-size:11.5px">AK-7R2M-9K4X</td><td><span class="a-badge a-badge--ok"><i></i>启用</span></td><td class="is-muted">2 分钟前</td></tr>
+                <tr><td>本地脚本</td><td class="a-mono" style="font-size:11.5px">AK-3P8Q-1L6T</td><td><span class="a-badge a-badge--ok"><i></i>启用</span></td><td class="is-muted">昨天</td></tr>
+              </tbody></table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div data-panel="security" hidden style="display:grid;gap:16px">
+        <div class="a-banner a-banner--warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 9v5M12 17h.01"/></svg><div><strong style="font-size:13px">敏感操作会写入审计日志</strong><div class="a-hint">调整分组、积分、禁用与重置密码均记录操作人、IP 与原因。</div></div></div>
+        <div class="a-grid a-grid--2">
+          <button class="a-panel a-panel--pad" style="text-align:left" data-toast="已调整用户分组"><strong style="font-size:13.5px">调整分组</strong><div class="a-hint">plus → pro，立即影响模型可见性与计费倍率</div></button>
+          <button class="a-panel a-panel--pad" style="text-align:left" data-open="#points-adjust"><strong style="font-size:13.5px">调整积分</strong><div class="a-hint">增加或扣减，需填写原因与幂等键</div></button>
+          <button class="a-panel a-panel--pad" style="text-align:left" data-toast="限额设置：RPM 60 / 并发 4"><strong style="font-size:13.5px">设置限额</strong><div class="a-hint">RPM 60 · 并发 4 · 日额度未设置</div></button>
+          <button class="a-panel a-panel--pad" style="text-align:left" data-toast="重置密码链接已生成"><strong style="font-size:13.5px">重置密码</strong><div class="a-hint">生成一次性重置链接，10 分钟内有效</div></button>
+          <button class="a-panel a-panel--pad" style="text-align:left;border-color:rgba(163,58,50,.25)" data-toast="禁用需输入完整邮箱确认" data-tone="bad"><strong style="font-size:13.5px;color:var(--a-danger)">禁用账户</strong><div class="a-hint">禁用后无法登录与调用 API，资产保留</div></button>
+          <button class="a-panel a-panel--pad" style="text-align:left;border-color:rgba(163,58,50,.25)" data-toast="删除需输入完整邮箱确认" data-tone="bad"><strong style="font-size:13.5px;color:var(--a-danger)">删除账户</strong><div class="a-hint">不可恢复；历史订单与积分流水保留</div></button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <footer class="a-drawer__foot">
+    <button class="a-btn a-btn--sm" type="button" data-open="#points-adjust">调整积分</button>
+    <button class="a-btn a-btn--sm" type="button" data-toast="已打开分组调整">调整分组</button>
+    <button class="a-btn a-btn--sm a-btn--primary" type="button" data-toast="用户资料已保存" data-tone="ok">保存资料</button>
+    <button class="a-icon-btn" type="button" data-toast="更多操作" aria-label="更多">⋯</button>
+  </footer>
+</aside>
+
+<!-- user quick peek -->
+<div class="a-modal" id="user-peek" role="dialog" aria-modal="true" aria-label="用户摘要" style="width:min(420px,calc(100vw - 32px))">
+  <div class="a-modal__head">
+    <div style="display:flex;align-items:center;gap:11px">
+      <span class="a-cell-entity__avatar" style="width:42px;height:42px;border-radius:11px;font-size:14px">岑</span>
+      <div><h2 style="font-size:18px">岑屿</h2><p class="a-hint" style="font-family:var(--font-admin-mono);font-size:11px">#10241 · plus</p></div>
+    </div>
+    <button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </div>
+  <dl class="a-kv">
+    <div><dt>邮箱</dt><dd>cenyu@atelier.moe</dd></div>
+    <div><dt>状态</dt><dd><span class="a-badge a-badge--ok"><i></i>正常</span></dd></div>
+    <div><dt>积分余额</dt><dd><span class="a-num">3,280.00</span></dd></div>
+    <div><dt>本月生成</dt><dd>184 次 · 成功率 98.4%</dd></div>
+    <div><dt>最近活跃</dt><dd>2 分钟前</dd></div>
+  </dl>
+  <div class="a-modal__foot">
+    <button class="a-btn a-btn--sm" type="button" data-close>关闭</button>
+    <button class="a-btn a-btn--sm a-btn--primary" type="button" data-close data-open="#user-detail">打开完整用户抽屉</button>
+  </div>
+</div>
+
+<!-- create user drawer -->
+<aside class="a-drawer" id="user-create" role="dialog" aria-modal="true" aria-label="新增用户">
+  <header class="a-drawer__head">
+    <div><h2>新增用户</h2><p>创建后发送验证邮件；积分与限额可在用户详情中调整。</p></div>
+    <div class="a-drawer__spacer"></div>
+    <button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </header>
+  <div class="a-drawer__body">
+    <form class="a-form" onsubmit="event.preventDefault()">
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">1</span>账户信息</h3><p>字段纵向排列，避免两栏高度不一致造成错位。</p></div>
+        <label class="a-field"><span>邮箱 <span class="a-required">*</span></span><input class="a-input" type="email" placeholder="name@example.com"><span class="a-hint">用于登录与接收验证邮件。</span></label>
+        <label class="a-field"><span>显示昵称</span><input class="a-input" placeholder="例如：岑屿"></label>
+      </section>
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">2</span>分组与状态</h3></div>
+        <label class="a-field"><span>默认分组</span><select class="a-select"><option>free</option><option>base</option><option>plus</option><option>pro</option></select><span class="a-hint">决定模型可见范围与计费倍率。</span></label>
+        <label class="a-field"><span>初始状态</span><select class="a-select"><option>正常</option><option>待验证</option><option>禁用</option></select></label>
+      </section>
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">3</span>限额</h3></div>
+        <div class="a-form__pair">
+          <label class="a-field"><span>RPM</span><input class="a-input" value="60" inputmode="numeric"></label>
+          <label class="a-field"><span>并发</span><input class="a-input" value="4" inputmode="numeric"></label>
+        </div>
+        <label class="a-field"><span>初始密码</span><input class="a-input" type="password" placeholder="至少 8 位，可留空由用户自行设置"></label>
+      </section>
+    </form>
+  </div>
+  <footer class="a-drawer__foot">
+    <button class="a-btn a-btn--sm" type="button" data-close>取消</button>
+    <button class="a-btn a-btn--sm a-btn--primary" type="button" data-close data-toast="用户已创建并发送验证邮件" data-tone="ok">创建用户</button>
+  </footer>
+</aside>
+
+<!-- points adjust drawer -->
+<aside class="a-drawer" id="points-adjust" role="dialog" aria-modal="true" aria-label="调整积分">
+  <header class="a-drawer__head">
+    <div><h2>调整积分</h2><p>岑屿 · #10241 · 当前 3,280.00</p></div>
+    <div class="a-drawer__spacer"></div>
+    <button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </header>
+  <div class="a-drawer__body">
+    <form class="a-form" onsubmit="event.preventDefault()">
+      <section class="a-form__section">
+        <div class="a-form__head"><h3>变更</h3><p>正数为增加，负数为扣减。操作会写入积分流水与审计日志。</p></div>
+        <label class="a-field"><span>变更积分 <span class="a-required">*</span></span><input class="a-input" placeholder="例如 500 或 -120" inputmode="decimal"><span class="a-hint">调整后余额：3,780.00（示例）</span></label>
+        <label class="a-field"><span>原因 <span class="a-required">*</span></span><textarea class="a-textarea" placeholder="例如：补偿 10-21 批次生成失败"></textarea></label>
+        <label class="a-field"><span>幂等键</span><div style="display:flex;gap:8px"><input class="a-input" value="adj_20261022_10241_a" style="font-family:var(--font-admin-mono);font-size:12px"><button class="a-btn a-btn--sm" type="button" data-toast="已生成新的幂等键">生成</button></div><span class="a-hint">相同幂等键的重复请求不会重复调整。</span></label>
+      </section>
+    </form>
+    <div class="a-banner a-banner--warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 9v5M12 17h.01"/></svg><div><strong style="font-size:13px">扣减不会低于 0</strong><div class="a-hint">若余额不足，系统会将可用余额扣至 0 并记录差额。</div></div></div>
+  </div>
+  <footer class="a-drawer__foot">
+    <button class="a-btn a-btn--sm" type="button" data-close>取消</button>
+    <button class="a-btn a-btn--sm a-btn--primary" type="button" data-close data-toast="积分已调整，流水已生成" data-tone="ok">确认调整</button>
+  </footer>
+</aside>
+
+<script src="../assets/shell.js"></script>
+</body>
+</html>

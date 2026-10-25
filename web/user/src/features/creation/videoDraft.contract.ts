@@ -70,8 +70,8 @@ const task = {
   prompt_binding_snapshot: { variables: [{ name: 'speed', value: 'private' }] }, inputs: [{ id: 'input-1', asset_id: 'asset-1', role: 'first_frame', ordinal: 0 }],
 } as VideoTask
 const reused = reuseVideoTask(task)
-if (reused.prompt_variables.length !== 0 || reused.prompt_template !== task.prompt_template || reused.output_count !== 2) {
-  throw new Error(`reuse must keep parameters without variable values: ${JSON.stringify(reused)}`)
+if (reused.prompt_variables[0]?.value !== 'private' || reused.prompt_template !== task.prompt_template || reused.output_count !== 2) {
+  throw new Error(`reuse must restore prompt variables and parameters: ${JSON.stringify(reused)}`)
 }
 // Reference videos/audios are hard to re-pick, so reuse must carry inputs over.
 if (reused.inputs.length !== 1 || reused.inputs[0].asset_id !== 'asset-1' || reused.inputs[0].role !== 'first_frame') {

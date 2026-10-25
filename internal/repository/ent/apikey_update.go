@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikey"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
@@ -120,6 +121,18 @@ func (_u *APIKeyUpdate) SetNillableSecretCiphertext(v *string) *APIKeyUpdate {
 // ClearSecretCiphertext clears the value of the "secret_ciphertext" field.
 func (_u *APIKeyUpdate) ClearSecretCiphertext() *APIKeyUpdate {
 	_u.mutation.ClearSecretCiphertext()
+	return _u
+}
+
+// SetScopes sets the "scopes" field.
+func (_u *APIKeyUpdate) SetScopes(v []string) *APIKeyUpdate {
+	_u.mutation.SetScopes(v)
+	return _u
+}
+
+// AppendScopes appends value to the "scopes" field.
+func (_u *APIKeyUpdate) AppendScopes(v []string) *APIKeyUpdate {
+	_u.mutation.AppendScopes(v)
 	return _u
 }
 
@@ -481,6 +494,14 @@ func (_u *APIKeyUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if _u.mutation.SecretCiphertextCleared() {
 		_spec.ClearField(apikey.FieldSecretCiphertext, field.TypeString)
 	}
+	if value, ok := _u.mutation.Scopes(); ok {
+		_spec.SetField(apikey.FieldScopes, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedScopes(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, apikey.FieldScopes, value)
+		})
+	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(apikey.FieldName, field.TypeString, value)
 	}
@@ -659,6 +680,18 @@ func (_u *APIKeyUpdateOne) SetNillableSecretCiphertext(v *string) *APIKeyUpdateO
 // ClearSecretCiphertext clears the value of the "secret_ciphertext" field.
 func (_u *APIKeyUpdateOne) ClearSecretCiphertext() *APIKeyUpdateOne {
 	_u.mutation.ClearSecretCiphertext()
+	return _u
+}
+
+// SetScopes sets the "scopes" field.
+func (_u *APIKeyUpdateOne) SetScopes(v []string) *APIKeyUpdateOne {
+	_u.mutation.SetScopes(v)
+	return _u
+}
+
+// AppendScopes appends value to the "scopes" field.
+func (_u *APIKeyUpdateOne) AppendScopes(v []string) *APIKeyUpdateOne {
+	_u.mutation.AppendScopes(v)
 	return _u
 }
 
@@ -1049,6 +1082,14 @@ func (_u *APIKeyUpdateOne) sqlSave(ctx context.Context) (_node *APIKey, err erro
 	}
 	if _u.mutation.SecretCiphertextCleared() {
 		_spec.ClearField(apikey.FieldSecretCiphertext, field.TypeString)
+	}
+	if value, ok := _u.mutation.Scopes(); ok {
+		_spec.SetField(apikey.FieldScopes, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedScopes(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, apikey.FieldScopes, value)
+		})
 	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(apikey.FieldName, field.TypeString, value)

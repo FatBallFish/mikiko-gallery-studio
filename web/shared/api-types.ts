@@ -307,8 +307,8 @@ export type VideoTask = {
   version?: number; created_at?: string; updated_at?: string; started_at?: string; finished_at?: string
 }
 export type VideoCreateTaskRequest = VideoEstimateRequest & { quote_token: string }
-export type CanvasNodeType = 'prompt' | 'image' | 'video' | 'audio' | 'image_generation' | 'video_generation' | 'note'
-export type CanvasInputRole = 'prompt' | 'reference' | 'first_frame' | 'last_frame' | 'result'
+export type CanvasNodeType = 'image_v2' | 'video_v2' | 'prompt' | 'image' | 'video' | 'audio' | 'image_generation' | 'video_generation' | 'note'
+export type CanvasInputRole = 'prompt' | 'reference' | 'first_frame' | 'last_frame' | 'reference_image' | 'reference_video' | 'reference_audio' | 'result'
 export type CanvasDocument = {
   schema_version: 1
   viewport: { x: number; y: number; zoom: number }
@@ -323,6 +323,7 @@ export type CanvasRun = {
   id: string; canvas_id: string; node_id: string; submitted_revision: number; task_kind: 'image' | 'video'; task_id: string
   status: 'submitting' | 'queued' | 'running' | 'saving' | 'succeeded' | 'failed' | 'canceled' | 'attached' | 'unplaced'
   result_asset_ids?: string[]; attached_revision?: number; error_code?: string; error_message?: string
+  progress_stage?: string; progress_message?: string
 }
 export type VideoModelTestInput = { role: string; url: string; media_type?: string; ordinal?: number }
 export type VideoModelTestRequest = {
@@ -1009,6 +1010,7 @@ export type Project = {
 }
 export type ProjectSnapshot = Pick<Project, 'id' | 'name' | 'is_default'>
 export type ReferenceAsset = {
+  display_name?: string
   id: string
   name: string
   preview_url?: string
@@ -1050,6 +1052,8 @@ export type ReferenceGenerationSnapshot = {
   image_count?: number
 }
 export type ImageResult = {
+  media_asset_id?: string
+  name?: string
   id: string
   project_id?: string | null
   project?: ProjectSnapshot
@@ -1378,7 +1382,7 @@ export type ModelRoute = {
 }
 export type ModelRouteWriteRequest = { group_code: string; task_type: string; provider_model_id: number; provider_code: string; priority: number; weight_percent: number; fallback_order: number; enabled: boolean }
 export type PriceRow = { id: string; group: string; q1k: string; q2k: string; q4k: string; reference_multiplier: string; version: number; state: 'active' | 'draft' }
-export type GalleryImage = { id: string; task_id: string; user_id?: number; project_id?: string | null; project?: ProjectSnapshot; prompt?: string; abstract_model?: string; route_model_code?: string; task_type?: ImageTaskType; task_status?: ImageTaskStatus | string; size_mode?: string; requested_size?: string; base_resolution?: string; quality?: string; aspect_ratio?: string; output_format?: string; output_compression?: number; moderation?: string; requested_output_image_count?: number; image_count?: number; actual_points?: string; reference_asset_ids?: string[]; reference_assets?: ReferenceAsset[]; url?: string; download_url?: string; preview_expires_at?: string; download_expires_at?: string; mime_type?: string; file_size_bytes: number; width: number; height: number; sha256?: string; storage_config_id?: string; object_key?: string; storage_driver?: string; image_group?: string; visibility_status: PublishStatus; review_reason?: string; published_at?: string | null; author_name?: string; like_count?: number; favorite_count?: number; liked_by_viewer?: boolean; favorited_by_viewer?: boolean; created_at: string }
+export type GalleryImage = { media_asset_id?: string; name?: string; id: string; task_id: string; user_id?: number; project_id?: string | null; project?: ProjectSnapshot; prompt?: string; abstract_model?: string; route_model_code?: string; task_type?: ImageTaskType; task_status?: ImageTaskStatus | string; size_mode?: string; requested_size?: string; base_resolution?: string; quality?: string; aspect_ratio?: string; output_format?: string; output_compression?: number; moderation?: string; requested_output_image_count?: number; image_count?: number; actual_points?: string; reference_asset_ids?: string[]; reference_assets?: ReferenceAsset[]; url?: string; download_url?: string; preview_expires_at?: string; download_expires_at?: string; mime_type?: string; file_size_bytes: number; width: number; height: number; sha256?: string; storage_config_id?: string; object_key?: string; storage_driver?: string; image_group?: string; visibility_status: PublishStatus; review_reason?: string; published_at?: string | null; author_name?: string; like_count?: number; favorite_count?: number; liked_by_viewer?: boolean; favorited_by_viewer?: boolean; created_at: string }
 export type GalleryBatchFailure = { id: string; code: string; message: string }
 export type GalleryBatchMutationResult = { succeeded: Array<{ id: string; entity: GalleryImage }>; failed: GalleryBatchFailure[] }
 export type GalleryExportJob = {

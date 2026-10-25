@@ -3,6 +3,7 @@
 package ent
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -31,6 +32,8 @@ type APIKey struct {
 	SecretHash string `json:"secret_hash,omitempty"`
 	// SecretCiphertext holds the value of the "secret_ciphertext" field.
 	SecretCiphertext *string `json:"secret_ciphertext,omitempty"`
+	// Scopes holds the value of the "scopes" field.
+	Scopes []string `json:"scopes,omitempty"`
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
 	// Status holds the value of the "status" field.
@@ -65,6 +68,8 @@ func (*APIKey) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
+		case apikey.FieldScopes:
+			values[i] = new([]byte)
 		case apikey.FieldID, apikey.FieldUserID, apikey.FieldRpmLimit, apikey.FieldRpmWindowCount:
 			values[i] = new(sql.NullInt64)
 		case apikey.FieldAccessKey, apikey.FieldSecretHash, apikey.FieldSecretCiphertext, apikey.FieldName, apikey.FieldStatus, apikey.FieldGroupCode, apikey.FieldTotalQuotaPoints, apikey.FieldDailyQuotaPoints, apikey.FieldTotalQuotaUsedPoints, apikey.FieldDailyQuotaUsedPoints, apikey.FieldQuotaUsageDay:
@@ -135,6 +140,14 @@ func (_m *APIKey) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.SecretCiphertext = new(string)
 				*_m.SecretCiphertext = value.String
+			}
+		case apikey.FieldScopes:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field scopes", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.Scopes); err != nil {
+					return fmt.Errorf("unmarshal field scopes: %w", err)
+				}
 			}
 		case apikey.FieldName:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -281,6 +294,9 @@ func (_m *APIKey) String() string {
 		builder.WriteString("secret_ciphertext=")
 		builder.WriteString(*v)
 	}
+	builder.WriteString(", ")
+	builder.WriteString("scopes=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Scopes))
 	builder.WriteString(", ")
 	builder.WriteString("name=")
 	builder.WriteString(_m.Name)

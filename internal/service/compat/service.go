@@ -2,60 +2,14 @@ package compat
 
 import (
 	"context"
-	"sort"
 	"strings"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
-	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/domain/modelhub"
 	"github.com/fatballfish/pic-gallery/internal/provider"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
-
-type GenerateRequest struct {
-	TaskID              string
-	UserID              int64
-	APIKeyID            int64
-	SourceChannel       string
-	UserGroupCode       string
-	UserGroupMultiplier string
-	Model               string
-	AbstractModel       string
-	RouteModelCode      string
-	Prompt              string
-	SizeMode            string
-	BaseResolution      string
-	Size                string
-	N                   int
-	Quality             string
-	OutputFormat        string
-	Background          string
-	OutputCompression   int
-	Moderation          string
-	ResponseFormat      string
-	User                string
-}
-
-type EditRequest struct {
-	TaskID              string
-	UserID              int64
-	APIKeyID            int64
-	SourceChannel       string
-	UserGroupCode       string
-	UserGroupMultiplier string
-	Model               string
-	AbstractModel       string
-	RouteModelCode      string
-	Prompt              string
-	Size                string
-	N                   int
-	Quality             string
-	ResponseFormat      string
-	Images              []provider.ImageInput
-	Mask                *provider.ImageInput
-	User                string
-}
 
 type ModelItem struct {
 	ID      string `json:"id"`
@@ -69,9 +23,10 @@ type ModelsResponse struct {
 }
 
 type Service struct {
-	cfg     config.Config
-	taskSvc *imagetaskservice.Service
-	routing modelhub.ModelRoutingSource
+	operations Operations
+	cfg        config.Config
+	taskSvc    *imagetaskservice.Service
+	routing    modelhub.ModelRoutingSource
 }
 
 type ModelSelection struct {
@@ -113,110 +68,6 @@ func (s *Service) ResolveModel(ctx context.Context, model string) (ModelSelectio
 	return ModelSelection{AbstractModel: resolved, RouteModelCode: resolved}, nil
 }
 
-func (s *Service) Generate(ctx context.Context, req GenerateRequest) (provider.ImageResponse, error) {
-	if strings.TrimSpace(req.Model) == "" || strings.TrimSpace(req.Prompt) == "" {
-		return provider.ImageResponse{}, errs.BadRequest("model and prompt are required")
-	}
-	selection := ModelSelection{AbstractModel: req.AbstractModel, RouteModelCode: req.RouteModelCode}
-	if strings.TrimSpace(selection.AbstractModel) == "" && strings.TrimSpace(selection.RouteModelCode) == "" {
-		var err error
-		selection, err = s.ResolveModel(ctx, req.Model)
-		if err != nil {
-			return provider.ImageResponse{}, err
-		}
-	}
-	result, err := s.taskSvc.Execute(ctx, domainimagetask.ExecuteRequest{
-		TaskID:              req.TaskID,
-		UserID:              req.UserID,
-		APIKeyID:            req.APIKeyID,
-		SourceChannel:       req.SourceChannel,
-		UserGroupCode:       req.UserGroupCode,
-		UserGroupCodes:      []string{req.UserGroupCode},
-		UserGroupMultiplier: req.UserGroupMultiplier,
-		AbstractModel:       selection.AbstractModel,
-		RouteModelCode:      selection.RouteModelCode,
-		TaskType:            string(provider.TaskTypeTextToImage),
-		Prompt:              req.Prompt,
-		SizeMode:            req.SizeMode,
-		RequestedSize:       req.Size,
-		BaseResolution:      req.BaseResolution,
-		Quality:             req.Quality,
-		OutputFormat:        req.OutputFormat,
-		Background:          req.Background,
-		OutputCompression:   req.OutputCompression,
-		Moderation:          req.Moderation,
-		OutputImageCount:    req.N,
-		ResponseFormat:      string(normalizeResponseFormat(req.ResponseFormat)),
-		User:                req.User,
-		PreferredProviders:  compatProviderPreference(s.cfg),
-	})
-	if err != nil {
-		return provider.ImageResponse{}, err
-	}
-	return result.Response, nil
-}
-
-func (s *Service) Edit(ctx context.Context, req EditRequest) (provider.ImageResponse, error) {
-	if strings.TrimSpace(req.Model) == "" || strings.TrimSpace(req.Prompt) == "" {
-		return provider.ImageResponse{}, errs.BadRequest("model and prompt are required")
-	}
-	if len(req.Images) == 0 {
-		return provider.ImageResponse{}, errs.New(400, errs.CodeImageReferenceRequired, "image is required")
-	}
-	selection := ModelSelection{AbstractModel: req.AbstractModel, RouteModelCode: req.RouteModelCode}
-	if strings.TrimSpace(selection.AbstractModel) == "" && strings.TrimSpace(selection.RouteModelCode) == "" {
-		var err error
-		selection, err = s.ResolveModel(ctx, req.Model)
-		if err != nil {
-			return provider.ImageResponse{}, err
-		}
-	}
-	result, err := s.taskSvc.Execute(ctx, domainimagetask.ExecuteRequest{
-		TaskID:              req.TaskID,
-		UserID:              req.UserID,
-		APIKeyID:            req.APIKeyID,
-		SourceChannel:       req.SourceChannel,
-		UserGroupCode:       req.UserGroupCode,
-		UserGroupCodes:      []string{req.UserGroupCode},
-		UserGroupMultiplier: req.UserGroupMultiplier,
-		AbstractModel:       selection.AbstractModel,
-		RouteModelCode:      selection.RouteModelCode,
-		TaskType:            string(provider.TaskTypeImageEdit),
-		Prompt:              req.Prompt,
-		RequestedSize:       defaultString(req.Size, "auto"),
-		BaseResolution:      "auto",
-		Quality:             req.Quality,
-		OutputImageCount:    req.N,
-		ResponseFormat:      string(normalizeResponseFormat(req.ResponseFormat)),
-		ReferenceImages:     append([]provider.ImageInput(nil), req.Images...),
-		Mask:                req.Mask,
-		User:                req.User,
-		PreferredProviders:  compatProviderPreference(s.cfg),
-	})
-	if err != nil {
-		return provider.ImageResponse{}, err
-	}
-	return result.Response, nil
-}
-
-func (s *Service) Models() ModelsResponse {
-	ids := make([]string, 0, len(s.cfg.Routing.OpenAICompatModelMap))
-	for id := range s.cfg.Routing.OpenAICompatModelMap {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-
-	items := make([]ModelItem, 0, len(ids))
-	for _, id := range ids {
-		items = append(items, ModelItem{
-			ID:      id,
-			Object:  "model",
-			OwnedBy: defaultString(s.cfg.App.Name, "pic-gallery"),
-		})
-	}
-	return ModelsResponse{Object: "list", Data: items}
-}
-
 func MapError(err error) *errs.Error {
 	if err == nil {
 		return nil
@@ -248,22 +99,6 @@ func (s *Service) resolveModelCode(model string) string {
 		return model
 	}
 	return ""
-}
-
-func normalizeResponseFormat(value string) provider.ResponseFormat {
-	if strings.EqualFold(strings.TrimSpace(value), string(provider.ResponseFormatB64JSON)) {
-		return provider.ResponseFormatB64JSON
-	}
-	return provider.ResponseFormatURL
-}
-
-func compatProviderPreference(cfg config.Config) []string {
-	preferred := []string{}
-	if cfg.Routing.DefaultProvider != "" {
-		preferred = append(preferred, cfg.Routing.DefaultProvider)
-	}
-	preferred = append(preferred, cfg.Routing.FallbackProviders...)
-	return preferred
 }
 
 func defaultString(value, fallback string) string {

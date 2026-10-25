@@ -31,6 +31,7 @@ func (s *APIKeyStore) Create(ctx context.Context, key domainapikey.APIKey) (doma
 		SetAccessKey(key.AccessKey).
 		SetSecretHash(key.SecretHash).
 		SetNillableSecretCiphertext(stringPtrOrNil(key.SecretCiphertext)).
+		SetScopes(domainapikey.EffectiveScopes(key.Scopes)).
 		SetName(key.Name).
 		SetStatus(key.Status).
 		SetGroupCode(key.GroupCode).
@@ -107,6 +108,7 @@ func (s *APIKeyStore) GetBySecretHash(ctx context.Context, secretHash string) (d
 func (s *APIKeyStore) UpdateForUser(ctx context.Context, userID int64, key domainapikey.APIKey) (domainapikey.APIKey, error) {
 	update := s.client.APIKey.Update().
 		Where(apikey.IDEQ(int(key.ID)), apikey.UserIDEQ(userID), apikey.DeletedAtIsNil()).
+		SetScopes(domainapikey.EffectiveScopes(key.Scopes)).
 		SetName(key.Name).
 		SetGroupCode(key.GroupCode).
 		SetNillableTotalQuotaPoints(key.TotalQuotaPoints).
@@ -172,7 +174,7 @@ func (s *APIKeyStore) UpdateSecretForUser(ctx context.Context, userID, id int64,
 	updated, err := s.client.APIKey.Update().
 		Where(apikey.IDEQ(int(id)), apikey.UserIDEQ(userID), apikey.DeletedAtIsNil()).
 		SetSecretHash(secretHash).
-		SetNillableSecretCiphertext(stringPtrOrNil(secretCiphertext)).
+		SetSecretCiphertext(secretCiphertext).
 		Save(ctx)
 	if err != nil {
 		return domainapikey.APIKey{}, err
@@ -262,6 +264,14 @@ func (s *APIKeyStore) reserveQuotaOnce(ctx context.Context, userID, id int64, re
 		return err
 	}
 	defer tx.Rollback()
+	if err := ReserveAPIKeyQuotaTx(ctx, tx, userID, id, reservationID, points, at); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// ReserveAPIKeyQuotaTx joins key quota accounting to the caller transaction.
+func ReserveAPIKeyQuotaTx(ctx context.Context, tx *repoent.Tx, userID, id int64, reservationID string, points decimal.Decimal, at time.Time) error {
 
 	existing, err := tx.APIKeyQuotaReservation.Query().
 		Where(apikeyquotareservation.APIKeyIDEQ(id), apikeyquotareservation.ReservationIDEQ(reservationID)).
@@ -272,7 +282,7 @@ func (s *APIKeyStore) reserveQuotaOnce(ctx context.Context, userID, id int64, re
 			return errs.New(http.StatusConflict, errs.CodeConflict, "quota reservation points conflict")
 		}
 		if existing.Status == "active" {
-			return tx.Commit()
+			return nil
 		}
 		if existing.Status != "released" {
 			return errs.New(http.StatusConflict, errs.CodeConflict, "quota reservation conflict")
@@ -292,18 +302,35 @@ func (s *APIKeyStore) reserveQuotaOnce(ctx context.Context, userID, id int64, re
 		return err
 	}
 	key := mapAPIKeyEntity(entity)
+	if key.Status != domainapikey.StatusActive || (key.ExpiresAt != nil && !at.Before(*key.ExpiresAt)) {
+		return errs.New(http.StatusForbidden, errs.CodeAPIKeyDisabled, "api key is disabled or expired")
+	}
 	day := at.UTC().Format("2006-01-02")
 	totalUsed := parseDecimalOrZero(key.TotalQuotaUsedPoints)
 	dailyUsed := parseDecimalOrZero(key.DailyQuotaUsedPoints)
 	if key.QuotaUsageDay == nil || *key.QuotaUsageDay != day {
 		dailyUsed = decimal.Zero
 	}
+	// Wallet reserve/refund entries are canonical across image and video.
+	// Keep standalone reservations covered without counting video twice.
+	billing := NewBillingStore(tx.Client(), 5)
+	totalLedger, err := billing.apiKeyUsage(ctx, tx.Client(), id, nil)
+	if err != nil {
+		return err
+	}
+	dayStart := at.UTC().Truncate(24 * time.Hour)
+	dailyLedger, err := billing.apiKeyUsage(ctx, tx.Client(), id, &dayStart)
+	if err != nil {
+		return err
+	}
+	totalForLimit := decimal.Max(totalUsed, totalLedger)
+	dailyForLimit := decimal.Max(dailyUsed, dailyLedger)
 	if key.TotalQuotaPoints != nil {
 		limit, err := decimal.NewFromString(*key.TotalQuotaPoints)
 		if err != nil {
 			return err
 		}
-		if totalUsed.Add(points).GreaterThan(limit) {
+		if totalForLimit.Add(points).GreaterThan(limit) {
 			return errs.New(http.StatusForbidden, errs.CodeInsufficientPoints, "api key total quota exceeded")
 		}
 	}
@@ -312,7 +339,7 @@ func (s *APIKeyStore) reserveQuotaOnce(ctx context.Context, userID, id int64, re
 		if err != nil {
 			return err
 		}
-		if dailyUsed.Add(points).GreaterThan(limit) {
+		if dailyForLimit.Add(points).GreaterThan(limit) {
 			return errs.New(http.StatusForbidden, errs.CodeInsufficientPoints, "api key daily quota exceeded")
 		}
 	}
@@ -358,7 +385,7 @@ func (s *APIKeyStore) reserveQuotaOnce(ctx context.Context, userID, id int64, re
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 func (s *APIKeyStore) ReleaseQuota(ctx context.Context, id int64, reservationID string) error {
@@ -378,6 +405,14 @@ func (s *APIKeyStore) releaseQuotaOnce(ctx context.Context, id int64, reservatio
 		return err
 	}
 	defer tx.Rollback()
+	if err := ReleaseAPIKeyQuotaTx(ctx, tx, id, reservationID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// ReleaseAPIKeyQuotaTx joins key quota accounting to the caller transaction.
+func ReleaseAPIKeyQuotaTx(ctx context.Context, tx *repoent.Tx, id int64, reservationID string) error {
 	reservation, err := tx.APIKeyQuotaReservation.Query().
 		Where(apikeyquotareservation.APIKeyIDEQ(id), apikeyquotareservation.ReservationIDEQ(reservationID)).
 		Only(ctx)
@@ -388,7 +423,7 @@ func (s *APIKeyStore) releaseQuotaOnce(ctx context.Context, id int64, reservatio
 		return err
 	}
 	if reservation.Status != "active" {
-		return tx.Commit()
+		return nil
 	}
 	updatedReservation, err := tx.APIKeyQuotaReservation.Update().
 		Where(apikeyquotareservation.IDEQ(reservation.ID), apikeyquotareservation.StatusEQ("active")).
@@ -398,7 +433,7 @@ func (s *APIKeyStore) releaseQuotaOnce(ctx context.Context, id int64, reservatio
 		return err
 	}
 	if updatedReservation == 0 {
-		return tx.Commit()
+		return nil
 	}
 	entity, err := tx.APIKey.Query().Where(apikey.IDEQ(int(id)), apikey.DeletedAtIsNil()).Only(ctx)
 	if err != nil {
@@ -441,7 +476,95 @@ func (s *APIKeyStore) releaseQuotaOnce(ctx context.Context, id int64, reservatio
 	if updatedKey != 1 {
 		return repoerr.ErrConflict
 	}
-	return tx.Commit()
+	return nil
+}
+
+// SettleAPIKeyQuotaTx replaces a reservation with actual usage exactly once.
+// The original reservation day retains attribution across midnight.
+func SettleAPIKeyQuotaTx(ctx context.Context, tx *repoent.Tx, id int64, reservationID string, actual decimal.Decimal, at time.Time) error {
+	if actual.IsNegative() {
+		return errs.BadRequest("actual quota points must be non-negative")
+	}
+	actual = actual.Round(5)
+	reservation, err := tx.APIKeyQuotaReservation.Query().
+		Where(apikeyquotareservation.APIKeyIDEQ(id), apikeyquotareservation.ReservationIDEQ(reservationID)).
+		Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	if reservation.Status == "settled" {
+		if reservation.Points != formatDecimal(actual) {
+			return errs.New(http.StatusConflict, errs.CodeConflict, "quota settlement points conflict")
+		}
+		return nil
+	}
+	if reservation.Status != "active" {
+		return errs.New(http.StatusConflict, errs.CodeConflict, "quota reservation is not active")
+	}
+	reserved, err := decimal.NewFromString(reservation.Points)
+	if err != nil {
+		return err
+	}
+	if actual.GreaterThan(reserved) {
+		return errs.New(http.StatusConflict, errs.CodeConflict, "actual quota exceeds reservation")
+	}
+	updatedReservation, err := tx.APIKeyQuotaReservation.Update().
+		Where(apikeyquotareservation.IDEQ(reservation.ID), apikeyquotareservation.StatusEQ("active")).
+		SetStatus("settled").
+		SetPoints(formatDecimal(actual)).
+		Save(ctx)
+	if err != nil {
+		return err
+	}
+	if updatedReservation == 0 {
+		return repoerr.ErrConflict
+	}
+	entity, err := tx.APIKey.Query().Where(apikey.IDEQ(int(id))).Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return repoerr.ErrNotFound
+		}
+		return err
+	}
+	key := mapAPIKeyEntity(entity)
+	points, err := decimal.NewFromString(reservation.Points)
+	if err != nil {
+		return err
+	}
+	points = points.Sub(actual)
+	totalUsed := parseDecimalOrZero(key.TotalQuotaUsedPoints).Sub(points)
+	if totalUsed.IsNegative() {
+		totalUsed = decimal.Zero
+	}
+	dailyUsed := parseDecimalOrZero(key.DailyQuotaUsedPoints)
+	if key.QuotaUsageDay != nil && *key.QuotaUsageDay == reservation.UsageDay {
+		dailyUsed = dailyUsed.Sub(points)
+		if dailyUsed.IsNegative() {
+			dailyUsed = decimal.Zero
+		}
+	}
+	update := tx.APIKey.Update().
+		Where(apikey.IDEQ(int(id))).
+		Where(apikey.TotalQuotaUsedPointsEQ(defaultAPIKeyString(key.TotalQuotaUsedPoints, zeroAPIKeyPoints))).
+		Where(apikey.DailyQuotaUsedPointsEQ(defaultAPIKeyString(key.DailyQuotaUsedPoints, zeroAPIKeyPoints))).
+		SetTotalQuotaUsedPoints(formatDecimal(totalUsed)).
+		SetDailyQuotaUsedPoints(formatDecimal(dailyUsed))
+	if key.QuotaUsageDay == nil {
+		update.Where(apikey.QuotaUsageDayIsNil())
+	} else {
+		update.Where(apikey.QuotaUsageDayEQ(*key.QuotaUsageDay))
+	}
+	updatedKey, err := update.Save(ctx)
+	if err != nil {
+		return err
+	}
+	if updatedKey != 1 {
+		return repoerr.ErrConflict
+	}
+	return nil
 }
 
 func (s *APIKeyStore) getByIDOnly(ctx context.Context, id int64) (domainapikey.APIKey, error) {
@@ -475,6 +598,7 @@ func mapAPIKeyEntity(entity *repoent.APIKey) domainapikey.APIKey {
 		SecretHash:           entity.SecretHash,
 		SecretCiphertext:     stringValue(entity.SecretCiphertext),
 		SigningSecret:        stringValue(entity.SecretCiphertext),
+		Scopes:               domainapikey.EffectiveScopes(entity.Scopes),
 		Name:                 entity.Name,
 		Status:               entity.Status,
 		GroupCode:            entity.GroupCode,

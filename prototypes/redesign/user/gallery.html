@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>资产 — Mikiko Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Manrope:wght@300..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/user.css">
+<style>
+  .gl-bulk { position: fixed; left: 50%; bottom: 26px; z-index: 55; display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 16px; border: 1px solid var(--line-2); border-radius: 999px; background: color-mix(in srgb, var(--bg-elev) 92%, transparent); backdrop-filter: blur(20px); box-shadow: var(--shadow-md); transform: translate(-50%, 130%); transition: transform var(--t-base) var(--ease-out); }
+  .gl-bulk.is-open { transform: translate(-50%, 0); }
+  .gl-bulk__count { color: var(--ink-2); font-size: 12.5px; white-space: nowrap; }
+  .gl-bulk__count b { color: var(--accent); font-family: var(--font-mono); }
+  .gl-card { position: relative; }
+  .gl-card.is-selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 0 30px rgba(217,168,106,.15); }
+  .gl-check { position: absolute; left: 10px; top: 10px; z-index: 3; display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid rgba(255,255,255,.5); border-radius: 7px; background: rgba(7,8,13,.4); color: transparent; backdrop-filter: blur(6px); font-size: 12px; }
+  .gl-card.is-selected .gl-check { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .gl-status { position: absolute; right: 10px; bottom: 10px; z-index: 2; }
+  .gl-empty-actions { display: flex; gap: 8px; margin-top: 4px; }
+  @media (max-width: 760px) { .gl-bulk { left: 10px; right: 10px; bottom: 74px; transform: translateY(130%); border-radius: 16px; overflow-x: auto; } .gl-bulk.is-open { transform: none; } }
+</style>
+</head>
+<body data-site="user" data-page="gallery">
+<div class="u-shell"><div class="u-main">
+  <div class="u-content">
+    <div class="u-page-head">
+      <div class="u-page-head__copy">
+        <span class="u-eyebrow">Media Library</span>
+        <h1 class="u-h1">资产</h1>
+        <p class="u-sub">图片、视频、音频与文档在同一个库里。筛选条件保持在同一行，批量操作只在真正选中后出现。</p>
+      </div>
+      <div class="u-page-head__actions">
+        <button class="u-btn u-btn--sm" type="button" data-toast="已打开上传队列">上传文件</button>
+        <button class="u-btn u-btn--sm" type="button" data-toast="已刷新资产库">刷新</button>
+      </div>
+    </div>
+
+    <div class="u-stat-row" style="margin-bottom:20px">
+      <div class="u-stat"><span class="u-stat__label">全部资产</span><span class="u-stat__value">1,284</span><span class="u-stat__foot">当前项目 862</span></div>
+      <div class="u-stat"><span class="u-stat__label">图片</span><span class="u-stat__value">1,102</span><span class="u-stat__foot">4:3 封面</span></div>
+      <div class="u-stat"><span class="u-stat__label">视频</span><span class="u-stat__value">148</span><span class="u-stat__foot">悬停自动播放</span></div>
+      <div class="u-stat"><span class="u-stat__label">存储占用</span><span class="u-stat__value">6.4 GB</span><span class="u-stat__foot">上限 50 GB</span></div>
+    </div>
+
+    <div class="u-toolbar">
+      <div class="u-search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input placeholder="搜索名称、提示词或任务 ID">
+      </div>
+      <select class="u-filter"><option>全部类型</option><option>图片</option><option>视频</option><option>音频</option></select>
+      <select class="u-filter"><option>全部来源</option><option>生成</option><option>本地上传</option></select>
+      <select class="u-filter"><option>全部分组</option><option>夜航系列</option><option>未分组</option></select>
+      <select class="u-filter"><option>全部状态</option><option>就绪</option><option>处理中</option><option>失败</option></select>
+      <select class="u-filter"><option>最新优先</option><option>名称</option><option>大小</option></select>
+      <button class="u-btn u-btn--sm u-btn--quiet" type="button" data-toast="已重置筛选">重置</button>
+    </div>
+
+    <div class="u-grid u-grid--gallery">
+      <article class="u-card gl-card">
+        <button class="gl-check" type="button" aria-label="选择资产">✓</button>
+        <a class="u-card__media" href="#media-detail" data-open="#media-detail"><img src="https://picsum.photos/seed/gl-1/720/540" data-seed="gl-1" alt="玻璃温室"><span class="u-card__tag">图片</span></a>
+        <div class="u-card__body"><div class="u-card__title">黄昏温室 · 第 1 张</div><div class="u-card__meta"><span>1120×1400 · PNG</span><span>2 分钟前</span></div></div>
+      </article>
+      <article class="u-card gl-card">
+        <button class="gl-check" type="button" aria-label="选择资产">✓</button>
+        <a class="u-card__media" href="#media-detail" data-open="#media-detail"><img src="https://picsum.photos/seed/gl-2/720/540" data-seed="gl-2" alt="雨夜街角"><span class="u-card__tag">图片</span></a>
+        <div class="u-card__body"><div class="u-card__title">雨夜街角霓虹</div><div class="u-card__meta"><span>1536×1024 · WebP</span><span>1 小时前</span></div></div>
+      </article>
+      <article class="u-card gl-card">
+        <button class="gl-check" type="button" aria-label="选择资产">✓</button>
+        <a class="u-card__media" href="#media-detail" data-open="#media-detail"><img src="https://picsum.photos/seed/gl-3/720/540" data-seed="gl-3" alt="夜班电车"><span class="u-card__tag">视频</span><span class="u-play"><span>▶</span></span></a>
+        <div class="u-card__body"><div class="u-card__title">夜班电车 8 秒</div><div class="u-card__meta"><span>1080p · MP4</span><span>3 小时前</span></div></div>
+      </article>
+      <article class="u-card gl-card">
+        <button class="gl-check" type="button" aria-label="选择资产">✓</button>
+        <a class="u-card__media" href="#media-detail" data-open="#media-detail"><img src="https://picsum.photos/seed/gl-4/720/540" data-seed="gl-4" alt="盐湖"><span class="u-card__tag">图片</span></a>
+        <div class="u-card__body"><div class="u-card__title">盐湖逆光人影</div><div class="u-card__meta"><span>1024×1280 · PNG</span><span>昨天</span></div></div>
+      </article>
+      <article class="u-card gl-card is-selected">
+        <button class="gl-check" type="button" aria-label="取消选择">✓</button>
+        <a class="u-card__media" href="#media-detail" data-open="#media-detail"><img src="https://picsum.photos/seed/gl-5/720/540" data-seed="gl-5" alt="织物"><span class="u-card__tag">图片</span></a>
+        <div class="u-card__body"><div class="u-card__title">织物褶皱与自然光</div><div class="u-card__meta"><span>1536×1536 · PNG</span><span>昨天</span></div></div>
+      </article>
+      <article class="u-card gl-card">
+        <button class="gl-check" type="button" aria-label="选择资产">✓</button>
+        <a class="u-card__media" href="#media-detail" data-open="#media-detail"><img src="https://picsum.photos/seed/gl-6/720/540" data-seed="gl-6" alt="雾林"><span class="u-card__tag">图片</span></a>
+        <div class="u-card__body"><div class="u-card__title">雾中杉木林</div><div class="u-card__meta"><span>2048×1365 · PNG</span><span>2 天前</span></div></div>
+      </article>
+      <article class="u-card gl-card">
+        <button class="gl-check" type="button" aria-label="选择资产">✓</button>
+        <a class="u-card__media" href="#media-detail" data-open="#media-detail">
+          <div style="display:grid;place-items:center;height:100%;color:var(--ink-3);font-family:var(--font-mono);font-size:11px">处理中 · 生成缩略图</div>
+          <span class="u-skeleton" style="position:absolute;inset:0;border-radius:0"></span>
+        </a>
+        <div class="u-card__body"><div class="u-card__title">城市夜景扫描件</div><div class="u-card__meta"><span>处理中</span><span>刚上传</span></div></div>
+      </article>
+      <article class="u-card gl-card">
+        <button class="gl-check" type="button" aria-label="选择资产">✓</button>
+        <a class="u-card__media" href="#media-detail" data-open="#media-detail">
+          <div style="display:grid;place-items:center;height:100%;gap:6px;color:var(--danger);font-size:11px;text-align:center;padding:16px">
+            <span>处理失败</span><span style="color:var(--ink-3);font-size:10px">格式不受支持</span>
+          </div>
+        </a>
+        <div class="u-card__body"><div class="u-card__title">lavender_haze.tiff</div><div class="u-card__meta"><span>失败</span><button style="border:0;background:transparent;color:var(--accent);font-size:10.5px" type="button" data-toast="已重新排队处理">重试</button></div></div>
+      </article>
+    </div>
+
+    <div style="display:flex;justify-content:center;margin-top:26px">
+      <button class="u-btn" type="button" data-toast="已加载下一页 24 项">加载更多</button>
+    </div>
+  </div>
+</div></div>
+
+<div class="gl-bulk is-open" role="region" aria-label="批量操作">
+  <span class="gl-bulk__count">已选 <b>1</b> 项</span>
+  <button class="u-btn u-btn--sm u-btn--quiet" type="button" data-toast="已全选当前页">全选</button>
+  <button class="u-btn u-btn--sm" type="button" data-toast="已生成打包下载任务">下载</button>
+  <button class="u-btn u-btn--sm" type="button" data-toast="已打开分组选择">分组</button>
+  <button class="u-btn u-btn--sm" type="button" data-toast="已打开项目转移">转移</button>
+  <button class="u-btn u-btn--sm" type="button" data-toast="已提交公开申请，等待审核">公开</button>
+  <button class="u-btn u-btn--sm u-btn--danger" type="button" data-toast="删除需二次确认" data-tone="bad">删除</button>
+  <button class="u-icon-btn u-icon-btn--plain" type="button" aria-label="取消选择" onclick="document.querySelector('.gl-bulk').classList.remove('is-open')">✕</button>
+</div>
+
+<script src="../assets/shell.js"></script>
+<script>
+  document.querySelectorAll('.gl-card').forEach(card => {
+    card.querySelector('.gl-check').addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      card.classList.toggle('is-selected');
+      const count = document.querySelectorAll('.gl-card.is-selected').length;
+      const bulk = document.querySelector('.gl-bulk');
+      bulk.classList.toggle('is-open', count > 0);
+      bulk.querySelector('b').textContent = count;
+    });
+  });
+</script>
+</body>
+</html>

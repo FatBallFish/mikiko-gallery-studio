@@ -1,3 +1,5 @@
+import { creationReuseEvent } from '../media/mediaCreationNavigation'
+import { parseUserHashState } from '../../routeState'
 import { useEffect, useState } from 'react'
 import { Film, Image as ImageIcon } from 'lucide-react'
 import { cn } from '../../../../shared/classnames'
@@ -13,6 +15,7 @@ export function CreationPage({ initialTaskId, initialMedia, initialAssetId, vide
     if (initialTaskId && initialMedia === 'video') return 'video'
     if (!videoCreationEnabled || (initialTaskId && initialMedia !== 'video')) return 'image'
     const remembered = readMode()
+    if (initialMedia === 'image') return 'image'
     return readCreationEntry(initialMedia ? `?media=${initialMedia}${initialAssetId ? `&asset_id=${encodeURIComponent(initialAssetId)}` : ''}` : '', remembered).mode
   })
 
@@ -21,9 +24,20 @@ export function CreationPage({ initialTaskId, initialMedia, initialAssetId, vide
       setMode('image')
       return
     }
-    if (initialMedia === 'video' || initialAssetId && videoCreationEnabled) setMode('video')
+    if (initialMedia === 'video' || initialMedia !== 'image' && initialAssetId && videoCreationEnabled) setMode('video')
     else if (initialMedia === 'image') setMode('image')
   }, [initialAssetId, initialMedia, initialTaskId, videoCreationEnabled])
+
+  const [videoEntryRevision, setVideoEntryRevision] = useState(0)
+  useEffect(() => {
+    const restore = () => {
+      const entry = parseUserHashState(window.location.hash)
+      if (entry.media === 'video') { setMode('video'); setVideoEntryRevision((value) => value + 1) }
+      else if (entry.media === 'image') setMode('image')
+    }
+    window.addEventListener(creationReuseEvent, restore)
+    return () => window.removeEventListener(creationReuseEvent, restore)
+  }, [])
 
   function selectMode(next: CreationMediaMode) {
     setMode(next)
@@ -55,7 +69,7 @@ export function CreationPage({ initialTaskId, initialMedia, initialAssetId, vide
         ) : null}
       </div>
     </div>
-    {mode === 'image' ? <ImageCreationPanel initialTaskId={initialMedia === 'video' ? undefined : initialTaskId} /> : <VideoCreationPanel initialTaskId={initialMedia === 'video' ? initialTaskId : undefined} initialAssetId={initialAssetId} />}
+    {mode === 'image' ? <ImageCreationPanel initialTaskId={initialMedia === 'video' ? undefined : initialTaskId} /> : <VideoCreationPanel key={videoEntryRevision} initialTaskId={initialMedia === 'video' ? initialTaskId : undefined} initialAssetId={initialAssetId} />}
   </div>
 }
 

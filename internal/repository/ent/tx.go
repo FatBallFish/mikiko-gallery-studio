@@ -18,6 +18,8 @@ type Tx struct {
 	APIKeyQuotaReservation *APIKeyQuotaReservationClient
 	// AdminUser is the client for interacting with the AdminUser builders.
 	AdminUser *AdminUserClient
+	// AssetGroup is the client for interacting with the AssetGroup builders.
+	AssetGroup *AssetGroupClient
 	// AuditLog is the client for interacting with the AuditLog builders.
 	AuditLog *AuditLogClient
 	// CanvasGenerationRun is the client for interacting with the CanvasGenerationRun builders.
@@ -62,6 +64,8 @@ type Tx struct {
 	ModelProvider *ModelProviderClient
 	// ModelRoute is the client for interacting with the ModelRoute builders.
 	ModelRoute *ModelRouteClient
+	// OAuthRecord is the client for interacting with the OAuthRecord builders.
+	OAuthRecord *OAuthRecordClient
 	// ObjectDeletionJob is the client for interacting with the ObjectDeletionJob builders.
 	ObjectDeletionJob *ObjectDeletionJobClient
 	// ObjectReconcileCheckpoint is the client for interacting with the ObjectReconcileCheckpoint builders.
@@ -284,6 +288,7 @@ func (tx *Tx) init() {
 	tx.APIKey = NewAPIKeyClient(tx.config)
 	tx.APIKeyQuotaReservation = NewAPIKeyQuotaReservationClient(tx.config)
 	tx.AdminUser = NewAdminUserClient(tx.config)
+	tx.AssetGroup = NewAssetGroupClient(tx.config)
 	tx.AuditLog = NewAuditLogClient(tx.config)
 	tx.CanvasGenerationRun = NewCanvasGenerationRunClient(tx.config)
 	tx.ClusterChallenge = NewClusterChallengeClient(tx.config)
@@ -306,6 +311,7 @@ func (tx *Tx) init() {
 	tx.ModelAccountModel = NewModelAccountModelClient(tx.config)
 	tx.ModelProvider = NewModelProviderClient(tx.config)
 	tx.ModelRoute = NewModelRouteClient(tx.config)
+	tx.OAuthRecord = NewOAuthRecordClient(tx.config)
 	tx.ObjectDeletionJob = NewObjectDeletionJobClient(tx.config)
 	tx.ObjectReconcileCheckpoint = NewObjectReconcileCheckpointClient(tx.config)
 	tx.ObjectStorageConfig = NewObjectStorageConfigClient(tx.config)

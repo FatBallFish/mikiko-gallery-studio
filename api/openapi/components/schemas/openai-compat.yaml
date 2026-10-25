@@ -2,7 +2,7 @@ components:
   schemas:
     OpenAIImageGenerationRequest:
       type: object
-      required: [model, prompt]
+      required: [ model, prompt ]
       properties:
         model:
           type: string
@@ -21,12 +21,24 @@ components:
           example: auto
         response_format:
           type: string
-          enum: [url, b64_json]
+          enum: [ url, b64_json ]
         user:
           type: string
+        stream:
+          type: boolean
+          default: false
+          description: Platform task/result/error lifecycle SSE extension; not OpenAI partial images.
+        output_format:
+          type: string
+        background:
+          type: string
+        moderation:
+          type: string
+        output_compression:
+          type: integer
     OpenAIImageEditRequest:
       type: object
-      required: [model, image, prompt]
+      required: [ model, image, prompt ]
       properties:
         model:
           type: string
@@ -53,7 +65,19 @@ components:
           type: string
         response_format:
           type: string
-          enum: [url, b64_json]
+          enum: [ url, b64_json ]
+        stream:
+          type: boolean
+          default: false
+          description: Platform task/result/error lifecycle SSE extension; not OpenAI partial images.
+        output_format:
+          type: string
+        background:
+          type: string
+        moderation:
+          type: string
+        output_compression:
+          type: integer
     OpenAIImageDatum:
       type: object
       properties:

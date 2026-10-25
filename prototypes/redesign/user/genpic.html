@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>图片创作 — Mikiko Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Manrope:wght@300..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/user.css">
+<style>
+  .cr-switch { display: flex; justify-content: center; margin-bottom: 18px; }
+  .cr-group { display: grid; gap: 9px; }
+  .cr-group__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .cr-group__head h4 { font-size: 12px; font-weight: 700; letter-spacing: .02em; }
+  .cr-group__head span { color: var(--ink-3); font-family: var(--font-mono); font-size: 10px; }
+  .cr-inline { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .cr-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+  .cr-preset { min-height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--ink-3); font-family: var(--font-mono); font-size: 10.5px; }
+  .cr-preset.is-active { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent); }
+  .cr-output { display: grid; gap: 12px; }
+  .cr-figure { display: grid; gap: 8px; }
+  .cr-figure__frame { position: relative; overflow: hidden; border-radius: 10px; background: var(--media-bg); }
+  .cr-figure__frame img { width: 100%; display: block; }
+  .cr-figure__ops { position: absolute; right: 8px; top: 8px; display: flex; gap: 5px; opacity: 0; transition: opacity var(--t-base); }
+  .cr-figure:hover .cr-figure__ops { opacity: 1; }
+  .cr-figure__cap { display: flex; justify-content: space-between; gap: 10px; color: var(--ink-3); font-family: var(--font-mono); font-size: 10px; }
+  .cr-hist { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .cr-ref-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .cr-ref-head button { color: var(--ink-3); font-size: 11px; border: 0; background: transparent; }
+  @media (max-width: 760px) {
+    .u-controls__head { cursor: pointer; }
+    .u-workbench { grid-template-columns: 1fr; }
+    .u-stage { min-height: 320px; padding: 14px; }
+  }
+</style>
+</head>
+<body data-site="user" data-page="genpic">
+<div class="u-shell"><div class="u-main">
+  <div class="u-content u-content--flush">
+    <div class="cr-switch">
+      <div class="u-segment">
+        <a class="is-active" href="genpic.html">图片生成</a>
+        <a href="video-create.html">视频生成</a>
+      </div>
+    </div>
+
+    <div class="u-workbench">
+      <!-- parameter column -->
+      <aside class="u-controls" id="controls">
+        <div class="u-controls__head" onclick="if(window.matchMedia('(max-width:760px)').matches)this.parentElement.classList.toggle('is-open')">
+          <div style="display:grid;gap:2px">
+            <strong style="font-size:13px">创作参数</strong>
+            <span class="u-meta">图片 · 参考图生图</span>
+          </div>
+          <span class="u-chip u-chip--mono">◈ 24.00</span>
+        </div>
+        <div class="u-controls__body">
+          <div class="cr-group">
+            <div class="cr-group__head"><h4>模型</h4><span>14 可用</span></div>
+            <button class="u-model-pick" type="button" data-toast="模型选择：按分组下钻，显示能力与最低积分">
+              <span class="u-model-pick__icon">P</span>
+              <span class="u-model-pick__copy"><strong>Plus Image</strong><span>写实 / 编辑 / 参考图 · 最低 ◈ 6.00</span></span>
+              <span aria-hidden="true">⌄</span>
+            </button>
+          </div>
+
+          <div class="cr-group">
+            <div class="cr-group__head"><h4>提示词</h4><span>184 / 4000</span></div>
+            <div class="u-prompt-box">
+              <div class="u-prompt-box__head">
+                <span class="u-meta">支持 @资产 与 $变量</span>
+                <div class="u-prompt-box__tools">
+                  <button class="u-prompt-box__tool" type="button" data-toast="已打开提示词优化">✦ 优化</button>
+                  <button class="u-prompt-box__tool" type="button" data-toast="已展开全屏编辑器">⤢</button>
+                </div>
+              </div>
+              <textarea spellcheck="false">黄昏时分的玻璃温室，暖金色斜光穿过锈蚀的钢架，空气中有细小尘埃悬浮。@温室参考 的主体结构，$光线 更柔和，胶片颗粒，中画幅质感。</textarea>
+              <div class="u-prompt-box__foot"><span>@ 插入资产 · $ 插入变量</span><span>◈ 预估随参数更新</span></div>
+            </div>
+          </div>
+
+          <div class="cr-group">
+            <div class="cr-group__head"><h4>参考图</h4><div class="cr-ref-head"><span>2 / 4</span><button type="button" data-toast="从资产库导入">从资产导入</button></div></div>
+            <div class="u-ref-grid">
+              <div class="u-ref-thumb"><img src="https://picsum.photos/seed/gen-ref-1/180/180" data-seed="gen-ref-1" alt="参考图 1"><button type="button" aria-label="移除">✕</button></div>
+              <div class="u-ref-thumb"><img src="https://picsum.photos/seed/gen-ref-2/180/180" data-seed="gen-ref-2" alt="参考图 2"><button type="button" aria-label="移除">✕</button></div>
+              <button class="u-refdrop" type="button" style="min-height:0;aspect-ratio:1;padding:6px" data-toast="上传参考图（PNG/JPG/WebP，≤ 10MB）">
+                <span style="font-size:18px">+</span><span style="font-size:9px">上传</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="cr-group">
+            <div class="cr-group__head"><h4>尺寸模式</h4></div>
+            <div class="u-segment" style="align-self:start">
+              <button type="button">自动</button>
+              <button type="button" class="is-active">按比例</button>
+              <button type="button">按像素</button>
+            </div>
+            <div class="cr-inline">
+              <label class="u-field"><span class="u-label">基础分辨率</span>
+                <select class="u-select"><option>2K 高清</option><option>1K 标准</option><option>4K 超清</option></select>
+              </label>
+              <label class="u-field"><span class="u-label">比例</span>
+                <select class="u-select"><option>4:5 · 1120×1400</option><option>1:1 · 1024×1024</option><option>16:9 · 1536×864</option><option>9:16 · 864×1536</option></select>
+              </label>
+            </div>
+            <div class="u-ratio-grid">
+              <button class="u-ratio" type="button"><i style="width:22px;height:22px"></i>1:1</button>
+              <button class="u-ratio is-active" type="button"><i style="width:18px;height:22px"></i>4:5</button>
+              <button class="u-ratio" type="button"><i style="width:26px;height:15px"></i>16:9</button>
+              <button class="u-ratio" type="button"><i style="width:15px;height:26px"></i>9:16</button>
+            </div>
+          </div>
+
+          <div class="cr-group">
+            <div class="cr-group__head"><h4>质量与输出</h4></div>
+            <div class="cr-inline">
+              <label class="u-field"><span class="u-label">质量</span><select class="u-select"><option>high</option><option>medium</option><option>low</option></select></label>
+              <label class="u-field"><span class="u-label">格式</span><select class="u-select"><option>PNG</option><option>JPEG</option><option>WebP</option></select></label>
+            </div>
+            <div class="cr-inline">
+              <label class="u-field"><span class="u-label">背景</span><select class="u-select"><option>自动</option><option>不透明</option><option>透明</option></select></label>
+              <label class="u-field"><span class="u-label">审核等级</span><select class="u-select"><option>标准</option><option>严格</option></select></label>
+            </div>
+          </div>
+
+          <div class="cr-group">
+            <div class="cr-group__head"><h4>数量</h4><span>上限 1000</span></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+              <div class="u-stepper"><button type="button">−</button><input value="4" aria-label="生成数量"><button type="button">+</button></div>
+              <div class="cr-presets"><button class="cr-preset" type="button">1</button><button class="cr-preset is-active" type="button">4</button><button class="cr-preset" type="button">8</button></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="u-controls__foot">
+          <div class="u-price-row"><span>预估消耗 · 4 张</span><strong>◈ 24.00</strong></div>
+          <div class="u-meta">余额 4,820.50 · 提交后按实际结算</div>
+          <button class="u-btn u-btn--primary u-btn--lg u-btn--block" type="button" data-toast="已提交任务，正在进入队列" data-tone="ok">开始创作</button>
+        </div>
+      </aside>
+
+      <!-- canvas -->
+      <section class="u-canvas">
+        <div class="u-canvas__head">
+          <div class="u-segment" data-tabs="canvas">
+            <button class="is-active" data-tab="current">当前创作</button>
+            <button data-tab="history">历史创作</button>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span class="u-chip u-chip--mono">task_8f21c4e0</span>
+            <button class="u-btn u-btn--sm" type="button" data-toast="已复制任务 ID">复制</button>
+            <button class="u-btn u-btn--sm" type="button" data-open="#media-detail">打开详情</button>
+          </div>
+        </div>
+
+        <div data-tab-panels="canvas">
+          <div data-panel="current" style="display:grid;gap:14px">
+            <div class="u-stage-rail">
+              <span>任务阶段</span>
+              <div class="u-stage-rail__steps">
+                <span class="u-stage-rail__step is-done"><i class="u-stage-rail__dot"></i>参数校验</span>
+                <span class="u-stage-rail__step is-done"><i class="u-stage-rail__dot"></i>模型路由</span>
+                <span class="u-stage-rail__step is-done"><i class="u-stage-rail__dot"></i>队列调度</span>
+                <span class="u-stage-rail__step is-now"><i class="u-stage-rail__dot"></i>图像生成</span>
+                <span class="u-stage-rail__step"><i class="u-stage-rail__dot"></i>结果入库</span>
+                <span class="u-stage-rail__step"><i class="u-stage-rail__dot"></i>积分结算</span>
+              </div>
+              <span class="u-meta">已用 9.4s</span>
+            </div>
+
+            <div class="u-stage">
+              <div class="u-result" style="width:min(560px, 86%)">
+                <img src="https://picsum.photos/seed/detail-main/900/1125" data-seed="detail-main" alt="当前生成结果">
+                <div class="u-result__bar">
+                  <div class="u-result__ops">
+                    <button class="u-result__op" type="button" data-copy="黄昏时分的玻璃温室…" aria-label="复制提示词">⧉</button>
+                    <button class="u-result__op" type="button" data-toast="已复用这组参数" aria-label="复用参数">↻</button>
+                    <button class="u-result__op" type="button" data-open="#media-detail" aria-label="查看详情">⤢</button>
+                    <button class="u-result__op" type="button" data-toast="开始下载" aria-label="下载">↓</button>
+                  </div>
+                  <span class="u-result__caption">#1 · 1120 × 1400 · high · 2.4s</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="cr-output">
+              <div style="display:flex;justify-content:space-between;align-items:baseline">
+                <h3 class="u-h3">本批次输出</h3>
+                <span class="u-meta">4 张 · 成功 2 · 生成中 2</span>
+              </div>
+              <div class="u-grid" style="grid-template-columns:repeat(auto-fill,minmax(190px,1fr))">
+                <figure class="cr-figure">
+                  <div class="cr-figure__frame"><img src="https://picsum.photos/seed/batch-1/560/700" data-seed="batch-1" alt="结果 1"></div>
+                  <figcaption class="cr-figure__cap"><span>#1 · 1120×1400</span><span>2.4s</span></figcaption>
+                </figure>
+                <figure class="cr-figure">
+                  <div class="cr-figure__frame"><img src="https://picsum.photos/seed/batch-2/560/700" data-seed="batch-2" alt="结果 2">
+                    <div class="cr-figure__ops"><button class="u-card__op" type="button" data-open="#media-detail">⤢</button><button class="u-card__op" type="button" data-toast="正在下载">↓</button></div>
+                  </div>
+                  <figcaption class="cr-figure__cap"><span>#2 · 1120×1400</span><span>2.6s</span></figcaption>
+                </figure>
+                <div class="u-skeleton" style="aspect-ratio:4/5;display:grid;place-items:center;color:var(--ink-3);font-family:var(--font-mono);font-size:10px">生成中 #3</div>
+                <div class="u-skeleton" style="aspect-ratio:4/5;display:grid;place-items:center;color:var(--ink-3);font-family:var(--font-mono);font-size:10px">生成中 #4</div>
+              </div>
+              <div class="u-meta">plus-image · 4:5 · high · PNG · 参考图 2 · ◈ 24.00</div>
+            </div>
+          </div>
+
+          <div data-panel="history" hidden style="display:grid;gap:14px">
+            <div class="u-toolbar" style="margin:0">
+              <div class="u-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input placeholder="搜索提示词或任务 ID"></div>
+              <select class="u-filter"><option>全部模型</option><option>Plus Image</option><option>Pro Image</option></select>
+              <select class="u-filter"><option>全部状态</option><option>成功</option><option>部分失败</option><option>失败</option></select>
+            </div>
+            <div class="cr-hist">
+              <a class="u-card" href="#media-detail" data-open="#media-detail"><div class="u-card__media"><img src="https://picsum.photos/seed/h-1/560/420" data-seed="h-1" alt="历史 1"><span class="u-card__tag">4 张</span></div><div class="u-card__body"><div class="u-card__title">玻璃温室 · 黄昏系列</div><div class="u-card__meta"><span>今天 18:42</span><span>◈ 24.00</span></div></div></a>
+              <a class="u-card" href="#media-detail" data-open="#media-detail"><div class="u-card__media"><img src="https://picsum.photos/seed/h-2/560/420" data-seed="h-2" alt="历史 2"><span class="u-card__tag">2 张</span></div><div class="u-card__body"><div class="u-card__title">雨夜街角的霓虹反射</div><div class="u-card__meta"><span>今天 15:08</span><span>◈ 16.00</span></div></div></a>
+              <a class="u-card" href="#media-detail" data-open="#media-detail"><div class="u-card__media"><img src="https://picsum.photos/seed/h-3/560/420" data-seed="h-3" alt="历史 3"><span class="u-card__tag">1 张</span></div><div class="u-card__body"><div class="u-card__title">盐湖逆光人像</div><div class="u-card__meta"><span>昨天</span><span>◈ 8.00</span></div></div></a>
+              <a class="u-card" href="#media-detail" data-open="#media-detail"><div class="u-card__media"><img src="https://picsum.photos/seed/h-4/560/420" data-seed="h-4" alt="历史 4"><span class="u-card__tag">6 张</span></div><div class="u-card__body"><div class="u-card__title">织物纹理与自然光</div><div class="u-card__meta"><span>10-20</span><span>◈ 36.00</span></div></div></a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div></div>
+
+<!-- shared detail drawer -->
+<div class="u-backdrop"></div>
+<aside class="u-drawer" id="media-detail" role="dialog" aria-modal="true" aria-label="媒体详情">
+  <header class="u-drawer__head">
+    <div class="u-drawer__title"><strong data-media-title>资产详情</strong><span data-media-meta>task_8f21c4e0 · #1</span></div>
+    <div class="u-drawer__spacer"></div>
+    <a class="u-btn u-btn--sm" href="detail.html" data-detail-link>详情</a>
+    <button class="u-btn u-btn--sm" type="button" data-toast="已复制分享链接">分享</button>
+    <button class="u-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </header>
+  <div class="u-drawer__body">
+    <div class="u-detail">
+      <section class="u-detail__stage-col">
+        <div class="u-detail__stage">
+          <span class="u-detail__stage-label"><span class="u-chip u-chip--mono">已完成</span><span class="u-chip u-chip--mono" data-media-size>1120 × 1400</span></span>
+          <img data-media-image src="https://picsum.photos/seed/detail-main/900/1125" data-seed="detail-main" alt="详情结果">
+        </div>
+      </section>
+      <section class="u-detail__info">
+        <div class="u-detail__info-scroll">
+          <div style="display:grid;gap:6px">
+            <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="u-chip u-chip--accent" data-media-type>图片</span><span class="u-chip u-chip--mono" data-media-model>plus-image</span></div>
+            <h2 class="u-detail__title" data-media-title>黄昏光线下，玻璃温室里的植物与尘埃</h2>
+            <div class="u-meta" data-media-meta>第 1 / 4 张 · 今天 18:42</div>
+          </div>
+          <div class="u-detail__section"><h4>Prompt</h4><div class="u-prompt" data-media-prompt>黄昏时分的玻璃温室，暖金色斜光穿过锈蚀的钢架，空气中有细小尘埃悬浮。前景是几株叶片卷曲的热带植物，背景虚化成深绿。胶片颗粒，柔和的高光溢出。</div></div>
+          <div class="u-detail__section"><h4>参数</h4>
+            <dl class="u-facts">
+              <div class="u-fact"><dt>实际尺寸</dt><dd data-media-size>1120 × 1400</dd></div>
+              <div class="u-fact"><dt>比例</dt><dd>4:5</dd></div>
+              <div class="u-fact"><dt>质量</dt><dd>high</dd></div>
+              <div class="u-fact"><dt>格式</dt><dd>PNG</dd></div>
+              <div class="u-fact"><dt>参考图</dt><dd>2 张</dd></div>
+              <div class="u-fact"><dt>耗时</dt><dd>9.4 秒</dd></div>
+              <div class="u-fact"><dt>消耗</dt><dd data-media-cost>24.00 积分</dd></div>
+            </dl>
+          </div>
+        </div>
+        <div class="u-detail__foot">
+          <button class="u-btn u-btn--primary u-btn--sm" type="button" data-toast="已复用参数，回到参数面板">复用这组参数</button>
+          <button class="u-btn u-btn--sm" type="button" data-toast="开始下载原图">下载原图</button>
+          <button class="u-btn u-btn--sm" type="button" data-toast="已加入画布">加到画布</button>
+        </div>
+      </section>
+    </div>
+  </div>
+</aside>
+
+<script src="../assets/shell.js"></script>
+</body>
+</html>

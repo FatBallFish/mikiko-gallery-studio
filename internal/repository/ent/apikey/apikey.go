@@ -27,6 +27,8 @@ const (
 	FieldSecretHash = "secret_hash"
 	// FieldSecretCiphertext holds the string denoting the secret_ciphertext field in the database.
 	FieldSecretCiphertext = "secret_ciphertext"
+	// FieldScopes holds the string denoting the scopes field in the database.
+	FieldScopes = "scopes"
 	// FieldName holds the string denoting the name field in the database.
 	FieldName = "name"
 	// FieldStatus holds the string denoting the status field in the database.
@@ -67,6 +69,7 @@ var Columns = []string{
 	FieldAccessKey,
 	FieldSecretHash,
 	FieldSecretCiphertext,
+	FieldScopes,
 	FieldName,
 	FieldStatus,
 	FieldGroupCode,
@@ -105,6 +108,8 @@ var (
 	SecretHashValidator func(string) error
 	// SecretCiphertextValidator is a validator for the "secret_ciphertext" field. It is called by the builders before save.
 	SecretCiphertextValidator func(string) error
+	// DefaultScopes holds the default value on creation for the "scopes" field.
+	DefaultScopes []string
 	// NameValidator is a validator for the "name" field. It is called by the builders before save.
 	NameValidator func(string) error
 	// DefaultStatus holds the default value on creation for the "status" field.

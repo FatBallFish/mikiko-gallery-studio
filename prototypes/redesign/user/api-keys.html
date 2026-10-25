@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API 密钥 — Mikiko Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Manrope:wght@300..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/user.css">
+<style>
+  .ak-table { width: 100%; min-width: 900px; }
+  .ak-table th { padding: 10px 12px; border-bottom: 1px solid var(--line-2); color: var(--ink-3); font-family: var(--font-mono); font-size: 10px; font-weight: 500; letter-spacing: .1em; text-align: left; text-transform: uppercase; white-space: nowrap; }
+  .ak-table td { padding: 13px 12px; border-bottom: 1px solid var(--line); font-size: 12.5px; vertical-align: middle; }
+  .ak-table tr:last-child td { border-bottom: 0; }
+  .ak-table tr:hover td { background: var(--surface); }
+  .ak-code { min-width: 0; padding: 2px 6px; border-radius: 5px; background: var(--surface-3); color: var(--ink-2); font-family: var(--font-mono); font-size: 10.5px; overflow-wrap: anywhere; }
+  .ak-secret { display: flex; align-items: flex-start; gap: 12px; padding: 16px; border: 1px solid var(--accent-line); border-radius: 12px; background: var(--accent-soft); }
+  .ak-actions { display: flex; gap: 4px; justify-content: flex-end; }
+  .ak-actions button { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--ink-3); font-size: 11px; }
+  .ak-actions button:hover { color: var(--ink); border-color: var(--line-2); }
+  @media (max-width: 640px) {
+    .ak-secret { flex-wrap: wrap; }
+    .ak-secret > div { flex-basis: 100%; order: 3; }
+  }
+</style>
+</head>
+<body data-site="user" data-page="api-keys">
+<div class="u-shell"><div class="u-main">
+  <div class="u-content">
+    <div class="u-settings u-settings--single">
+      <div class="u-settings__stack">
+        <div class="u-page-head" style="margin:0">
+          <div class="u-page-head__copy">
+            <span class="u-eyebrow">API Access</span>
+            <h1 class="u-h1" style="font-size:38px">API 密钥</h1>
+            <p class="u-sub">用于服务端调用与第三方集成。Secret 只显示一次；轮换后旧密钥立即失效。</p>
+          </div>
+          <div class="u-page-head__actions">
+            <button class="u-btn u-btn--primary u-btn--sm" type="button" data-open="#new-key">创建密钥</button>
+          </div>
+        </div>
+
+        <div class="ak-secret">
+          <span style="display:grid;place-items:center;width:34px;height:34px;border-radius:9px;background:var(--accent);color:var(--accent-ink);flex:none">!</span>
+          <div style="display:grid;gap:8px;min-width:0;flex:1">
+            <strong style="font-size:13px">新密钥已创建，请立即保存 Secret</strong>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <code class="ak-code" style="font-size:11.5px;padding:5px 8px">sk-example-not-a-real-api-key</code>
+              <button class="u-btn u-btn--sm" type="button" data-copy="sk-example-not-a-real-api-key">复制</button>
+            </div>
+            <span class="u-meta">关闭此提示后将无法再次查看完整 Secret。</span>
+          </div>
+          <button class="u-icon-btn u-icon-btn--plain" type="button" aria-label="关闭提示" data-toast="已隐藏 Secret">✕</button>
+        </div>
+
+        <div class="u-stat-row">
+          <div class="u-stat"><span class="u-stat__label">启用密钥</span><span class="u-stat__value">2</span><span class="u-stat__foot">共 4 个</span></div>
+          <div class="u-stat"><span class="u-stat__label">本月调用</span><span class="u-stat__value">8,412</span><span class="u-stat__foot">较上月 +12.4%</span></div>
+          <div class="u-stat"><span class="u-stat__label">当前 RPM</span><span class="u-stat__value">12</span><span class="u-stat__foot">上限 60</span></div>
+        </div>
+
+        <div class="u-plate" style="overflow-x:auto">
+          <table class="ak-table">
+            <thead><tr><th>名称 / Scope</th><th>Access Key</th><th>Secret</th><th>状态</th><th>RPM</th><th>额度</th><th>最近使用</th><th style="text-align:right">操作</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><div style="display:grid;gap:2px"><strong style="font-size:12.5px">生产服务</strong><span class="u-meta">images:write · tasks:read</span></div></td>
+                <td><code class="ak-code">AK-7R2M-9K4X</code></td>
+                <td><code class="ak-code">sk-••••••••7d</code></td>
+                <td><span class="u-status u-status--ok"><span class="u-dot"></span>启用</span></td>
+                <td class="u-num">60</td>
+                <td class="u-num">∞ / 50k</td>
+                <td class="u-meta">2 分钟前</td>
+                <td><div class="ak-actions"><button type="button" title="复制 AK" data-copy="AK-7R2M-9K4X">⧉</button><button type="button" title="编辑" data-open="#edit-key">✎</button><button type="button" title="轮换 Secret" data-toast="轮换需二次确认">↻</button><button type="button" title="删除" data-toast="删除后立即失效">🗑</button></div></td>
+              </tr>
+              <tr>
+                <td><div style="display:grid;gap:2px"><strong style="font-size:12.5px">本地脚本</strong><span class="u-meta">images:write · images:read</span></div></td>
+                <td><code class="ak-code">AK-3P8Q-1L6T</code></td>
+                <td><code class="ak-code">sk-••••••••1c</code></td>
+                <td><span class="u-status u-status--ok"><span class="u-dot"></span>启用</span></td>
+                <td class="u-num">20</td>
+                <td class="u-num">100k / 10k</td>
+                <td class="u-meta">昨天</td>
+                <td><div class="ak-actions"><button type="button" title="复制 AK" data-copy="AK-3P8Q-1L6T">⧉</button><button type="button" title="编辑" data-open="#edit-key">✎</button><button type="button" title="轮换 Secret" data-toast="轮换需二次确认">↻</button><button type="button" title="删除" data-toast="删除后立即失效">🗑</button></div></td>
+              </tr>
+              <tr>
+                <td><div style="display:grid;gap:2px"><strong style="font-size:12.5px">设计部集成</strong><span class="u-meta">images:read</span></div></td>
+                <td><code class="ak-code">AK-6H1N-4R9B</code></td>
+                <td><code class="ak-code">sk-••••••••4a</code></td>
+                <td><span class="u-status"><span class="u-dot"></span>已停用</span></td>
+                <td class="u-num">—</td>
+                <td class="u-num">— / —</td>
+                <td class="u-meta">10-02</td>
+                <td><div class="ak-actions"><button type="button" title="启用" data-toast="已启用">▶</button><button type="button" title="删除" data-toast="删除后立即失效">🗑</button></div></td>
+              </tr>
+              <tr>
+                <td><div style="display:grid;gap:2px"><strong style="font-size:12.5px">CI 回归测试</strong><span class="u-meta">tasks:read</span></div></td>
+                <td><code class="ak-code">AK-0D5S-8V2W</code></td>
+                <td><code class="ak-code">sk-••••••••0f</code></td>
+                <td><span class="u-status u-status--bad"><span class="u-dot"></span>已撤销</span></td>
+                <td class="u-num">—</td>
+                <td class="u-num">— / —</td>
+                <td class="u-meta">09-18</td>
+                <td><div class="ak-actions"><button type="button" title="删除" data-toast="删除后立即失效">🗑</button></div></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="u-split">
+          <div class="u-plate u-plate--pad">
+            <div class="u-panel-title"><h3>快速开始</h3><span>cURL</span></div>
+            <pre style="margin:0;padding:14px;overflow-x:auto;border-radius:9px;background:#070910;color:#c9d0dd;font-family:var(--font-mono);font-size:11px;line-height:1.75">curl https://api.mikiko.studio/v1/images/generations \
+  -H "Authorization: Bearer $MIKIKO_SK" \
+  -d '{"model":"plus-image","prompt":"薄雾中的湖泊","n":1}'</pre>
+          </div>
+          <div class="u-plate u-plate--pad">
+            <div class="u-panel-title"><h3>安全建议</h3></div>
+            <ul style="display:grid;gap:9px">
+              <li class="u-meta" style="line-height:1.55">· 只把 Secret 放在服务端环境变量中，不要提交到仓库。</li>
+              <li class="u-meta" style="line-height:1.55">· 为不同集成创建独立密钥，便于单独停用与轮换。</li>
+              <li class="u-meta" style="line-height:1.55">· 设置日额度，避免脚本异常消耗积分。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<div class="u-backdrop"></div>
+<div class="u-modal" id="new-key" role="dialog" aria-modal="true" aria-label="创建 API 密钥">
+  <div class="u-modal__head">
+    <div><h2 class="u-h2" style="font-size:22px">创建密钥</h2><p class="u-sub" style="font-size:12.5px;margin-top:4px">Secret 只显示一次。</p></div>
+    <button class="u-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </div>
+  <div style="display:grid;gap:14px">
+    <label class="u-field"><span class="u-label">名称</span><input class="u-input" placeholder="例如：生产服务"></label>
+    <div class="u-form__pair" style="display:grid;grid-template-columns:1fr 1fr;gap:13px">
+      <label class="u-field"><span class="u-label">每分钟请求 <span class="u-label__hint">1–600</span></span><input class="u-input" value="60" inputmode="numeric"></label>
+      <label class="u-field"><span class="u-label">总额度</span><input class="u-input" placeholder="留空表示不限制" inputmode="numeric"></label>
+    </div>
+    <div class="u-field">
+      <span class="u-label">权限范围</span>
+      <div style="display:grid;gap:7px">
+        <label class="u-switch"><input type="checkbox" checked><span class="u-switch__track"></span>images:write · 创建图片任务</label>
+        <label class="u-switch"><input type="checkbox" checked><span class="u-switch__track"></span>images:read · 查询任务与结果</label>
+        <label class="u-switch"><input type="checkbox"><span class="u-switch__track"></span>account:read · 读取余额与用量</label>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px">
+      <button class="u-btn" type="button" data-close>取消</button>
+      <button class="u-btn u-btn--primary" type="button" data-close data-toast="密钥已创建，Secret 只显示一次" data-tone="ok">创建密钥</button>
+    </div>
+  </div>
+</div>
+
+<div class="u-modal" id="edit-key" role="dialog" aria-modal="true" aria-label="编辑密钥">
+  <div class="u-modal__head">
+    <div><h2 class="u-h2" style="font-size:22px">编辑密钥</h2><p class="u-meta" style="margin-top:4px">AK-7R2M-9K4X</p></div>
+    <button class="u-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </div>
+  <div style="display:grid;gap:14px">
+    <label class="u-field"><span class="u-label">名称</span><input class="u-input" value="生产服务"></label>
+    <label class="u-field"><span class="u-label">每分钟请求</span><input class="u-input" value="60" inputmode="numeric"></label>
+    <div style="display:flex;justify-content:flex-end;gap:8px">
+      <button class="u-btn" type="button" data-close>取消</button>
+      <button class="u-btn u-btn--primary" type="button" data-close data-toast="已保存" data-tone="ok">保存</button>
+    </div>
+  </div>
+</div>
+<script src="../assets/shell.js"></script>
+</body>
+</html>

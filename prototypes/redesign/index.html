@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mikiko 重构原型 — Index</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Manrope:wght@300..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/user.css">
+<style>
+  .ix-wrap { position: relative; z-index: 2; width: min(1380px, calc(100% - 64px)); margin: 0 auto; padding: 44px 0 80px; }
+  .ix-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 60px; }
+  .ix-brand { display: flex; align-items: center; gap: 12px; font-family: var(--font-display); font-size: 20px; }
+  .ix-brand i { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px; border: 1px solid var(--accent-line); background: var(--accent-soft); color: var(--accent); font-style: normal; font-size: 16px; }
+  .ix-top__meta { display: flex; gap: 8px; flex-wrap: wrap; }
+  .ix-hero { display: grid; grid-template-columns: minmax(0,1.05fr) minmax(0,.95fr); gap: 50px; align-items: end; padding-bottom: 52px; border-bottom: 1px solid var(--line); }
+  .ix-hero h1 { font-family: var(--font-display); font-size: clamp(40px, 4.4vw, 68px); font-weight: 400; line-height: .98; letter-spacing: -.035em; }
+  .ix-hero h1 em { color: var(--accent); font-style: italic; }
+  .ix-hero p { color: var(--ink-2); font-size: 14px; line-height: 1.75; max-width: 58ch; }
+  .ix-hero__stats { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; background: var(--line); }
+  .ix-hero__stat { display: grid; gap: 4px; padding: 20px; background: color-mix(in srgb, var(--bg) 72%, transparent); }
+  .ix-hero__stat b { font-family: var(--font-mono); font-size: 27px; font-weight: 400; letter-spacing: -.03em; }
+  .ix-hero__stat span { color: var(--ink-3); font-size: 11px; }
+  .ix-section { padding: 52px 0 0; }
+  .ix-section__head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+  .ix-section__head h2 { font-family: var(--font-display); font-size: 36px; font-weight: 400; letter-spacing: -.025em; }
+  .ix-section__head p { color: var(--ink-3); font-size: 12.5px; max-width: 60ch; }
+  .ix-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  .ix-card { position: relative; display: grid; gap: 8px; min-height: 148px; padding: 17px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); text-align: left; transition: transform var(--t-base) var(--ease-out), border-color var(--t-fast), background var(--t-fast); }
+  .ix-card:hover { transform: translateY(-3px); border-color: var(--accent-line); background: var(--accent-soft); }
+  .ix-card__num { color: var(--ink-3); font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; }
+  .ix-card strong { font-size: 13.5px; font-weight: 650; }
+  .ix-card span { color: var(--ink-3); font-size: 11px; line-height: 1.55; }
+  .ix-card__arrow { position: absolute; right: 14px; top: 14px; color: var(--ink-3); transition: color var(--t-fast), transform var(--t-base); }
+  .ix-card:hover .ix-card__arrow { color: var(--accent); transform: translate(2px, -2px); }
+  .ix-card--new { border-color: var(--accent-line); }
+  .ix-card--new::after { content: "重点"; position: absolute; right: 40px; top: 13px; padding: 1px 6px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 8.5px; font-weight: 700; }
+  .ix-admin { border-top: 1px solid var(--line); margin-top: 52px; padding-top: 52px; }
+  .ix-admin .ix-card { background: #faf9f6; border-color: rgba(22,25,30,.1); }
+  .ix-admin .ix-card:hover { background: #fff; border-color: rgba(46,74,125,.32); }
+  .ix-admin .ix-card strong { color: #16191e; font-family: var(--font-admin); }
+  .ix-admin .ix-card span { color: #8b919b; font-family: var(--font-admin); }
+  .ix-admin .ix-card__num { color: #8b919b; }
+  .ix-admin .ix-card__arrow { color: #8b919b; }
+  .ix-admin .ix-section__head h2 { color: #f5f0e7; }
+  .ix-admin .ix-section__head p { color: var(--ink-3); }
+  .ix-principles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
+  .ix-principle { display: grid; gap: 8px; padding: 18px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); }
+  .ix-principle b { color: var(--accent); font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; }
+  .ix-principle strong { font-size: 13px; }
+  .ix-principle span { color: var(--ink-3); font-size: 11.5px; line-height: 1.6; }
+  .ix-flow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .ix-flow a { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--ink-2); font-size: 12px; }
+  .ix-flow a:hover { border-color: var(--accent-line); color: var(--accent); }
+  .ix-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 14px; margin-top: 60px; padding-top: 22px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 11.5px; }
+  .ix-admin-note { display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,.14); color: var(--ink-2); font-size: 11px; }
+  @media (max-width: 1100px) { .ix-grid { grid-template-columns: repeat(3, 1fr); } .ix-hero { grid-template-columns: 1fr; } }
+  @media (max-width: 760px) { .ix-wrap { width: calc(100% - 32px); } .ix-grid { grid-template-columns: 1fr 1fr; } .ix-principles { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body data-site="user" data-page="landing">
+<div class="u-ambient"></div><div class="u-grain"></div>
+<div class="ix-wrap">
+  <header class="ix-top">
+    <a class="ix-brand" href="user/landing.html"><i>M</i>Mikiko Redesign</a>
+    <div class="ix-top__meta">
+      <span class="u-chip u-chip--mono">2026-10-22</span>
+      <span class="u-chip u-chip--mono">36 screens</span>
+      <span class="u-chip u-chip--accent">Prototype · no source changes</span>
+    </div>
+  </header>
+
+  <section class="ix-hero">
+    <div style="display:grid;gap:20px">
+      <span class="u-eyebrow">Complete Redesign Prototype</span>
+      <h1>两套界面，<br>一条<em>清晰的</em>操作链路</h1>
+      <p>用户端延续 Luminous Vault 的暗色艺廊气质，但重做布局、节奏与动效；管理端切换到全新的 Command Deck 体系：更大字号、单列表单、统一列表与抽屉详情。所有页面均为静态 HTML 原型，可直接点击浏览。</p>
+      <div class="ix-flow">
+        <a href="user/home.html">从用户端首页开始 →</a>
+        <a href="admin/dashboard.html">从管理端总览开始 →</a>
+        <a href="admin/components.html">查看管理端组件规范 →</a>
+      </div>
+    </div>
+    <div class="ix-hero__stats">
+      <div class="ix-hero__stat"><b>16</b><span>用户端页面 · 含组件规范</span></div>
+      <div class="ix-hero__stat"><b>20</b><span>管理端页面 · 含组件规范</span></div>
+      <div class="ix-hero__stat"><b>1</b><span>统一媒体详情组件</span></div>
+      <div class="ix-hero__stat"><b>15px</b><span>管理端正文基线</span></div>
+    </div>
+  </section>
+
+  <section class="ix-section">
+    <div class="ix-section__head">
+      <div><span class="u-eyebrow">User Site · Luminous Vault, rebuilt</span><h2 style="margin-top:8px">用户端</h2></div>
+      <p>保留深色、暖象牙、琥珀强调与胶片颗粒；重做左导航、顶栏、页面头部、创作台参数列与媒体详情。图片和视频详情统一为同一套 Drawer 结构。</p>
+    </div>
+    <div class="ix-grid">
+      <a class="ix-card" href="user/landing.html"><span class="ix-card__num">U01</span><strong>着陆页</strong><span>不对称 Hero、能力 Bento、流程、开发者接入与收尾 CTA。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="user/login.html"><span class="ix-card__num">U02</span><strong>登录</strong><span>场景图分栏、密码/验证码切换、Mikiko ID 入口。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="user/home.html"><span class="ix-card__num">U03</span><strong>首页</strong><span>继续创作主卡、最近任务、分级积分状态、精选灵感。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="user/genpic.html"><span class="ix-card__num">U04</span><strong>图片创作台</strong><span>参数分组、参考图、尺寸模式、估价与生成状态。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="user/video-create.html"><span class="ix-card__num">U05</span><strong>视频创作台</strong><span>六种生成方式、素材槽、报价明细与任务队列。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="user/gallery.html"><span class="ix-card__num">U06</span><strong>资产库</strong><span>统一 4:3 卡片、筛选行、框选与批量工具条。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="user/public-gallery.html"><span class="ix-card__num">U07</span><strong>公开广场</strong><span>编辑式标题、作者信息、点赞收藏；点击媒体只开抽屉。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card ix-card--new" href="user/detail.html"><span class="ix-card__num">U08</span><strong>媒体详情规范</strong><span>抽屉内“详情”再进本页；返回按钮按来源回到原页面。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="user/creative-canvas.html"><span class="ix-card__num">U09</span><strong>创意画布列表</strong><span>模板入口、迷你画布预览、重命名与删除。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="user/canvas-editor.html"><span class="ix-card__num">U10</span><strong>画布编辑器</strong><span>节点、连线、Dock、缩放、资产抽屉与生成任务。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="user/checkout.html"><span class="ix-card__num">U11</span><strong>积分充值</strong><span>套餐、自定义金额、订单概览、支付方式与兑换码。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="user/profile.html"><span class="ix-card__num">U12</span><strong>个人资料</strong><span>积分余额桶、资料编辑与积分流水。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="user/api-keys.html"><span class="ix-card__num">U13</span><strong>API 密钥</strong><span>一次性 Secret、密钥表、额度与快速开始。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="user/projects.html"><span class="ix-card__num">U14</span><strong>项目</strong><span>项目列表、切换与新建抽屉。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="user/settings.html"><span class="ix-card__num">U15</span><strong>外观偏好</strong><span>明暗主题、强调色与动效开关。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card ix-card--new" href="user/components.html"><span class="ix-card__num">U16</span><strong>组件与规范</strong><span>字体、颜色、按钮、状态、媒体舞台、卡片与空状态。</span><span class="ix-card__arrow">↗</span></a>
+    </div>
+
+    <div class="ix-principles">
+      <div class="ix-principle"><b>01 · DETAIL SYSTEM</b><strong>媒体详情只有一个实现</strong><span>固定高度舞台 + 392px 信息列；任意比例只改变 letterbox，不改变信息与操作位置。</span></div>
+      <div class="ix-principle"><b>02 · RHYTHM</b><strong>8pt 间距与统一圆角</strong><span>卡片 14px、面板 20px、全屏层 28px；标题、说明、元信息形成固定三段。</span></div>
+      <div class="ix-principle"><b>03 · MOTION</b><strong>动效只做反馈</strong><span>220–420ms、cubic-bezier(.16,1,.3,1)；悬停抬升、图片轻推、抽屉滑入、按压缩放。</span></div>
+    </div>
+  </section>
+
+  <section class="ix-section ix-admin">
+    <div class="ix-section__head">
+      <div style="display:flex;align-items:center;gap:12px"><span class="u-eyebrow">Admin Site · Command Deck</span><span class="ix-admin-note">全新体系 · 推翻旧规范</span></div>
+    </div>
+    <div style="display:grid;gap:6px;margin-bottom:22px;max-width:70ch">
+      <h2 style="font-family:var(--font-display);font-size:36px;font-weight:400;letter-spacing:-.025em">管理端</h2>
+      <p style="color:var(--ink-3);font-size:12.5px;line-height:1.7">暖灰纸面 + 墨蓝强调；正文 15px、表格 14px、标签 13px。表单改为单列字段账本，列表统一筛选带/表格/分页，所有多级详情进右侧抽屉，用户与模型字段完成实体映射。</p>
+    </div>
+    <div class="ix-grid">
+      <a class="ix-card" href="admin/login.html"><span class="ix-card__num">A01</span><strong>管理端登录</strong><span>深色控制台面板、状态证明与更大表单控件。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="admin/dashboard.html"><span class="ix-card__num">A02</span><strong>运营总览</strong><span>指标、生成趋势、待处理队列、最新用户与消费榜。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="admin/monitoring.html"><span class="ix-card__num">A03</span><strong>系统健康</strong><span>QPS、延迟分位、热点接口、依赖诊断。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="admin/cluster.html"><span class="ix-card__num">A04</span><strong>集群节点</strong><span>心跳、版本漂移与处理建议。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="admin/users.html"><span class="ix-card__num">A05</span><strong>用户管理</strong><span>筛选带、实体列、用户摘要、用户详情抽屉与积分调整。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="admin/user-groups.html"><span class="ix-card__num">A06</span><strong>用户分组</strong><span>倍率、可见路由与单列分组编辑抽屉。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="admin/call-records.html"><span class="ix-card__num">A07</span><strong>图片任务</strong><span>用户/路由/模型映射、调用链、计费快照与用户摘要。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="admin/video-tasks.html"><span class="ix-card__num">A08</span><strong>视频任务</strong><span>中文状态/结算映射、结果费用与恢复操作。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="admin/access-accounts.html"><span class="ix-card__num">A09</span><strong>接入账号</strong><span>操作列“模型配置” + 二级模型抽屉 + 能力多选与自定义值。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="admin/routing.html"><span class="ix-card__num">A10</span><strong>路由模型</strong><span>分组图标与改查；编辑抽屉含基础、视频参数、价格策略页签。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="admin/pricing.html"><span class="ix-card__num">A11</span><strong>价格策略（迁移说明）</strong><span>价格配置已并入路由模型编辑抽屉的“价格策略”页签。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="admin/orders.html"><span class="ix-card__num">A12</span><strong>订单管理</strong><span>用户映射、金额/积分明细、支付时间线与退款入口。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="admin/packages.html"><span class="ix-card__num">A13</span><strong>套餐管理</strong><span>积分包/订阅、售价与有效期、编辑抽屉。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="admin/cashier-config.html"><span class="ix-card__num">A14</span><strong>支付配置</strong><span>概览、支付方式、渠道实例、回调事件与抽屉。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="admin/reviews.html"><span class="ix-card__num">A15</span><strong>审核队列</strong><span>三栏工作台：队列、预览、审核动作。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="admin/redeem.html"><span class="ix-card__num">A16</span><strong>兑换码</strong><span>使用进度、核销记录、单码与批量生成抽屉。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="admin/system-settings.html"><span class="ix-card__num">A17</span><strong>系统设置</strong><span>存储实例抽屉；列表操作列直接探测连接与设置默认。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="admin/audit.html"><span class="ix-card__num">A18</span><strong>审计日志</strong><span>操作人、对象、结果与上下文抽屉。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card" href="admin/system-users.html"><span class="ix-card__num">A19</span><strong>管理员</strong><span>角色、状态、重置密码与账户编辑抽屉。</span><span class="ix-card__arrow">↗</span></a>
+      <a class="ix-card ix-card--new" href="admin/components.html"><span class="ix-card__num">A20</span><strong>组件与规范</strong><span>字号、颜色、按钮、表单规则、表格、分页、抽屉、映射与状态。</span><span class="ix-card__arrow">↗</span></a>
+    </div>
+  </section>
+
+  <footer class="ix-foot">
+    <span>Mikiko Gallery Studio · Redesign Prototype · 2026-10-22</span>
+    <span>静态原型 · 未修改 web/user、web/admin 或任何生产代码</span>
+  </footer>
+</div>
+<script src="assets/shell.js"></script>
+</body>
+</html>

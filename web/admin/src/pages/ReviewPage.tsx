@@ -10,6 +10,7 @@ import { RefreshableMediaImage } from '../ui/mediaRefresh'
 import { adminTaskTypeOptions } from './adminTaskTypes'
 import { reviewDefaultReason, reviewListQuery, reviewRowView, reviewStatusLabel } from './reviewRows'
 import type { ReviewDecision, ReviewListFilters } from './reviewRows'
+import { VideoReviewsPanel } from './VideoReviewsPanel'
 import './list-redesign.css'
 
 type DrawerState = { item: ReviewItem; decision: ReviewDecision } | null
@@ -23,6 +24,14 @@ const initialFilters: ReviewListFilters = {
 }
 
 export function ReviewPage({ accessToken, onFeedback }: { accessToken?: string; onFeedback: (title: string, detail?: string) => void }) {
+  const [mediaKind, setMediaKind] = useState('image')
+  return <section className="a-page-stack">
+    <AdminTabs ariaLabel="审核媒体类型" items={[{ id: 'image', label: '图片' }, { id: 'video', label: '视频' }]} value={mediaKind} onChange={setMediaKind} />
+    {mediaKind === 'video' ? <VideoReviewsPanel accessToken={accessToken} onFeedback={onFeedback} /> : <ImageReviewPage accessToken={accessToken} onFeedback={onFeedback} />}
+  </section>
+}
+
+function ImageReviewPage({ accessToken, onFeedback }: { accessToken?: string; onFeedback: (title: string, detail?: string) => void }) {
   const [rows, setRows] = useState<ReviewItem[]>([])
   const [filter, setFilter] = useState<ReviewItem['status'] | 'all'>('pending_review')
   const [filters, setFilters] = useState<ReviewListFilters>(initialFilters)

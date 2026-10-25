@@ -111,7 +111,7 @@ const reused = workspaceCreationDraftFromSnapshot({
   output_format: 'webp', output_compression: 72, moderation: 'low', requested_output_image_count: 4,
   reference_asset_ids: ['ref-1', 'ref-2'],
 })
-if (reused.pixel_size !== '1536x1024' || reused.image_count !== 4 || reused.output_format !== 'webp' || reused.output_compression !== 72 || reused.reference_asset_ids?.length !== 0) {
+if (reused.pixel_size !== '1536x1024' || reused.image_count !== 4 || reused.output_format !== 'webp' || reused.output_compression !== 72 || reused.reference_asset_ids?.join(',') !== 'ref-1,ref-2') {
   throw new Error(`reused creation snapshot lost generation fields: ${JSON.stringify(reused)}`)
 }
 
@@ -124,3 +124,16 @@ try {
   throw new Error(`malformed stored drafts must not crash the workspace: ${String(error)}`)
 }
 if (malformed !== null) throw new Error('malformed stored drafts must be discarded')
+
+const quietAssetEdit = { version: 1 as const, intent: 'asset-edit' as const, prompt: '', task_type: 'image_edit' as const, reference_asset_ids: ['ref-1'] }
+stageWorkspaceCreationDraft(quietAssetEdit, session, history)
+const restoredEdit = consumeWorkspaceCreationDraft(session, history)
+if (restoredEdit?.intent !== 'asset-edit') throw new Error('asset-edit intent must survive staging and consumption')
+const editDefaults = normalizeWorkspaceCreationDraft(restoredEdit, capability)
+if (editDefaults.notices.length || editDefaults.values.task_type !== 'image_edit' || editDefaults.values.route_model_code !== 'plus' || editDefaults.values.reference_asset_ids[0] !== 'ref-1') throw new Error(`asset edits should quietly choose usable current defaults: ${JSON.stringify(editDefaults)}`)
+const historicalMissing = normalizeWorkspaceCreationDraft({ ...quietAssetEdit, intent: 'restore' }, capability)
+if (!historicalMissing.notices.some((notice) => notice.includes('未指定'))) throw new Error('historical restore must keep missing configuration notices')
+const explicitUnavailable = normalizeWorkspaceCreationDraft({ ...quietAssetEdit, route_model_code: 'removed' }, capability)
+if (!explicitUnavailable.notices.some((notice) => notice.includes('removed'))) throw new Error('asset edit must still warn about explicitly unavailable settings')
+const missingEditSource = normalizeWorkspaceCreationDraft({ ...quietAssetEdit, reference_asset_ids: [] }, capability)
+if (!missingEditSource.notices.length) throw new Error('asset edit must not suppress missing reference warnings')

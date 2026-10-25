@@ -88,6 +88,7 @@ import (
 	textmodelservice "github.com/fatballfish/pic-gallery/internal/service/textmodel"
 	videocallbackservice "github.com/fatballfish/pic-gallery/internal/service/videocallback"
 	videomodeltestservice "github.com/fatballfish/pic-gallery/internal/service/videomodeltest"
+	videopublicationservice "github.com/fatballfish/pic-gallery/internal/service/videopublication"
 	videoroutingservice "github.com/fatballfish/pic-gallery/internal/service/videorouting"
 	videotaskservice "github.com/fatballfish/pic-gallery/internal/service/videotask"
 	"github.com/fatballfish/pic-gallery/internal/storage"
@@ -97,49 +98,54 @@ import (
 )
 
 type API struct {
-	auth           *authservice.Service
-	adminAuth      *adminauthservice.Service
-	apiKeys        *apikeyservice.Service
-	billing        *billingservice.Service
-	assets         *assetservice.Service
-	caps           *capserv.Service
-	compat         *compatservice.Service
-	tasks          *imagetaskservice.Service
-	admin          *adminconfigservice.Service
-	cashierCfg     *cashierservice.ConfigFacade
-	adminUser      *adminuserservice.Service
-	callRecord     *admincallrecordservice.Service
-	modelAdmin     *modeladminservice.Service
-	textModels     *textmodelservice.Service
-	promptOpt      *promptoptimizerservice.Service
-	secureCfg      *secureconfigservice.Service
-	oidc           *oidcservice.Client
-	storageCfg     *storageconfigservice.Service
-	storageReg     *storage.Registry
-	storagePub     storage.InvalidationPublisher
-	redeem         *redeemservice.Service
-	audit          *auditservice.Service
-	cluster        *clusterservice.Service
-	canvases       *canvasservice.Service
-	projects       *projectservice.Service
-	galleryExport  *galleryexportservice.Service
-	mediaAssets    *mediaassetservice.Service
-	videoRouting   *videoroutingservice.Service
-	videoQuotes    *videotaskservice.QuoteService
-	videoTasks     *videotaskservice.Service
-	videoCallbacks *videocallbackservice.Service
-	adminVideo     *adminvideoservice.Service
-	videoModelTest *videomodeltestservice.Service
-	adminPerms     domainadminauth.PermissionResolver
-	docsReady      DocsReadinessChecker
-	cashierSync    cashierOrderSyncCoordinator
-	readinessMu    sync.Mutex
-	readinessData  []adminReadinessCheck
-	readinessTill  time.Time
-	readinessGen   uint64
-	readinessRun   *adminReadinessFlight
-	readinessWait  time.Duration
-	cfg            config.Config
+	developerOpen        http.Handler
+	developerOAuth       http.Handler
+	developerMCP         http.Handler
+	developerAssetAccess http.Handler
+	auth                 *authservice.Service
+	adminAuth            *adminauthservice.Service
+	apiKeys              *apikeyservice.Service
+	billing              *billingservice.Service
+	assets               *assetservice.Service
+	caps                 *capserv.Service
+	compat               *compatservice.Service
+	tasks                *imagetaskservice.Service
+	admin                *adminconfigservice.Service
+	cashierCfg           *cashierservice.ConfigFacade
+	adminUser            *adminuserservice.Service
+	callRecord           *admincallrecordservice.Service
+	modelAdmin           *modeladminservice.Service
+	textModels           *textmodelservice.Service
+	promptOpt            *promptoptimizerservice.Service
+	secureCfg            *secureconfigservice.Service
+	oidc                 *oidcservice.Client
+	storageCfg           *storageconfigservice.Service
+	storageReg           *storage.Registry
+	storagePub           storage.InvalidationPublisher
+	redeem               *redeemservice.Service
+	audit                *auditservice.Service
+	cluster              *clusterservice.Service
+	canvases             *canvasservice.Service
+	projects             *projectservice.Service
+	galleryExport        *galleryexportservice.Service
+	videoPublications    *videopublicationservice.Service
+	mediaAssets          *mediaassetservice.Service
+	videoRouting         *videoroutingservice.Service
+	videoQuotes          *videotaskservice.QuoteService
+	videoTasks           *videotaskservice.Service
+	videoCallbacks       *videocallbackservice.Service
+	adminVideo           *adminvideoservice.Service
+	videoModelTest       *videomodeltestservice.Service
+	adminPerms           domainadminauth.PermissionResolver
+	docsReady            DocsReadinessChecker
+	cashierSync          cashierOrderSyncCoordinator
+	readinessMu          sync.Mutex
+	readinessData        []adminReadinessCheck
+	readinessTill        time.Time
+	readinessGen         uint64
+	readinessRun         *adminReadinessFlight
+	readinessWait        time.Duration
+	cfg                  config.Config
 }
 
 func (a *API) SetVideoCallbackService(service *videocallbackservice.Service) {
@@ -1948,6 +1954,7 @@ func (a *API) HandleAgentAPIKeys(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"items": apiKeyPayloads(keys)})
 	case http.MethodPost:
 		var req struct {
+			Scopes           []string   `json:"scopes"`
 			Name             string     `json:"name"`
 			GroupCode        string     `json:"group_code"`
 			TotalQuotaPoints *string    `json:"total_quota_points"`
@@ -1959,12 +1966,12 @@ func (a *API) HandleAgentAPIKeys(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
 			return
 		}
-		created, err := a.apiKeys.CreateKey(r.Context(), apikeyservice.CreateRequest{UserID: user.ID, Name: req.Name, GroupCode: user.GroupCode, TotalQuotaPoints: req.TotalQuotaPoints, DailyQuotaPoints: req.DailyQuotaPoints, RPMLimit: req.RPMLimit, ExpiresAt: req.ExpiresAt})
+		created, err := a.apiKeys.CreateKey(r.Context(), apikeyservice.CreateRequest{Scopes: req.Scopes, UserID: user.ID, Name: req.Name, GroupCode: user.GroupCode, TotalQuotaPoints: req.TotalQuotaPoints, DailyQuotaPoints: req.DailyQuotaPoints, RPMLimit: req.RPMLimit, ExpiresAt: req.ExpiresAt})
 		if err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
-		a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "api_key.create", "api_key", fmt.Sprintf("%d", created.Key.ID), map[string]any{"secret": created.Secret})
+		a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "api_key.create", "api_key", fmt.Sprintf("%d", created.Key.ID), nil)
 		payload := apiKeyPayload(created.Key)
 		payload["secret"] = created.Secret
 		httpx.WriteSuccess(w, r, http.StatusCreated, payload)
@@ -1996,7 +2003,7 @@ func (a *API) HandleAgentAPIKeyDetail(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
-		a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "api_key.reset_secret", "api_key", fmt.Sprintf("%d", id), map[string]any{"secret": reset.Secret})
+		a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "api_key.reset_secret", "api_key", fmt.Sprintf("%d", id), nil)
 		payload := apiKeyPayload(reset.Key)
 		payload["secret"] = reset.Secret
 		httpx.WriteSuccess(w, r, http.StatusOK, payload)
@@ -2016,6 +2023,7 @@ func (a *API) HandleAgentAPIKeyDetail(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteSuccess(w, r, http.StatusOK, apiKeyPayload(key))
 	case http.MethodPut:
 		var req struct {
+			Scopes           *[]string  `json:"scopes"`
 			Name             *string    `json:"name"`
 			GroupCode        *string    `json:"group_code"`
 			Status           *string    `json:"status"`
@@ -2032,7 +2040,7 @@ func (a *API) HandleAgentAPIKeyDetail(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, errs.BadRequest("group_code cannot be changed"))
 			return
 		}
-		key, err := a.apiKeys.Update(r.Context(), user.ID, id, apikeyservice.UpdateRequest{Name: req.Name, TotalQuotaPoints: req.TotalQuotaPoints, DailyQuotaPoints: req.DailyQuotaPoints, RPMLimit: req.RPMLimit, ExpiresAt: req.ExpiresAt})
+		key, err := a.apiKeys.Update(r.Context(), user.ID, id, apikeyservice.UpdateRequest{Scopes: req.Scopes, Name: req.Name, TotalQuotaPoints: req.TotalQuotaPoints, DailyQuotaPoints: req.DailyQuotaPoints, RPMLimit: req.RPMLimit, ExpiresAt: req.ExpiresAt})
 		if err == nil && req.Status != nil {
 			err = a.apiKeys.UpdateStatus(r.Context(), user.ID, id, *req.Status)
 			if err == nil {
@@ -2073,6 +2081,7 @@ func (a *API) HandleDeveloperAPIKeys(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"items": apiKeyPayloads(keys)})
 	case http.MethodPost:
 		var req struct {
+			Scopes           []string   `json:"scopes"`
 			Name             string     `json:"name"`
 			TotalQuotaPoints *string    `json:"total_quota_points"`
 			DailyQuotaPoints *string    `json:"daily_quota_points"`
@@ -2083,7 +2092,7 @@ func (a *API) HandleDeveloperAPIKeys(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
 			return
 		}
-		created, err := a.apiKeys.CreateKey(r.Context(), apikeyservice.CreateRequest{UserID: user.ID, Name: req.Name, GroupCode: user.GroupCode, TotalQuotaPoints: req.TotalQuotaPoints, DailyQuotaPoints: req.DailyQuotaPoints, RPMLimit: req.RPMLimit, ExpiresAt: req.ExpiresAt})
+		created, err := a.apiKeys.CreateKey(r.Context(), apikeyservice.CreateRequest{Scopes: req.Scopes, UserID: user.ID, Name: req.Name, GroupCode: user.GroupCode, TotalQuotaPoints: req.TotalQuotaPoints, DailyQuotaPoints: req.DailyQuotaPoints, RPMLimit: req.RPMLimit, ExpiresAt: req.ExpiresAt})
 		if err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
@@ -2127,6 +2136,7 @@ func (a *API) HandleDeveloperAPIKeyDetail(w http.ResponseWriter, r *http.Request
 	switch r.Method {
 	case http.MethodPatch, http.MethodPut:
 		var req struct {
+			Scopes           *[]string  `json:"scopes"`
 			Name             *string    `json:"name"`
 			GroupCode        *string    `json:"group_code"`
 			Status           *string    `json:"status"`
@@ -2143,7 +2153,7 @@ func (a *API) HandleDeveloperAPIKeyDetail(w http.ResponseWriter, r *http.Request
 			httpx.WriteError(w, r, errs.BadRequest("group_code cannot be changed"))
 			return
 		}
-		key, err := a.apiKeys.Update(r.Context(), user.ID, id, apikeyservice.UpdateRequest{Name: req.Name, TotalQuotaPoints: req.TotalQuotaPoints, DailyQuotaPoints: req.DailyQuotaPoints, RPMLimit: req.RPMLimit, ExpiresAt: req.ExpiresAt})
+		key, err := a.apiKeys.Update(r.Context(), user.ID, id, apikeyservice.UpdateRequest{Scopes: req.Scopes, Name: req.Name, TotalQuotaPoints: req.TotalQuotaPoints, DailyQuotaPoints: req.DailyQuotaPoints, RPMLimit: req.RPMLimit, ExpiresAt: req.ExpiresAt})
 		if err == nil && req.Status != nil {
 			err = a.apiKeys.UpdateStatus(r.Context(), user.ID, id, *req.Status)
 			if err == nil {
@@ -3808,6 +3818,10 @@ func (a *API) HandleAgentHistoryTaskDetail(w http.ResponseWriter, r *http.Reques
 	retry := strings.HasSuffix(taskID, "/retry")
 	if retry {
 		taskID = strings.TrimSuffix(taskID, "/retry")
+		if r.Method != http.MethodPost {
+			writeMethodNotAllowed(w, r)
+			return
+		}
 	}
 	switch r.Method {
 	case http.MethodGet, http.MethodDelete:
@@ -3849,7 +3863,7 @@ func (a *API) HandleAgentHistoryTaskDetail(w http.ResponseWriter, r *http.Reques
 		task = decorateTaskProgress(task)
 		httpx.WriteSuccess(w, r, http.StatusOK, task)
 	case http.MethodDelete:
-		if err := a.tasks.DeleteByID(r.Context(), user.ID, taskID); err != nil {
+		if err := a.tasks.HideHistory(r.Context(), user.ID, taskID); err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
@@ -4000,6 +4014,8 @@ func hasUserCredential(r *http.Request) bool {
 }
 
 type publicGalleryListImage struct {
+	Name              string     `json:"name,omitempty"`
+	MediaAssetID      string     `json:"media_asset_id,omitempty"`
 	ID                string     `json:"id"`
 	TaskID            string     `json:"task_id,omitempty"`
 	Prompt            *string    `json:"prompt"`
@@ -4037,6 +4053,7 @@ func publicGalleryListItems(items []domainimagetask.GalleryImage) []publicGaller
 	redacted := make([]publicGalleryListImage, 0, len(items))
 	for _, item := range items {
 		redacted = append(redacted, publicGalleryListImage{
+			Name: item.Name, MediaAssetID: item.MediaAssetID,
 			ID:                item.ID,
 			TaskID:            item.TaskID,
 			Prompt:            nil,
@@ -4076,6 +4093,7 @@ func publicGalleryListItems(items []domainimagetask.GalleryImage) []publicGaller
 func publicGalleryDetailItem(item domainimagetask.GalleryImage) publicGalleryListImage {
 	prompt := item.Prompt
 	return publicGalleryListImage{
+		Name: item.Name, MediaAssetID: item.MediaAssetID,
 		ID:                item.ID,
 		TaskID:            item.TaskID,
 		Prompt:            &prompt,
@@ -7933,37 +7951,28 @@ func docsExampleItems() []map[string]any {
 			"title":    "Open API 预估生图积分",
 			"language": "curl",
 			"code": strings.TrimSpace(`
-curl -G "https://api.example.com/api/open/image/v1/estimate" \
-  -H "X-Access-Key: ${PIC_GALLERY_AK}" \
-  -H "X-Timestamp: ${TIMESTAMP}" \
-  -H "X-Body-SHA256: ${BODY_SHA256}" \
-  -H "X-Signature: ${SIGNATURE}" \
-  --data-urlencode "task_type=text_to_image" \
-  --data-urlencode "route_model_code=basic" \
-  --data-urlencode "base_resolution=1k" \
-  --data-urlencode "requested_size=1:1" \
-  --data-urlencode "requested_output_image_count=1"`),
+curl -X POST "https://api.example.com/api/open/v1/image-tasks/preflight" \
+  -H "Authorization: Bearer ${MIKIKO_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"task_type":"text_to_image","route_model_code":"basic","prompt":"A clean product poster","size_mode":"auto","output_image_count":1}'`),
 		},
 		{
 			"id":       "openapi-create-task-curl",
 			"title":    "Open API 创建生图任务",
 			"language": "curl",
 			"code": strings.TrimSpace(`
-curl -X POST "https://api.example.com/api/open/image/v1/tasks" \
+curl -X POST "https://api.example.com/api/open/v1/image-tasks" \
   -H "Content-Type: application/json" \
-  -H "X-Access-Key: ${PIC_GALLERY_AK}" \
-  -H "X-Timestamp: ${TIMESTAMP}" \
-  -H "X-Body-SHA256: ${BODY_SHA256}" \
-  -H "X-Signature: ${SIGNATURE}" \
-  -d '{
-    "task_type": "text_to_image",
-    "route_model_code": "basic",
-    "prompt": "A clean product poster",
-    "base_resolution": "1k",
-    "requested_size": "1:1",
-    "requested_output_image_count": 1,
-    "response_mode": "async"
-  }'`),
+  -H "Authorization: Bearer ${MIKIKO_API_KEY}" \
+  -H "Idempotency-Key: ${REQUEST_ID}" \
+  -d "{
+    \"task_type\": \"text_to_image\",
+    \"route_model_code\": \"basic\",
+    \"prompt\": \"A clean product poster\",
+    \"size_mode\": \"auto\",
+    \"output_image_count\": 1,
+    \"quote_token\": \"${QUOTE_TOKEN}\"
+  }"`),
 		},
 		{
 			"id":       "openai-compatible-generation-curl",
@@ -8441,102 +8450,6 @@ func docsReadinessAddressAllowed(address netip.Addr, provenance docsReadinessTar
 	return true
 }
 
-func (a *API) HandleOpenAIImageGeneration(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		a.writeCompatError(w, methodNotAllowedError())
-		return
-	}
-	identity, appErr := a.requireCompatAPIKey(r)
-	if appErr != nil {
-		a.writeCompatError(w, appErr)
-		return
-	}
-
-	var req struct {
-		Model             string `json:"model"`
-		Prompt            string `json:"prompt"`
-		Size              string `json:"size"`
-		N                 int    `json:"n"`
-		Quality           string `json:"quality"`
-		OutputFormat      string `json:"output_format"`
-		Background        string `json:"background"`
-		OutputCompression int    `json:"output_compression"`
-		Moderation        string `json:"moderation"`
-		ResponseFormat    string `json:"response_format"`
-		User              string `json:"user"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		a.writeCompatError(w, errs.BadRequest("invalid json body"))
-		return
-	}
-
-	taskID := idempotentTaskID(identity.UserID, r.Header.Get("Idempotency-Key"), req)
-	if taskID == "" {
-		taskID = uuid.NewString()
-	}
-	modelSelection, err := a.compat.ResolveModel(r.Context(), req.Model)
-	if err != nil {
-		a.writeCompatError(w, compatservice.MapError(err))
-		return
-	}
-	sizeMode, baseResolution, requestedSize := compatGenerationSizeFields(req.Size)
-	quality := compatGenerationQuality(req.Quality)
-	estimate, err := a.billing.EstimateContext(r.Context(), domainbilling.EstimateRequest{
-		TaskType:                  string(provider.TaskTypeTextToImage),
-		AbstractModel:             modelSelection.AbstractModel,
-		RouteModelCode:            modelSelection.RouteModelCode,
-		SizeMode:                  sizeMode,
-		BaseResolution:            baseResolution,
-		Quality:                   quality,
-		OutputFormat:              req.OutputFormat,
-		Background:                req.Background,
-		OutputCompression:         req.OutputCompression,
-		Moderation:                req.Moderation,
-		RequestedSize:             requestedSize,
-		RequestedOutputImageCount: req.N,
-		UserGroupCode:             identity.GroupCode,
-		UserGroupCodes:            []string{identity.GroupCode},
-		UserGroupMultiplier:       a.userGroupMultiplier(identity.GroupCode),
-	})
-	if err != nil {
-		a.writeCompatError(w, compatservice.MapError(err))
-		return
-	}
-	if err := a.apiKeys.ReserveQuota(r.Context(), identity, taskID, estimate.EstimatedPoints); err != nil {
-		a.writeCompatError(w, normalizeAppError(err))
-		return
-	}
-	resp, err := a.compat.Generate(r.Context(), compatservice.GenerateRequest{
-		TaskID:              taskID,
-		UserID:              identity.UserID,
-		APIKeyID:            identity.APIKeyID,
-		SourceChannel:       "openai_compat",
-		UserGroupCode:       identity.GroupCode,
-		UserGroupMultiplier: a.userGroupMultiplier(identity.GroupCode),
-		Model:               req.Model,
-		AbstractModel:       modelSelection.AbstractModel,
-		RouteModelCode:      modelSelection.RouteModelCode,
-		Prompt:              req.Prompt,
-		SizeMode:            sizeMode,
-		BaseResolution:      baseResolution,
-		Size:                requestedSize,
-		N:                   req.N,
-		Quality:             quality,
-		OutputFormat:        req.OutputFormat,
-		Background:          req.Background,
-		OutputCompression:   req.OutputCompression,
-		Moderation:          req.Moderation,
-		ResponseFormat:      req.ResponseFormat,
-		User:                req.User,
-	})
-	if err != nil {
-		a.apiKeys.ReleaseQuota(r.Context(), identity, taskID)
-		a.writeCompatError(w, compatservice.MapError(err))
-		return
-	}
-	httpx.WriteJSON(w, http.StatusOK, resp)
-}
-
 func compatGenerationSizeFields(rawSize string) (sizeMode, baseResolution, requestedSize string) {
 	size := strings.TrimSpace(rawSize)
 	if size == "" || strings.EqualFold(size, "auto") {
@@ -8551,118 +8464,6 @@ func compatGenerationQuality(value string) string {
 		return "auto"
 	}
 	return quality
-}
-
-func (a *API) HandleOpenAIImageEdit(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		a.writeCompatError(w, methodNotAllowedError())
-		return
-	}
-	identity, appErr := a.requireCompatAPIKey(r)
-	if appErr != nil {
-		a.writeCompatError(w, appErr)
-		return
-	}
-	if err := r.ParseMultipartForm(16 << 20); err != nil {
-		a.writeCompatError(w, errs.BadRequest("invalid multipart form"))
-		return
-	}
-
-	images, err := readCompatImages(r.MultipartForm.File["image"])
-	if err != nil {
-		a.writeCompatError(w, errs.BadRequest("failed to read image input"))
-		return
-	}
-
-	var mask *provider.ImageInput
-	if len(r.MultipartForm.File["mask"]) > 0 {
-		loadedMask, maskErr := readCompatImage(r.MultipartForm.File["mask"][0])
-		if maskErr != nil {
-			a.writeCompatError(w, errs.BadRequest("failed to read mask input"))
-			return
-		}
-		mask = &loadedMask
-	}
-
-	count, _ := strconv.Atoi(defaultString(r.FormValue("n"), "1"))
-	quotaPayload := map[string]any{
-		"model":           r.FormValue("model"),
-		"prompt":          r.FormValue("prompt"),
-		"size":            r.FormValue("size"),
-		"n":               count,
-		"quality":         r.FormValue("quality"),
-		"response_format": r.FormValue("response_format"),
-		"user":            r.FormValue("user"),
-		"image_count":     len(images),
-		"mask_present":    mask != nil,
-	}
-	taskID := idempotentTaskID(identity.UserID, r.Header.Get("Idempotency-Key"), quotaPayload)
-	if taskID == "" {
-		taskID = uuid.NewString()
-	}
-	modelSelection, err := a.compat.ResolveModel(r.Context(), r.FormValue("model"))
-	if err != nil {
-		a.writeCompatError(w, compatservice.MapError(err))
-		return
-	}
-	estimate, err := a.billing.EstimateContext(r.Context(), domainbilling.EstimateRequest{
-		TaskType:                  string(provider.TaskTypeImageEdit),
-		AbstractModel:             modelSelection.AbstractModel,
-		RouteModelCode:            modelSelection.RouteModelCode,
-		BaseResolution:            "auto",
-		Quality:                   compatQuality(r.FormValue("quality")),
-		RequestedSize:             r.FormValue("size"),
-		RequestedOutputImageCount: count,
-		ReferenceImageCount:       len(images),
-		UserGroupCode:             identity.GroupCode,
-		UserGroupCodes:            []string{identity.GroupCode},
-		UserGroupMultiplier:       a.userGroupMultiplier(identity.GroupCode),
-	})
-	if err != nil {
-		a.writeCompatError(w, compatservice.MapError(err))
-		return
-	}
-	if err := a.apiKeys.ReserveQuota(r.Context(), identity, taskID, estimate.EstimatedPoints); err != nil {
-		a.writeCompatError(w, normalizeAppError(err))
-		return
-	}
-	resp, compatErr := a.compat.Edit(r.Context(), compatservice.EditRequest{
-		TaskID:              taskID,
-		UserID:              identity.UserID,
-		APIKeyID:            identity.APIKeyID,
-		SourceChannel:       "openai_compat",
-		UserGroupCode:       identity.GroupCode,
-		UserGroupMultiplier: a.userGroupMultiplier(identity.GroupCode),
-		Model:               r.FormValue("model"),
-		AbstractModel:       modelSelection.AbstractModel,
-		RouteModelCode:      modelSelection.RouteModelCode,
-		Prompt:              r.FormValue("prompt"),
-		Size:                r.FormValue("size"),
-		N:                   count,
-		Quality:             r.FormValue("quality"),
-		ResponseFormat:      r.FormValue("response_format"),
-		User:                r.FormValue("user"),
-		Images:              images,
-		Mask:                mask,
-	})
-	if compatErr != nil {
-		a.apiKeys.ReleaseQuota(r.Context(), identity, taskID)
-		a.writeCompatError(w, compatservice.MapError(compatErr))
-		return
-	}
-	httpx.WriteJSON(w, http.StatusOK, resp)
-}
-
-func (a *API) HandleOpenAIModels(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		a.writeCompatError(w, methodNotAllowedError())
-		return
-	}
-	if _, appErr := a.requireCompatAPIKey(r); appErr != nil {
-		a.writeCompatError(w, appErr)
-		return
-	}
-	httpx.WriteJSON(w, http.StatusOK, a.compat.Models())
 }
 
 func (a *API) HandleOpenTasks(w http.ResponseWriter, r *http.Request) {
@@ -8980,54 +8781,8 @@ func profileThemePreference(theme string) (string, string, bool) {
 }
 
 func (a *API) requireOpenAPIKey(r *http.Request) (domainapikey.Identity, func(), *errs.Error) {
-	if strings.TrimSpace(r.Header.Get("X-Access-Key")) == "" ||
-		strings.TrimSpace(r.Header.Get("X-Signature")) == "" ||
-		strings.TrimSpace(r.Header.Get("X-Timestamp")) == "" ||
-		strings.TrimSpace(r.Header.Get("X-Body-SHA256")) == "" {
-		return domainapikey.Identity{}, nil, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "missing api key credentials")
-	}
-	timestamp, parseErr := parseHMACTimestamp(r.Header.Get("X-Timestamp"))
-	if parseErr != nil {
-		return domainapikey.Identity{}, nil, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "invalid api key timestamp")
-	}
-	prepared, prepareErr := a.apiKeys.PrepareCanonicalHMAC(r.Context(), apikeyservice.HMACRequest{
-		AccessKey:  r.Header.Get("X-Access-Key"),
-		Method:     r.Method,
-		Path:       r.URL.RequestURI(),
-		Timestamp:  timestamp,
-		BodySHA256: r.Header.Get("X-Body-SHA256"),
-		Signature:  r.Header.Get("X-Signature"),
-	})
-	if prepareErr != nil {
-		return domainapikey.Identity{}, nil, normalizeAppError(prepareErr)
-	}
-	policy, policyErr := a.assets.AttachmentPolicy(r.Context())
-	if policyErr != nil {
-		return domainapikey.Identity{}, nil, normalizeAppError(fmt.Errorf("resolve attachment policy: %w", policyErr))
-	}
-	bodyLimit := openAPIRequestBodyLimit(r.URL.Path, r.Header.Get("Content-Type"), policy.Image.MaxBytes)
-	originalBody := r.Body
-	body, actualBodyHash, err := spoolBoundedHMACBody(originalBody, bodyLimit, "")
-	if originalBody != nil {
-		_ = originalBody.Close()
-	}
-	if err != nil {
-		if err.StatusCode == http.StatusRequestEntityTooLarge && isOpenAPIReferenceUploadPath(r.URL.Path) {
-			return domainapikey.Identity{}, nil, referenceAssetTooLargeError(policy.Image, policy.Image.MaxBytes+1)
-		}
-		return domainapikey.Identity{}, nil, err
-	}
-	identity, verifyErr := a.apiKeys.CompleteCanonicalHMAC(r.Context(), prepared, actualBodyHash)
-	if verifyErr != nil {
-		_ = body.Close()
-		return domainapikey.Identity{}, nil, normalizeAppError(verifyErr)
-	}
-	if appErr := a.requireAPIKeyUserActive(identity); appErr != nil {
-		_ = body.Close()
-		return domainapikey.Identity{}, nil, appErr
-	}
-	r.Body = body
-	return identity, func() { _ = body.Close() }, nil
+	identity, err := a.requireCompatAPIKey(r)
+	return identity, func() {}, err
 }
 
 func readBoundedBody(body io.Reader, referenceImageMaxMB int) ([]byte, *errs.Error) {
@@ -9070,19 +8825,13 @@ func isOpenAPIReferenceUploadPath(path string) bool {
 }
 
 func (a *API) requireCompatAPIKey(r *http.Request) (domainapikey.Identity, *errs.Error) {
-	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
-	if !strings.HasPrefix(authHeader, "Bearer ") {
-		return domainapikey.Identity{}, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "missing bearer token")
+	scope := "images:write"
+	if r.URL.Path == "/v1/models" || strings.Contains(r.URL.Path, "/models") {
+		scope = "models:read"
+	} else if r.Method == http.MethodGet {
+		scope = "images:read"
 	}
-	token := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
-	identity, err := a.apiKeys.AuthenticateBearer(r.Context(), token)
-	if err != nil {
-		return domainapikey.Identity{}, normalizeAppError(err)
-	}
-	if appErr := a.requireAPIKeyUserActive(identity); appErr != nil {
-		return domainapikey.Identity{}, appErr
-	}
-	return identity, nil
+	return a.authenticateOpenBearer(r, scope)
 }
 
 func (a *API) requireAPIKeyUserActive(identity domainapikey.Identity) *errs.Error {
@@ -11473,6 +11222,7 @@ func apiKeyPayload(key domainapikey.APIKey) map[string]any {
 	return map[string]any{
 		"id":                      key.ID,
 		"access_key":              key.AccessKey,
+		"scopes":                  domainapikey.EffectiveScopes(key.Scopes),
 		"name":                    key.Name,
 		"status":                  key.Status,
 		"group_code":              key.GroupCode,

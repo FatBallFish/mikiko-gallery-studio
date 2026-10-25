@@ -65,7 +65,30 @@ func (s *Service) Capabilities(ctx context.Context, code string, userGroupCodes 
 	for _, taskType := range group.TaskTypes {
 		candidates := make([]domainvideo.Candidate, 0, len(group.Candidates))
 		for _, candidate := range group.Candidates {
-			candidates = append(candidates, domainvideo.Candidate{ID: candidate.AccountModelID, Enabled: true, Capability: candidate.Capability})
+			// Enumerate public resolutions through the same forward mapping
+			// used by Resolve. Reversing a mapping loses identity resolutions
+			// and advertises sources whose mapped target is unsupported.
+			capability := candidate.Capability
+			if capability.SchemaVersion != 1 || capability.ProviderNativeMaxN < 1 || capability.ProviderNativeMaxN > 10 {
+				continue
+			}
+			task, ok := capability.TaskTypes[taskType]
+			if !ok {
+				continue
+			}
+			resolutions := make([]domainvideo.Resolution, 0)
+			for _, public := range []domainvideo.Resolution{domainvideo.Resolution480P, domainvideo.Resolution720P, domainvideo.Resolution768P, domainvideo.Resolution1080P, domainvideo.Resolution2K, domainvideo.Resolution4K} {
+				mapped := mapCandidateRequest(candidate, domainvideo.Request{Resolution: public}).Resolution
+				for _, supported := range task.Resolutions {
+					if mapped == supported {
+						resolutions = append(resolutions, public)
+						break
+					}
+				}
+			}
+			task.Resolutions = resolutions
+			capability.TaskTypes = map[domainvideo.TaskType]domainvideo.TaskCapability{taskType: task}
+			candidates = append(candidates, domainvideo.Candidate{ID: candidate.AccountModelID, Enabled: true, Capability: capability})
 		}
 		visible := domainvideo.BuildVisibleCapability(candidates, taskType)
 		for _, combination := range visible.Combinations {
@@ -111,10 +134,7 @@ func (s *Service) Resolve(ctx context.Context, code string, userGroupCodes []str
 	matched := make([]Candidate, 0, len(group.Candidates))
 	var fieldErrors []domainvideo.FieldError
 	for _, candidate := range group.Candidates {
-		mapped := request
-		if resolution := candidate.ResolutionMappings[request.Resolution]; resolution != "" {
-			mapped.Resolution = resolution
-		}
+		mapped := mapCandidateRequest(candidate, request)
 		match := candidate.Capability.Match(mapped)
 		if match.Matches {
 			candidate.MappedRequest = mapped
@@ -127,6 +147,13 @@ func (s *Service) Resolve(ctx context.Context, code string, userGroupCodes []str
 		return Resolution{}, errs.WithDetails(errs.New(422, errs.CodeVideoCapabilityMismatch, "no video candidate supports the complete parameter combination"), map[string]any{"field_errors": fieldErrors})
 	}
 	return Resolution{Group: group, Request: request, Candidates: matched, CapabilityVersion: capabilityVersion(matched)}, nil
+}
+
+func mapCandidateRequest(candidate Candidate, request domainvideo.Request) domainvideo.Request {
+	if resolution := candidate.ResolutionMappings[request.Resolution]; resolution != "" {
+		request.Resolution = resolution
+	}
+	return request
 }
 
 func (s *Service) group(ctx context.Context, code string, userGroupCodes []string) (Group, error) {

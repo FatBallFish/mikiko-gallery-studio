@@ -36,6 +36,8 @@ type MediaAsset struct {
 	Name string `json:"name,omitempty"`
 	// NameKey holds the value of the "name_key" field.
 	NameKey string `json:"name_key,omitempty"`
+	// GroupID holds the value of the "group_id" field.
+	GroupID *uuid.UUID `json:"group_id,omitempty"`
 	// GroupName holds the value of the "group_name" field.
 	GroupName string `json:"group_name,omitempty"`
 	// MediaType holds the value of the "media_type" field.
@@ -46,6 +48,10 @@ type MediaAsset struct {
 	Status string `json:"status,omitempty"`
 	// VisibilityStatus holds the value of the "visibility_status" field.
 	VisibilityStatus string `json:"visibility_status,omitempty"`
+	// PublicationReviewReason holds the value of the "publication_review_reason" field.
+	PublicationReviewReason string `json:"publication_review_reason,omitempty"`
+	// PublishedAt holds the value of the "published_at" field.
+	PublishedAt *time.Time `json:"published_at,omitempty"`
 	// StorageConfigID holds the value of the "storage_config_id" field.
 	StorageConfigID *uuid.UUID `json:"storage_config_id,omitempty"`
 	// StorageDriver holds the value of the "storage_driver" field.
@@ -169,15 +175,15 @@ func (*MediaAsset) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case mediaasset.FieldLegacyImageResultID, mediaasset.FieldStorageConfigID, mediaasset.FieldSourceTaskID, mediaasset.FieldSourceCanvasID:
+		case mediaasset.FieldLegacyImageResultID, mediaasset.FieldGroupID, mediaasset.FieldStorageConfigID, mediaasset.FieldSourceTaskID, mediaasset.FieldSourceCanvasID:
 			values[i] = &sql.NullScanner{S: new(uuid.UUID)}
 		case mediaasset.FieldMetadata:
 			values[i] = new([]byte)
 		case mediaasset.FieldUserID, mediaasset.FieldFileSizeBytes, mediaasset.FieldWidth, mediaasset.FieldHeight, mediaasset.FieldDurationMs, mediaasset.FieldFrameRateMilli, mediaasset.FieldChannels, mediaasset.FieldSampleRate, mediaasset.FieldVersion:
 			values[i] = new(sql.NullInt64)
-		case mediaasset.FieldName, mediaasset.FieldNameKey, mediaasset.FieldGroupName, mediaasset.FieldMediaType, mediaasset.FieldSourceType, mediaasset.FieldStatus, mediaasset.FieldVisibilityStatus, mediaasset.FieldStorageDriver, mediaasset.FieldBucket, mediaasset.FieldObjectKey, mediaasset.FieldMimeType, mediaasset.FieldContainer, mediaasset.FieldCodec, mediaasset.FieldSha256, mediaasset.FieldAudioCodec, mediaasset.FieldSourceTaskKind, mediaasset.FieldProcessingErrorCode, mediaasset.FieldProcessingErrorMessage:
+		case mediaasset.FieldName, mediaasset.FieldNameKey, mediaasset.FieldGroupName, mediaasset.FieldMediaType, mediaasset.FieldSourceType, mediaasset.FieldStatus, mediaasset.FieldVisibilityStatus, mediaasset.FieldPublicationReviewReason, mediaasset.FieldStorageDriver, mediaasset.FieldBucket, mediaasset.FieldObjectKey, mediaasset.FieldMimeType, mediaasset.FieldContainer, mediaasset.FieldCodec, mediaasset.FieldSha256, mediaasset.FieldAudioCodec, mediaasset.FieldSourceTaskKind, mediaasset.FieldProcessingErrorCode, mediaasset.FieldProcessingErrorMessage:
 			values[i] = new(sql.NullString)
-		case mediaasset.FieldCreatedAt, mediaasset.FieldUpdatedAt, mediaasset.FieldDeletedAt, mediaasset.FieldProcessedAt:
+		case mediaasset.FieldCreatedAt, mediaasset.FieldUpdatedAt, mediaasset.FieldDeletedAt, mediaasset.FieldPublishedAt, mediaasset.FieldProcessedAt:
 			values[i] = new(sql.NullTime)
 		case mediaasset.FieldID, mediaasset.FieldProjectID:
 			values[i] = new(uuid.UUID)
@@ -252,6 +258,13 @@ func (_m *MediaAsset) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.NameKey = value.String
 			}
+		case mediaasset.FieldGroupID:
+			if value, ok := values[i].(*sql.NullScanner); !ok {
+				return fmt.Errorf("unexpected type %T for field group_id", values[i])
+			} else if value.Valid {
+				_m.GroupID = new(uuid.UUID)
+				*_m.GroupID = *value.S.(*uuid.UUID)
+			}
 		case mediaasset.FieldGroupName:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field group_name", values[i])
@@ -281,6 +294,19 @@ func (_m *MediaAsset) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field visibility_status", values[i])
 			} else if value.Valid {
 				_m.VisibilityStatus = value.String
+			}
+		case mediaasset.FieldPublicationReviewReason:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field publication_review_reason", values[i])
+			} else if value.Valid {
+				_m.PublicationReviewReason = value.String
+			}
+		case mediaasset.FieldPublishedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field published_at", values[i])
+			} else if value.Valid {
+				_m.PublishedAt = new(time.Time)
+				*_m.PublishedAt = value.Time
 			}
 		case mediaasset.FieldStorageConfigID:
 			if value, ok := values[i].(*sql.NullScanner); !ok {
@@ -530,6 +556,11 @@ func (_m *MediaAsset) String() string {
 	builder.WriteString("name_key=")
 	builder.WriteString(_m.NameKey)
 	builder.WriteString(", ")
+	if v := _m.GroupID; v != nil {
+		builder.WriteString("group_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
 	builder.WriteString("group_name=")
 	builder.WriteString(_m.GroupName)
 	builder.WriteString(", ")
@@ -544,6 +575,14 @@ func (_m *MediaAsset) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("visibility_status=")
 	builder.WriteString(_m.VisibilityStatus)
+	builder.WriteString(", ")
+	builder.WriteString("publication_review_reason=")
+	builder.WriteString(_m.PublicationReviewReason)
+	builder.WriteString(", ")
+	if v := _m.PublishedAt; v != nil {
+		builder.WriteString("published_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
 	builder.WriteString(", ")
 	if v := _m.StorageConfigID; v != nil {
 		builder.WriteString("storage_config_id=")

@@ -14,6 +14,10 @@ const expectedIds: GuideId[] = [
   'errors',
   'rate-limits',
   'troubleshooting',
+  'migration',
+  'sdk-examples',
+  'mcp',
+  'inventory',
 ]
 
 const actualIds = guides.map((guide) => guide.id)

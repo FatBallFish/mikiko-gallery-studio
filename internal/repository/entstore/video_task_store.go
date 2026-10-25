@@ -8,10 +8,12 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	domainvideo "github.com/fatballfish/pic-gallery/internal/domain/video"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotask"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotaskattempt"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotaskinput"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotaskitem"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
@@ -61,9 +63,17 @@ func (s *VideoTaskStore) FindByIdempotency(ctx context.Context, userID int64, ke
 
 func (s *VideoTaskStore) Create(ctx context.Context, record videotaskservice.CreateRecord) (videotaskservice.Task, bool, error) {
 	task := record.Task
+	if existing, found, err := s.FindByIdempotency(ctx, task.UserID, task.IdempotencyKey); err != nil {
+		return videotaskservice.Task{}, false, err
+	} else if found {
+		if existing.RequestFingerprint != task.RequestFingerprint || existing.APIKeyID != task.APIKeyID {
+			return videotaskservice.Task{}, false, videotaskservice.ErrIdempotencyConflict
+		}
+		return existing, true, nil
+	}
 	entity, err := s.CreateWithReservation(ctx, CreateVideoTaskWithReservationRequest{
 		Task: VideoTaskCreate{
-			ID: task.ID, UserID: task.UserID, ProjectID: task.ProjectID, SourceChannel: task.SourceChannel, SourceCanvasID: task.SourceCanvasID,
+			ID: task.ID, UserID: task.UserID, ProjectID: task.ProjectID, APIKeyID: videoAPIKeyPointer(task.APIKeyID), SourceChannel: task.SourceChannel, SourceCanvasID: task.SourceCanvasID,
 			SourceCanvasNodeID: optionalString(task.SourceCanvasNodeID), TaskType: string(task.TaskType), PromptTemplate: task.PromptTemplate,
 			PromptBindingSnapshot: cloneMap(task.PromptBindingSnapshot), ExecutionPrompt: task.ExecutionPrompt, RouteModelID: task.RouteModelID,
 			RouteModelCode: task.RouteModelCode, DurationSeconds: task.DurationSeconds, Resolution: string(task.Resolution), AspectRatio: string(task.AspectRatio),
@@ -71,16 +81,14 @@ func (s *VideoTaskStore) Create(ctx context.Context, record videotaskservice.Cre
 			PricingSnapshot: cloneMap(task.PricingSnapshot), RoutingSnapshot: cloneMap(task.RoutingSnapshot), IdempotencyKey: task.IdempotencyKey, RequestFingerprint: task.RequestFingerprint,
 		},
 		Items: mapVideoItemCreates(task.Items), Inputs: mapVideoInputCreates(record.Inputs),
-		Reserve: billingservice.ReserveStoreRequest{UserID: task.UserID, TaskID: task.ID.String(), EstimatedPoints: record.ReservePoints, Reason: record.ReserveReason},
+		Reserve: billingservice.ReserveStoreRequest{UserID: task.UserID, APIKeyID: task.APIKeyID, TaskID: task.ID.String(), EstimatedPoints: record.ReservePoints, Reason: record.ReserveReason},
 	})
 	if err != nil {
-		if repoent.IsConstraintError(err) {
-			if existing, found, findErr := s.FindByIdempotency(ctx, task.UserID, task.IdempotencyKey); findErr == nil && found {
-				if existing.RequestFingerprint != task.RequestFingerprint {
-					return videotaskservice.Task{}, false, videotaskservice.ErrIdempotencyConflict
-				}
-				return existing, true, nil
+		if existing, found, findErr := s.FindByIdempotency(ctx, task.UserID, task.IdempotencyKey); findErr == nil && found {
+			if existing.RequestFingerprint != task.RequestFingerprint || existing.APIKeyID != task.APIKeyID {
+				return videotaskservice.Task{}, false, videotaskservice.ErrIdempotencyConflict
 			}
+			return existing, true, nil
 		}
 		return videotaskservice.Task{}, false, err
 	}
@@ -89,7 +97,7 @@ func (s *VideoTaskStore) Create(ctx context.Context, record videotaskservice.Cre
 }
 
 func (s *VideoTaskStore) List(ctx context.Context, req videotaskservice.ListRequest) (videotaskservice.Page, error) {
-	query := s.queryTask(req.UserID)
+	query := s.queryTask(req.UserID).Where(visibleHistory("video", req.UserID))
 	if req.ProjectID != nil {
 		query.Where(videotask.ProjectIDEQ(*req.ProjectID))
 	}
@@ -156,19 +164,51 @@ func (s *VideoTaskStore) RequestCancel(ctx context.Context, userID int64, id uui
 			return videotaskservice.Task{}, err
 		}
 		changed := false
+		now := time.Now().UTC()
 		for _, item := range entity.Edges.Items {
 			current := domainvideo.ItemStateSnapshot{State: domainvideo.ItemState(item.Status), Version: item.Version}
-			if current.State == domainvideo.ItemStateCancelRequested || isTerminalVideoItem(current.State) {
+			if isTerminalVideoItem(current.State) {
 				continue
+			}
+			// A missing provider job ID does not prove that submission never
+			// started. Any attempt or live claim must remain worker-owned.
+			localCancel := false
+			if (current.State == domainvideo.ItemStateQueued || current.State == domainvideo.ItemStateCancelRequested) &&
+				(item.LeaseOwner == nil || item.LeaseExpiresAt == nil || !item.LeaseExpiresAt.After(now)) {
+				hasAttempt, err := tx.VideoTaskAttempt.Query().Where(videotaskattempt.ItemIDEQ(item.ID)).Exist(ctx)
+				if err != nil {
+					return videotaskservice.Task{}, err
+				}
+				localCancel = !hasAttempt
 			}
 			transition, transitionErr := domainvideo.AdvanceItemState(current, domainvideo.ItemTransition{ExpectedVersion: current.Version, Target: domainvideo.ItemStateCancelRequested})
 			if transitionErr != nil {
 				continue
 			}
-			if _, err := tx.VideoTaskItem.Update().Where(videotaskitem.IDEQ(item.ID), videotaskitem.VersionEQ(item.Version)).SetStatus(string(transition.Snapshot.State)).SetStage("cancel_requested").SetVersion(transition.Snapshot.Version).Save(ctx); err != nil {
+			if localCancel {
+				transition, transitionErr = domainvideo.AdvanceItemState(transition.Snapshot, domainvideo.ItemTransition{ExpectedVersion: transition.Snapshot.Version, Target: domainvideo.ItemStateCancelled})
+				if transitionErr != nil {
+					return videotaskservice.Task{}, transitionErr
+				}
+			}
+			if !transition.Changed {
+				continue
+			}
+			update := tx.VideoTaskItem.Update().Where(videotaskitem.IDEQ(item.ID), videotaskitem.VersionEQ(item.Version)).SetStatus(string(transition.Snapshot.State)).SetStage(string(transition.Snapshot.State)).SetVersion(transition.Snapshot.Version)
+			if localCancel {
+				// Repeat the lease guard in the write: ClaimDue does not change
+				// the version. Serializable retries also fence concurrent attempts.
+				update.Where(videotaskitem.Or(videotaskitem.LeaseOwnerIsNil(), videotaskitem.LeaseExpiresAtIsNil(), videotaskitem.LeaseExpiresAtLTE(now))).
+					ClearLeaseOwner().ClearLeaseExpiresAt().ClearNextActionAt().SetActualPoints("0.00000")
+			}
+			count, err := update.Save(ctx)
+			if err != nil {
 				return videotaskservice.Task{}, err
 			}
-			changed = changed || transition.Changed
+			if count != 1 {
+				return videotaskservice.Task{}, repoerr.ErrConflict
+			}
+			changed = true
 		}
 		if changed {
 			if _, err := tx.VideoTask.UpdateOne(entity).SetStatus(string(domainvideo.TaskStatusRunning)).SetProgressStage("cancel_requested").Save(ctx); err != nil {
@@ -178,6 +218,44 @@ func (s *VideoTaskStore) RequestCancel(ctx context.Context, userID int64, id uui
 		refreshed, err := tx.VideoTask.Query().Where(videotask.IDEQ(id)).WithItems().WithInputs().Only(ctx)
 		if err != nil {
 			return videotaskservice.Task{}, err
+		}
+		if refreshed.SettlementStatus != "finalized" && len(refreshed.Edges.Items) > 0 {
+			states := make([]domainvideo.ItemState, 0, len(refreshed.Edges.Items))
+			actual := decimal.Zero
+			successes, terminal := 0, true
+			for _, item := range refreshed.Edges.Items {
+				state := domainvideo.ItemState(item.Status)
+				states = append(states, state)
+				if !isTerminalVideoItem(state) {
+					terminal = false
+				}
+				if state == domainvideo.ItemStateSucceeded {
+					points, pending, err := actualVideoItemPoints(item, refreshed)
+					if err != nil {
+						return videotaskservice.Task{}, err
+					}
+					if pending {
+						terminal = false
+					}
+					value, err := decimal.NewFromString(points)
+					if err != nil || value.IsNegative() {
+						return videotaskservice.Task{}, errs.Internal("invalid video item settlement points")
+					}
+					actual = actual.Add(value)
+					successes++
+				}
+			}
+			if terminal {
+				updated, err := s.finalizeVideoTaskTx(ctx, tx, refreshed, FinalizeVideoTaskRequest{
+					Status: string(domainvideo.AggregateTaskStatus(states)), SuccessOutputCount: successes,
+					ActualPoints: actual.StringFixed(5), UsageSummary: map[string]any{"successful_video_count": successes},
+				})
+				if err != nil {
+					return videotaskservice.Task{}, err
+				}
+				updated.Edges = refreshed.Edges
+				refreshed = updated
+			}
 		}
 		return mapVideoTask(refreshed), nil
 	})
@@ -243,6 +321,19 @@ func (s *VideoTaskStore) CreateWithReservation(ctx context.Context, req CreateVi
 		if err != nil {
 			return nil, fmt.Errorf("create video task: %w", err)
 		}
+		if task.APIKeyID != nil {
+			points, err := decimal.NewFromString(req.Reserve.EstimatedPoints)
+			if err != nil || points.IsNegative() {
+				return nil, errs.BadRequest("invalid video reservation points")
+			}
+			if err := ReserveAPIKeyQuotaTx(ctx, tx, task.UserID, *task.APIKeyID, task.ID.String(), points, time.Now().UTC()); err != nil {
+				return nil, fmt.Errorf("reserve video API key quota: %w", err)
+			}
+		}
+		req.Reserve.APIKeyID = 0
+		if task.APIKeyID != nil {
+			req.Reserve.APIKeyID = *task.APIKeyID
+		}
 		if _, err := s.billing.ReserveTaskTx(ctx, tx, req.Reserve, "video"); err != nil {
 			return nil, fmt.Errorf("reserve video task points: %w", err)
 		}
@@ -297,33 +388,41 @@ func (s *VideoTaskStore) FinalizeWithBilling(ctx context.Context, req FinalizeVi
 			}
 			return nil, err
 		}
-		if task.SettlementStatus == "finalized" {
-			return task, nil
-		}
-		apiKeyID := int64(0)
-		if task.APIKeyID != nil {
-			apiKeyID = *task.APIKeyID
-		}
-		if _, err := s.billing.FinalizeTaskTx(ctx, tx, billingservice.FinalizeStoreRequest{
-			UserID: req.UserID, APIKeyID: apiKeyID, TaskID: task.ID.String(), EstimatedPoints: task.ReservedPoints,
-			ActualPoints: req.ActualPoints, Reason: "video generation finalize",
-		}, "video", req.UsageSummary); err != nil {
-			return nil, fmt.Errorf("finalize video task points: %w", err)
-		}
-		finishedAt := time.Now().UTC()
-		updated, err := tx.VideoTask.UpdateOne(task).
-			SetStatus(strings.TrimSpace(req.Status)).
-			SetProgressStage("completed").
-			SetSuccessOutputCount(req.SuccessOutputCount).
-			SetActualPoints(req.ActualPoints).
-			SetSettlementStatus("finalized").
-			SetFinishedAt(finishedAt).
-			Save(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("mark video task finalized: %w", err)
-		}
-		return updated, nil
+		return s.finalizeVideoTaskTx(ctx, tx, task, req)
 	})
+}
+
+// finalizeVideoTaskTx keeps wallet, key quota and task settlement atomic.
+func (s *VideoTaskStore) finalizeVideoTaskTx(ctx context.Context, tx *repoent.Tx, task *repoent.VideoTask, req FinalizeVideoTaskRequest) (*repoent.VideoTask, error) {
+	if task.SettlementStatus == "finalized" {
+		return task, nil
+	}
+	apiKeyID := int64(0)
+	if task.APIKeyID != nil {
+		apiKeyID = *task.APIKeyID
+	}
+	if _, err := s.billing.FinalizeTaskTx(ctx, tx, billingservice.FinalizeStoreRequest{
+		UserID: task.UserID, APIKeyID: apiKeyID, TaskID: task.ID.String(), EstimatedPoints: task.ReservedPoints,
+		ActualPoints: req.ActualPoints, Reason: "video generation finalize",
+	}, "video", req.UsageSummary); err != nil {
+		return nil, fmt.Errorf("finalize video task points: %w", err)
+	}
+	if err := settleVideoAPIKeyQuota(ctx, tx, task, req.ActualPoints); err != nil {
+		return nil, err
+	}
+	finishedAt := time.Now().UTC()
+	updated, err := tx.VideoTask.UpdateOne(task).
+		SetStatus(strings.TrimSpace(req.Status)).
+		SetProgressStage("completed").
+		SetSuccessOutputCount(req.SuccessOutputCount).
+		SetActualPoints(req.ActualPoints).
+		SetSettlementStatus("finalized").
+		SetFinishedAt(finishedAt).
+		Save(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("mark video task finalized: %w", err)
+	}
+	return updated, nil
 }
 
 func validateVideoTaskCreateWithReservation(req CreateVideoTaskWithReservationRequest) error {
@@ -332,6 +431,14 @@ func validateVideoTaskCreateWithReservation(req CreateVideoTaskWithReservationRe
 	}
 	if req.Reserve.UserID != req.Task.UserID || strings.TrimSpace(req.Reserve.TaskID) != req.Task.ID.String() {
 		return errs.BadRequest("video task reservation identity does not match task")
+	}
+	reserved, reservedErr := decimal.NewFromString(req.Task.ReservedPoints)
+	amount, amountErr := decimal.NewFromString(req.Reserve.EstimatedPoints)
+	if reservedErr != nil || amountErr != nil || reserved.IsNegative() || !reserved.Equal(amount) {
+		return errs.BadRequest("video task reserved points do not match reservation")
+	}
+	if req.Task.APIKeyID != nil && *req.Task.APIKeyID <= 0 {
+		return errs.BadRequest("invalid video API key id")
 	}
 	if strings.TrimSpace(req.Task.TaskType) == "" || strings.TrimSpace(req.Task.RouteModelCode) == "" || req.Task.RouteModelID <= 0 {
 		return errs.BadRequest("video task type and route model are required")
@@ -410,6 +517,9 @@ func mapVideoTask(entity *repoent.VideoTask) videotaskservice.Task {
 		IdempotencyKey: entity.IdempotencyKey, RequestFingerprint: entity.RequestFingerprint, Version: entity.UpdatedAt.UnixNano(),
 		CreatedAt: entity.CreatedAt, UpdatedAt: entity.UpdatedAt, StartedAt: entity.StartedAt, FinishedAt: entity.FinishedAt,
 	}
+	if entity.APIKeyID != nil {
+		result.APIKeyID = *entity.APIKeyID
+	}
 	if entity.SourceCanvasNodeID != nil {
 		result.SourceCanvasNodeID = *entity.SourceCanvasNodeID
 	}
@@ -437,6 +547,27 @@ func mapVideoTask(entity *repoent.VideoTask) videotaskservice.Task {
 		result.Inputs = append(result.Inputs, videotaskservice.Input{ID: input.ID, AssetID: input.AssetID, Role: input.Role, Ordinal: input.Ordinal, AssetSnapshot: cloneMap(input.AssetSnapshot)})
 	}
 	return result
+}
+
+func settleVideoAPIKeyQuota(ctx context.Context, tx *repoent.Tx, task *repoent.VideoTask, actualPoints string) error {
+	if task.APIKeyID == nil {
+		return nil
+	}
+	actual, err := decimal.NewFromString(actualPoints)
+	if err != nil || actual.IsNegative() {
+		return errs.BadRequest("invalid video actual points")
+	}
+	if err := SettleAPIKeyQuotaTx(ctx, tx, *task.APIKeyID, task.ID.String(), actual, time.Now().UTC()); err != nil {
+		return fmt.Errorf("settle video API key quota: %w", err)
+	}
+	return nil
+}
+
+func videoAPIKeyPointer(id int64) *int64 {
+	if id <= 0 {
+		return nil
+	}
+	return &id
 }
 
 func optionalString(value string) *string {

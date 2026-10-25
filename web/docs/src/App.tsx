@@ -9,7 +9,7 @@ const ReferencePage = lazy(() => import('./ReferencePage'))
 type Route = { kind: 'guide'; id: GuideId } | { kind: 'reference' }
 
 function currentRoute(): Route {
-  const value = window.location.hash.replace(/^#\/?/, '')
+  const value = window.location.hash.replace(/^#\/?/, '').split('#')[0]
   if (value === 'reference') return { kind: 'reference' }
   const id = value.replace(/^guide\//, '') as GuideId
   return { kind: 'guide', id: guides.some((guide) => guide.id === id) ? id : 'quickstart' }
@@ -24,7 +24,12 @@ export default function App() {
   const groups = useMemo(() => Array.from(new Set(guides.map((item) => item.group))), [])
 
   useEffect(() => {
-    const update = () => { setRoute(currentRoute()); setMobileOpen(false); window.scrollTo({ top: 0 }) }
+    const update = () => {
+      setRoute(currentRoute()); setMobileOpen(false)
+      const anchor = window.location.hash.split('#')[2]
+      if (anchor) window.requestAnimationFrame(() => document.getElementById(anchor)?.scrollIntoView())
+      else window.scrollTo({ top: 0 })
+    }
     window.addEventListener('hashchange', update)
     if (!window.location.hash) window.location.hash = '/guide/quickstart'
     return () => window.removeEventListener('hashchange', update)
@@ -83,7 +88,7 @@ export default function App() {
           ) : null}
         </main>
 
-        {guide && toc.length ? <aside className="docs-toc" aria-label="本页目录" inert={mobileOpen ? true : undefined}><strong>本页内容</strong>{toc.map((item) => <a key={item.id} href={`#${item.id}`}>{item.label}</a>)}</aside> : null}
+        {guide && toc.length ? <aside className="docs-toc" aria-label="本页目录" inert={mobileOpen ? true : undefined}><strong>本页内容</strong>{toc.map((item) => <a key={item.id} href={`#/guide/${guide.id}#${item.id}`}>{item.label}</a>)}</aside> : null}
       </div>
       {searchOpen ? <DocsSearch onClose={() => setSearchOpen(false)} /> : null}
     </div>

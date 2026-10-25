@@ -38,6 +38,7 @@ type Input struct {
 type Task struct {
 	ID                    uuid.UUID               `json:"id"`
 	UserID                int64                   `json:"-"`
+	APIKeyID              int64                   `json:"api_key_id,omitempty"`
 	ProjectID             uuid.UUID               `json:"project_id"`
 	SourceChannel         string                  `json:"source_channel"`
 	SourceCanvasID        *uuid.UUID              `json:"source_canvas_id,omitempty"`

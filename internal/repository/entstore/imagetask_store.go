@@ -306,7 +306,7 @@ func (s *ImageTaskStore) GetByID(ctx context.Context, userID int64, taskID strin
 	if err != nil {
 		return domainimagetask.Task{}, err
 	}
-	return mapImageTaskEntity(entity, results)
+	return s.mapNamedImageTask(ctx, entity, results)
 }
 
 func (s *ImageTaskStore) GetImageResultByID(ctx context.Context, userID int64, imageID string) (provider.ImageResult, error) {
@@ -324,7 +324,7 @@ func (s *ImageTaskStore) GetImageResultByID(ctx context.Context, userID int64, i
 		}
 		return provider.ImageResult{}, err
 	}
-	return mapImageResultEntity(result), nil
+	return s.mapNamedImageResult(ctx, result), nil
 }
 
 func (s *ImageTaskStore) GetOwnedGalleryImage(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
@@ -352,7 +352,7 @@ func (s *ImageTaskStore) GetOwnedGalleryImage(ctx context.Context, userID int64,
 		}
 		return domainimagetask.GalleryImage{}, err
 	}
-	return mapGalleryImageEntity(entity, taskEntity), nil
+	return s.mapNamedGalleryImage(ctx, entity, taskEntity), nil
 }
 
 func (s *ImageTaskStore) GetImageResultForAdmin(ctx context.Context, imageID string) (provider.ImageResult, error) {
@@ -370,7 +370,7 @@ func (s *ImageTaskStore) GetImageResultForAdmin(ctx context.Context, imageID str
 		}
 		return provider.ImageResult{}, err
 	}
-	return mapImageResultEntity(result), nil
+	return s.mapNamedImageResult(ctx, result), nil
 }
 
 func (s *ImageTaskStore) ListByUser(ctx context.Context, userID int64) ([]domainimagetask.Task, error) {
@@ -389,7 +389,7 @@ func (s *ImageTaskStore) ListRecentByUserProject(ctx context.Context, userID int
 }
 
 func (s *ImageTaskStore) listByUserProject(ctx context.Context, userID int64, projectID string, limit int) ([]domainimagetask.Task, error) {
-	query := s.client.ImageTask.Query().Where(imagetask.UserIDEQ(userID), imagetask.DeletedAtIsNil())
+	query := s.client.ImageTask.Query().Where(imagetask.UserIDEQ(userID), imagetask.DeletedAtIsNil(), visibleHistory("image", userID))
 	if projectID = strings.TrimSpace(projectID); projectID != "" {
 		parsedProjectID, err := uuid.Parse(projectID)
 		if err != nil {
@@ -427,11 +427,22 @@ func (s *ImageTaskStore) listByUserProject(ctx context.Context, userID int64, pr
 		resultsByTask[entity.TaskID] = append(resultsByTask[entity.TaskID], entity)
 	}
 
+	resultIDs := make([]uuid.UUID, 0, len(resultEntities))
+	for _, result := range resultEntities {
+		resultIDs = append(resultIDs, result.ID)
+	}
+	names := s.imageNames(ctx, resultIDs)
 	list := make([]domainimagetask.Task, 0, len(entities))
 	for _, entity := range entities {
 		task, err := mapImageTaskEntity(entity, resultsByTask[entity.ID])
 		if err != nil {
 			return nil, err
+		}
+		for i := range task.Results {
+			if name, ok := names[task.Results[i].ID]; ok {
+				task.Results[i].Name = name
+				task.Results[i].MediaAssetID = task.Results[i].ID
+			}
 		}
 		list = append(list, task)
 	}
@@ -477,7 +488,7 @@ func (s *ImageTaskStore) RequestPublishInProject(ctx context.Context, userID int
 	if err != nil {
 		return domainimagetask.GalleryImage{}, err
 	}
-	return mapGalleryImageEntity(updated, taskEntity), nil
+	return s.mapNamedGalleryImage(ctx, updated, taskEntity), nil
 }
 
 func (s *ImageTaskStore) CancelPublish(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
@@ -524,7 +535,7 @@ func (s *ImageTaskStore) CancelPublishInProject(ctx context.Context, userID int6
 	if entity.UserID != userID {
 		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
 	}
-	return mapGalleryImageEntity(entity, taskEntity), nil
+	return s.mapNamedGalleryImage(ctx, entity, taskEntity), nil
 }
 
 func (s *ImageTaskStore) SetImageGroup(ctx context.Context, userID int64, imageID, imageGroup string) (domainimagetask.GalleryImage, error) {
@@ -545,18 +556,36 @@ func (s *ImageTaskStore) SetImageGroupInProject(ctx context.Context, userID int6
 		}
 		predicates = append(predicates, imageresult.ProjectIDEQ(parsed))
 	}
-	count, err := s.client.ImageResult.Update().Where(predicates...).SetImageGroup(imageGroup).Save(ctx)
+	_, err = withSerializableTx(ctx, s.client, func(tx *repoent.Tx) (bool, error) {
+		legacy, err := tx.ImageResult.Query().Where(predicates...).Only(ctx)
+		if repoent.IsNotFound(err) {
+			return false, repoerr.ErrNotFound
+		}
+		if err != nil {
+			return false, err
+		}
+		asset, err := ensureMediaAsset(ctx, tx, userID, imageUUID)
+		if err != nil {
+			return false, err
+		}
+		update := tx.MediaAsset.UpdateOne(asset).AddVersion(1)
+		if err := setUpdateAssetGroup(ctx, tx, update, userID, asset.ProjectID, imageGroup); err != nil {
+			return false, err
+		}
+		canonical, err := update.Save(ctx)
+		if err != nil {
+			return false, err
+		}
+		return true, tx.ImageResult.UpdateOne(legacy).SetImageGroup(canonical.GroupName).Exec(ctx)
+	})
 	if err != nil {
 		return domainimagetask.GalleryImage{}, err
-	}
-	if count != 1 {
-		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
 	}
 	updated, taskEntity, err := s.loadGalleryImageWithTask(ctx, imageUUID)
 	if err != nil {
 		return domainimagetask.GalleryImage{}, err
 	}
-	return mapGalleryImageEntity(updated, taskEntity), nil
+	return s.mapNamedGalleryImage(ctx, updated, taskEntity), nil
 }
 
 func (s *ImageTaskStore) TransferImageProject(ctx context.Context, userID int64, imageID, sourceProjectID, targetProjectID string) (domainimagetask.GalleryImage, error) {
@@ -598,11 +627,27 @@ func (s *ImageTaskStore) TransferImageProject(ctx context.Context, userID int64,
 	if err != nil {
 		return domainimagetask.GalleryImage{}, err
 	}
+	asset, err := ensureMediaAsset(ctx, tx, userID, imageUUID)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, err
+	}
+	assetUpdate := tx.MediaAsset.UpdateOne(asset).SetProjectID(targetID).AddVersion(1)
+	if err := setUpdateAssetGroup(ctx, tx, assetUpdate, userID, targetID, entity.ImageGroup); err != nil {
+		return domainimagetask.GalleryImage{}, err
+	}
+	canonical, err := assetUpdate.Save(ctx)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, err
+	}
+	if err := tx.ImageResult.UpdateOne(entity).SetImageGroup(canonical.GroupName).Exec(ctx); err != nil {
+		return domainimagetask.GalleryImage{}, err
+	}
+	entity.ImageGroup = canonical.GroupName
 	taskEntity, err := tx.ImageTask.Get(ctx, entity.TaskID)
 	if err != nil {
 		return domainimagetask.GalleryImage{}, err
 	}
-	result := mapGalleryImageEntity(entity, taskEntity)
+	result := s.mapNamedGalleryImage(ctx, entity, taskEntity)
 	if err := tx.Commit(); err != nil {
 		return domainimagetask.GalleryImage{}, fmt.Errorf("commit gallery project transfer: %w", err)
 	}
@@ -628,7 +673,7 @@ func (s *ImageTaskStore) ReviewImage(ctx context.Context, imageID, nextStatus, r
 	}
 	currentStatus := defaultString(entity.VisibilityStatus, domainimagetask.VisibilityPrivate)
 	if currentStatus == nextStatus {
-		return mapGalleryImageEntity(entity, taskEntity), nil
+		return s.mapNamedGalleryImage(ctx, entity, taskEntity), nil
 	}
 	if !canTransitionVisibility(currentStatus, nextStatus) {
 		return domainimagetask.GalleryImage{}, repoerr.ErrConflict
@@ -656,7 +701,7 @@ func (s *ImageTaskStore) ReviewImage(ctx context.Context, imageID, nextStatus, r
 		}
 		return domainimagetask.GalleryImage{}, err
 	}
-	return mapGalleryImageEntity(updated, taskEntity), nil
+	return s.mapNamedGalleryImage(ctx, updated, taskEntity), nil
 }
 
 func (s *ImageTaskStore) ReviewImageInProject(ctx context.Context, userID int64, imageID, projectID, nextStatus, reviewReason string, publishedAt *time.Time) (domainimagetask.GalleryImage, error) {
@@ -688,7 +733,7 @@ func (s *ImageTaskStore) ReviewImageInProject(ctx context.Context, userID int64,
 	if err != nil {
 		return domainimagetask.GalleryImage{}, err
 	}
-	return mapGalleryImageEntity(entity, task), nil
+	return s.mapNamedGalleryImage(ctx, entity, task), nil
 }
 
 func (s *ImageTaskStore) DeleteImageResult(ctx context.Context, userID int64, imageID string) (provider.ImageResult, error) {
@@ -723,7 +768,7 @@ func (s *ImageTaskStore) DeleteImageResultInProject(ctx context.Context, userID 
 		}
 		return provider.ImageResult{}, err
 	}
-	result := mapImageResultEntity(entity)
+	result := s.mapNamedImageResult(ctx, entity)
 	updated, err := tx.ImageResult.Update().Where(writePredicates...).SetDeletedAt(time.Now().UTC()).Save(ctx)
 	if err != nil {
 		return provider.ImageResult{}, err
@@ -1021,7 +1066,7 @@ func (s *ImageTaskStore) GetPublicImage(ctx context.Context, imageID string, vie
 	if entity.VisibilityStatus != domainimagetask.VisibilityApproved {
 		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
 	}
-	image := mapGalleryImageEntity(entity, taskEntity)
+	image := s.mapNamedGalleryImage(ctx, entity, taskEntity)
 	items, err := s.decoratePublicImages(ctx, []domainimagetask.GalleryImage{image}, viewerUserID)
 	if err != nil {
 		return domainimagetask.GalleryImage{}, err
@@ -1081,7 +1126,7 @@ func (s *ImageTaskStore) SetPublicImageInteraction(ctx context.Context, userID i
 	if err := s.recalculatePublicImageStats(ctx, imageUUID); err != nil {
 		return domainimagetask.GalleryImage{}, err
 	}
-	image := mapGalleryImageEntity(entity, taskEntity)
+	image := s.mapNamedGalleryImage(ctx, entity, taskEntity)
 	items, err := s.decoratePublicImages(ctx, []domainimagetask.GalleryImage{image}, userID)
 	if err != nil {
 		return domainimagetask.GalleryImage{}, err
@@ -1166,11 +1211,15 @@ func (s *ImageTaskStore) AcquireNextQueuedTask(ctx context.Context, owner string
 	}
 
 	expiresAt := now.Add(leaseTTL)
+	progressStage, progressMessage := domainimagetask.ProgressStageProvider, "正在调用模型生成图片"
+	if nullableString(entity.ArtifactRecoveryPayload) != "" {
+		progressStage, progressMessage = domainimagetask.ProgressStagePersisting, "正在恢复并保存生成结果"
+	}
 	update := tx.ImageTask.Update().
 		Where(imagetask.IDEQ(entity.ID), imagetask.DeletedAtIsNil(), acquireEligiblePredicate(now)).
 		SetStatus(domainimagetask.StatusRunning).
-		SetProgressStage(domainimagetask.ProgressStageProvider).
-		SetProgressMessage("正在调用模型生成图片").
+		SetProgressStage(progressStage).
+		SetProgressMessage(progressMessage).
 		SetLeaseOwner(owner).
 		SetLeaseExpiresAt(expiresAt)
 	if entity.StartedAt == nil {
@@ -1199,7 +1248,7 @@ func (s *ImageTaskStore) AcquireNextQueuedTask(ctx context.Context, owner string
 	if err := tx.Commit(); err != nil {
 		return domainimagetask.Task{}, err
 	}
-	return mapImageTaskEntity(updated, results)
+	return s.mapNamedImageTask(ctx, updated, results)
 }
 
 func (s *ImageTaskStore) RenewTaskLease(ctx context.Context, taskID, owner string, now time.Time, leaseTTL time.Duration) (domainimagetask.Task, error) {
@@ -1263,7 +1312,7 @@ func (s *ImageTaskStore) RenewTaskLease(ctx context.Context, taskID, owner strin
 	if err := tx.Commit(); err != nil {
 		return domainimagetask.Task{}, err
 	}
-	return mapImageTaskEntity(updated, results)
+	return s.mapNamedImageTask(ctx, updated, results)
 }
 
 func createImageTask(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, task domainimagetask.Task, trace map[string]any, routingSnapshot map[string]any) error {
@@ -1297,7 +1346,7 @@ func createImageTask(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, ta
 		SetRequestedOutputImageCount(defaultPositive(task.OutputImageCount, 1)).
 		SetSuccessOutputImageCount(len(task.Results)).
 		SetReferenceImageCount(task.ReferenceImageCount).
-		SetMaskPresent(false).
+		SetMaskPresent(strings.TrimSpace(task.MaskAssetID) != "").
 		SetResponseMode(defaultString(task.ResponseMode, "async")).
 		SetSavePolicy(defaultString(task.SavePolicy, "private")).
 		SetEstimatedPoints(defaultString(task.EstimatedPoints, "0.00000")).
@@ -1432,6 +1481,7 @@ func updateImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageT
 		SetRequestedOutputImageCount(defaultPositive(task.OutputImageCount, 1)).
 		SetSuccessOutputImageCount(len(task.Results)).
 		SetReferenceImageCount(task.ReferenceImageCount).
+		SetMaskPresent(strings.TrimSpace(task.MaskAssetID) != "").
 		SetResponseMode(defaultString(task.ResponseMode, entity.ResponseMode)).
 		SetSavePolicy(defaultString(task.SavePolicy, entity.SavePolicy)).
 		SetEstimatedPoints(defaultString(task.EstimatedPoints, entity.EstimatedPoints)).
@@ -1578,6 +1628,17 @@ func upsertImageMediaAsset(
 		}
 		parsedProjectID = defaultProject.ID
 	}
+	group, err := resolveAssetGroup(ctx, tx.Client(), userID, parsedProjectID, result.ImageGroup)
+	if err != nil {
+		return err
+	}
+	result.ImageGroup = ""
+	if group != nil {
+		result.ImageGroup = group.Name
+	}
+	if err := tx.ImageResult.UpdateOneID(resultID).SetImageGroup(result.ImageGroup).Exec(ctx); err != nil {
+		return err
+	}
 	var storageConfigID *uuid.UUID
 	if value := strings.TrimSpace(result.StorageConfigID); value != "" {
 		parsed, parseErr := uuid.Parse(value)
@@ -1586,7 +1647,10 @@ func upsertImageMediaAsset(
 		}
 		storageConfigID = &parsed
 	}
-	name := strings.TrimSpace(path.Base(objectKey))
+	name := strings.TrimSpace(result.Name)
+	if name == "" {
+		name = strings.TrimSpace(path.Base(objectKey))
+	}
 	if name == "" || name == "." || name == "/" {
 		name = "image-" + resultID.String()
 	}
@@ -1630,6 +1694,9 @@ func upsertImageMediaAsset(
 		if result.Height > 0 {
 			builder.SetHeight(result.Height)
 		}
+		if err := setCreateAssetGroup(ctx, tx, builder, userID, parsedProjectID, result.ImageGroup); err != nil {
+			return err
+		}
 		if err := builder.Exec(ctx); err != nil {
 			return err
 		}
@@ -1651,6 +1718,9 @@ func upsertImageMediaAsset(
 		SetSourceTaskKind("image").
 		SetSourceTaskID(taskID).
 		SetNillableStorageConfigID(storageConfigID)
+	if err := setUpdateAssetGroup(ctx, tx, update, userID, parsedProjectID, result.ImageGroup); err != nil {
+		return err
+	}
 	if result.Width > 0 {
 		update.SetWidth(result.Width)
 	} else {
@@ -1753,6 +1823,7 @@ func updateLeaseOwnedImageTask(ctx context.Context, tx *repoent.Tx, entity *repo
 		SetRequestedOutputImageCount(defaultPositive(task.OutputImageCount, 1)).
 		SetSuccessOutputImageCount(len(task.Results)).
 		SetReferenceImageCount(task.ReferenceImageCount).
+		SetMaskPresent(strings.TrimSpace(task.MaskAssetID) != "").
 		SetResponseMode(defaultString(task.ResponseMode, entity.ResponseMode)).
 		SetSavePolicy(defaultString(task.SavePolicy, entity.SavePolicy)).
 		SetEstimatedPoints(defaultString(task.EstimatedPoints, entity.EstimatedPoints)).
@@ -1891,6 +1962,7 @@ func updateRecoverableImageTask(ctx context.Context, tx *repoent.Tx, entity *rep
 		SetRequestedOutputImageCount(defaultPositive(task.OutputImageCount, 1)).
 		SetSuccessOutputImageCount(len(task.Results)).
 		SetReferenceImageCount(task.ReferenceImageCount).
+		SetMaskPresent(strings.TrimSpace(task.MaskAssetID) != "").
 		SetResponseMode(defaultString(task.ResponseMode, entity.ResponseMode)).
 		SetSavePolicy(defaultString(task.SavePolicy, entity.SavePolicy)).
 		SetEstimatedPoints(defaultString(task.EstimatedPoints, entity.EstimatedPoints)).
@@ -2281,6 +2353,8 @@ func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.Ima
 		OutputImageCount:      entity.RequestedOutputImageCount,
 		ReferenceImageCount:   entity.ReferenceImageCount,
 		ReferenceAssetIDs:     decodeReferenceAssetIDs(entity.RoutingSnapshot),
+		MaskAssetID:           decodeMaskAssetID(entity.RoutingSnapshot),
+		RequestFingerprint:    decodeOpenRequestFingerprint(entity.RoutingSnapshot),
 		ReferenceStrength:     nullableInt(entity.ReferenceStrength),
 		Seed:                  entity.Seed,
 		EstimatedPoints:       entity.EstimatedPoints,
@@ -2392,12 +2466,24 @@ func buildProviderTrace(task domainimagetask.Task) (map[string]any, error) {
 	return trace, nil
 }
 
+func decodeMaskAssetID(snapshot map[string]any) string {
+	value, _ := snapshot["mask_asset_id"].(string)
+	return strings.TrimSpace(value)
+}
+
+func decodeOpenRequestFingerprint(snapshot map[string]any) string {
+	value, _ := snapshot["open_request_fingerprint"].(string)
+	return value
+}
+
 func buildRoutingSnapshot(task domainimagetask.Task) (map[string]any, error) {
 	snapshot := map[string]any{
-		"reference_asset_ids":    task.ReferenceAssetIDs,
-		"provider_model_id":      task.ProviderModelID,
-		"route_snapshot_version": task.RouteSnapshotVersion,
-		"fallback_count":         task.FallbackCount,
+		"reference_asset_ids":      task.ReferenceAssetIDs,
+		"mask_asset_id":            strings.TrimSpace(task.MaskAssetID),
+		"open_request_fingerprint": task.RequestFingerprint,
+		"provider_model_id":        task.ProviderModelID,
+		"route_snapshot_version":   task.RouteSnapshotVersion,
+		"fallback_count":           task.FallbackCount,
 	}
 	if strings.TrimSpace(task.GenerationSnapshot.CapabilityVersion) != "" {
 		generationSnapshot, err := jsonRoundTrip(task.GenerationSnapshot)
@@ -2610,6 +2696,7 @@ func (s *ImageTaskStore) galleryImagesFromEntities(ctx context.Context, entities
 		}
 		items = append(items, mapGalleryImageEntity(entity, taskEntity))
 	}
+	items = s.decorateNamedGalleryImages(ctx, items)
 	return s.decoratePublicImages(ctx, items, viewerUserID)
 }
 

@@ -21,14 +21,36 @@ const endpoints = docsFromOpenApi({
         responses: { 200: { description: 'OK' } },
       },
     },
-    '/api/open/image/v1/tasks': {
+    '/api/open/v1/image-tasks': {
       post: {
         summary: 'Open API 创建任务',
-        security: [{ accessKeyAuth: [], accessTimestamp: [], accessBodySHA256: [], accessSignature: [] }],
+        security: [{ developerBearerAuth: [] }],
         requestBody: {
           content: {
             'application/json': {
               example: {
+                project_id: 'owned-project',
+                route_model_code: 'plus',
+                prompt: 'A neon studio',
+                quote_token: 'preflight-quote',
+                idempotency_key: 'create-operation',
+              },
+            },
+          },
+        },
+        responses: { 201: { description: 'Created' } },
+      },
+    },
+    '/api/open/v1/image-tasks/preflight': {
+      post: {
+        summary: 'Open API 完整请求预检',
+        security: [{ developerBearerAuth: [] }],
+        requestBody: {
+          content: {
+            'application/json': {
+              example: {
+                project_id: 'owned-project',
+                route_model_code: 'plus',
                 prompt: 'A neon studio',
               },
             },
@@ -53,14 +75,22 @@ for (const requiredSnippet of ['curl -X POST', 'Authorization: Bearer', 'Content
 if (requestExample.trim() === 'curl /api/agent/image/v1/tasks') {
   throw new Error(`OpenAPI request examples should not fall back to path-only curl, got ${requestExample}`)
 }
-const openApiExample = endpoints.find((item) => item.path === '/api/open/image/v1/tasks')?.requestExample ?? ''
-for (const requiredSnippet of ['X-Access-Key', 'X-Timestamp', 'X-Body-SHA256', 'X-Signature']) {
-  if (!openApiExample.includes(requiredSnippet)) {
-    throw new Error(`Open API request examples should include AK/SK signature header ${requiredSnippet}, got ${openApiExample}`)
+for (const path of ['/api/open/v1/image-tasks', '/api/open/v1/image-tasks/preflight']) {
+  const endpoint = endpoints.find((item) => item.path === path)
+  const example = endpoint?.requestExample ?? ''
+  if (endpoint?.group !== 'Open API' || endpoint.method !== 'POST' || endpoint.auth !== 'Authorization required') {
+    throw new Error(`Unified developer endpoint should require authorization, got ${JSON.stringify(endpoint)}`)
+  }
+  for (const snippet of [`curl -X POST "${path}"`, 'Authorization: Bearer <your_api_key>', 'Content-Type: application/json', '"project_id"', '"route_model_code"', '"prompt"']) {
+    if (!example.includes(snippet)) throw new Error(`Unified developer example missing ${snippet}, got ${example}`)
+  }
+  for (const obsolete of ['X-Access-Key', 'X-Timestamp', 'X-Body-SHA256', 'X-Signature', '/api/open/image/v1/']) {
+    if (example.includes(obsolete)) throw new Error(`Unified developer example contains obsolete signing contract ${obsolete}`)
   }
 }
-if (openApiExample.includes('Authorization: Bearer')) {
-  throw new Error(`Open API request examples should not use bearer auth, got ${openApiExample}`)
+const createExample = endpoints.find((item) => item.path === '/api/open/v1/image-tasks')?.requestExample ?? ''
+for (const field of ['"quote_token"', '"idempotency_key"']) {
+  if (!createExample.includes(field)) throw new Error(`Create example missing ${field}`)
 }
 
 try {
@@ -78,7 +108,7 @@ const examples = normalizeExamples({
       id: 'create-task',
       title: '创建任务',
       language: 'curl',
-      code: 'curl -X POST /api/open/image/v1/tasks',
+      code: 'curl -X POST /api/open/v1/image-tasks',
     },
     {
       id: 'bad-html',
@@ -90,7 +120,7 @@ const examples = normalizeExamples({
 })
 const examplesText = docsCopyableExamplesText(examples)
 
-if (!examplesText.includes('curl -X POST /api/open/image/v1/tasks')) {
+if (!examplesText.includes('curl -X POST /api/open/v1/image-tasks')) {
   throw new Error(`docs examples copy text should keep real code examples, got ${examplesText}`)
 }
 

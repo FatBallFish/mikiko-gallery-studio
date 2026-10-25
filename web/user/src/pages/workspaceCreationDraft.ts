@@ -7,6 +7,7 @@ const workspaceCreationDraftHistoryKey = '__picGalleryWorkspaceCreationDraft'
 
 export type WorkspaceCreationDraft = {
   version: 1
+  intent?: 'asset-edit' | 'restore'
   prompt: string
   task_type: ImageTaskType
   route_model_code?: string
@@ -70,8 +71,7 @@ export function workspaceCreationDraftFromSnapshot(snapshot: WorkspaceCreationSn
     output_compression: typeof snapshot.output_compression === 'number' ? snapshot.output_compression : undefined,
     moderation: clean(snapshot.moderation),
     image_count: snapshot.requested_output_image_count ?? snapshot.image_count ?? 1,
-    // Reusing history intentionally starts references unresolved; users must bind current assets explicitly.
-    reference_asset_ids: [],
+    reference_asset_ids: snapshot.reference_asset_ids ?? [],
   }
 }
 
@@ -107,6 +107,7 @@ export function normalizeWorkspaceCreationDraft(
   capability: Capability,
 ): NormalizedWorkspaceCreationDraft {
   const notices: string[] = []
+  const quietDefaults = draft.intent === 'asset-edit'
   const requestedReferences = unique((draft.reference_asset_ids ?? []).map(clean).filter(Boolean) as string[])
   const requestedTaskType = draft.task_type === 'image_edit' && requestedReferences.length === 0
     ? 'text_to_image'
@@ -120,22 +121,22 @@ export function normalizeWorkspaceCreationDraft(
   const rawModel = models.find((item) => item.code === clean(draft.route_model_code)) ?? models[0]
   const model = workspaceModelForTask(rawModel, taskType)
   if (!model) throw new Error('当前没有可用于该任务类型的模型。')
-  if (model.code !== clean(draft.route_model_code)) notices.push(`模型 ${clean(draft.route_model_code) || '未指定'} 当前不可用，已切换为 ${model.name || model.code}。`)
+  if (model.code !== clean(draft.route_model_code) && (!quietDefaults || clean(draft.route_model_code))) notices.push(`模型 ${clean(draft.route_model_code) || '未指定'} 当前不可用，已切换为 ${model.name || model.code}。`)
 
 	const sizeModes = unique(model.size_modes?.filter((item) => item === 'auto' || item === 'ratio' || item === 'pixel') ?? [])
-	const sizeMode = chooseSizeMode(sizeModes.length ? sizeModes : ['ratio'], draft.size_mode, notices)
-	const baseResolution = sizeMode === 'ratio' ? chooseOption(model.base_resolution ?? capability.base_resolution ?? [], draft.base_resolution, '基础分辨率', notices) : ''
+	const sizeMode = chooseSizeMode(sizeModes.length ? sizeModes : ['ratio'], draft.size_mode, notices, quietDefaults)
+	const baseResolution = sizeMode === 'ratio' ? chooseOption(model.base_resolution ?? capability.base_resolution ?? [], draft.base_resolution, '基础分辨率', notices, quietDefaults) : ''
   const aspectRatios = model.aspect_ratios?.length ? model.aspect_ratios : capability.aspect_ratios
   const pixelSizes = model.pixel_sizes?.length ? model.pixel_sizes : capability.pixel_sizes ?? []
 	const requestedRatio = clean(draft.aspect_ratio)
 	const customRatio = sizeMode === 'ratio' && workspaceCustomRatioSupported(model) && requestedRatio && workspaceCustomRatioValid(requestedRatio)
-	const aspectRatio = sizeMode === 'ratio' ? customRatio ? requestedRatio : chooseOption(aspectRatios, draft.aspect_ratio, '画面比例', notices) : ''
-  const pixelSize = sizeMode === 'pixel' ? normalizeDraftPixelSize(model, pixelSizes, draft.pixel_size, notices) : ''
-  const quality = chooseOption(model.quality ?? model.qualities ?? capability.quality ?? capability.qualities ?? ['auto'], draft.quality, '质量', notices)
-	const outputFormat = chooseOption(model.output_format ?? capability.output_format ?? ['png'], draft.output_format, '输出格式', notices)
+	const aspectRatio = sizeMode === 'ratio' ? customRatio ? requestedRatio : chooseOption(aspectRatios, draft.aspect_ratio, '画面比例', notices, quietDefaults) : ''
+  const pixelSize = sizeMode === 'pixel' ? normalizeDraftPixelSize(model, pixelSizes, draft.pixel_size, notices, quietDefaults) : ''
+  const quality = chooseOption(model.quality ?? model.qualities ?? capability.quality ?? capability.qualities ?? ['auto'], draft.quality, '质量', notices, quietDefaults)
+	const outputFormat = chooseOption(model.output_format ?? capability.output_format ?? ['png'], draft.output_format, '输出格式', notices, quietDefaults)
 	const background = workspaceBackgroundForFormat(model, clean(draft.background) ?? '', outputFormat)
 	if (clean(draft.background) && background !== clean(draft.background)) notices.push(`背景 ${clean(draft.background)} 与当前输出格式不兼容，已调整为 ${background || '不传'}。`)
-  const moderation = chooseOption(model.moderation ?? capability.moderation ?? ['auto'], draft.moderation, '内容审核', notices)
+  const moderation = chooseOption(model.moderation ?? capability.moderation ?? ['auto'], draft.moderation, '内容审核', notices, quietDefaults)
 
   const requestedCount = finiteInteger(draft.image_count, 1)
   const imageCount = normalizeWorkspaceImageCount(requestedCount)
@@ -185,6 +186,7 @@ function parseStoredDraft(raw: string | null) {
 function parseWorkspaceCreationDraft(value: unknown): WorkspaceCreationDraft | null {
   if (!value || typeof value !== 'object') return null
   const draft = value as Partial<WorkspaceCreationDraft>
+  if (draft.intent !== undefined && draft.intent !== 'asset-edit' && draft.intent !== 'restore') return null
   if (draft.version !== 1 || typeof draft.prompt !== 'string') return null
   if (draft.task_type !== 'text_to_image' && draft.task_type !== 'image_edit') return null
 	const optionalStrings = [draft.route_model_code, draft.size_mode, draft.base_resolution, draft.aspect_ratio, draft.pixel_size, draft.quality, draft.output_format, draft.background, draft.moderation]
@@ -194,6 +196,7 @@ function parseWorkspaceCreationDraft(value: unknown): WorkspaceCreationDraft | n
   if (draft.reference_asset_ids !== undefined && (!Array.isArray(draft.reference_asset_ids) || draft.reference_asset_ids.some((item) => typeof item !== 'string'))) return null
   return {
     version: 1,
+    intent: draft.intent,
     prompt: draft.prompt,
     task_type: draft.task_type,
     route_model_code: clean(draft.route_model_code),
@@ -220,22 +223,22 @@ function clean(value: unknown) {
   return trimmed || undefined
 }
 
-function chooseOption(options: string[], requested: string | undefined, label: string, notices: string[]) {
+function chooseOption(options: string[], requested: string | undefined, label: string, notices: string[], quietDefaults = false) {
   const candidates = unique(options.map((item) => item.trim()).filter(Boolean))
   const selected = candidates.find((item) => item.toLowerCase() === clean(requested)?.toLowerCase()) ?? candidates[0] ?? ''
-  if (selected !== clean(requested)) notices.push(`${label} ${clean(requested) || '未指定'} 当前不可用，已调整为 ${selected || '未设置'}。`)
+  if (selected !== clean(requested) && (!quietDefaults || clean(requested))) notices.push(`${label} ${clean(requested) || '未指定'} 当前不可用，已调整为 ${selected || '未设置'}。`)
   return selected
 }
 
-function chooseSizeMode(options: string[], requested: string | undefined, notices: string[]) {
+function chooseSizeMode(options: string[], requested: string | undefined, notices: string[], quietDefaults = false) {
   const candidates = unique(options.map((item) => item.trim()).filter(Boolean))
   const explicit = candidates.find((item) => item.toLowerCase() === clean(requested)?.toLowerCase())
   const selected = explicit ?? (candidates.includes('auto') ? 'auto' : candidates.includes('ratio') ? 'ratio' : candidates[0] ?? '')
-  if (selected !== clean(requested)) notices.push(`尺寸模式 ${clean(requested) || '未指定'} 当前不可用，已调整为 ${selected || '未设置'}。`)
+  if (selected !== clean(requested) && (!quietDefaults || clean(requested))) notices.push(`尺寸模式 ${clean(requested) || '未指定'} 当前不可用，已调整为 ${selected || '未设置'}。`)
   return selected
 }
 
-function normalizeDraftPixelSize(model: CapabilityModelGroup, presets: string[], requested: string | undefined, notices: string[]) {
+function normalizeDraftPixelSize(model: CapabilityModelGroup, presets: string[], requested: string | undefined, notices: string[], quietDefaults = false) {
   const requestedSize = clean(requested)
   const preset = presets.find((item) => item.toLowerCase() === requestedSize?.toLowerCase())
   if (preset) return preset
@@ -250,7 +253,7 @@ function normalizeDraftPixelSize(model: CapabilityModelGroup, presets: string[],
     }
   }
 
-  return chooseOption(presets, requested, '像素尺寸', notices)
+  return chooseOption(presets, requested, '像素尺寸', notices, quietDefaults)
 }
 
 function unique<T>(values: T[]) {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { ConnectedAppsPanel } from './ConnectedAppsPanel'
 import { cn } from '../../../shared/classnames'
 import { useApp } from '../components'
 import { settingsAccentThemeOptions, settingsThemeModeOptions } from './settingsThemeModel'
@@ -103,6 +104,8 @@ export function SettingsPage() {
               <span className="u-meta">实时预览</span>
             </div>
           </section>
+
+          <ConnectedAppsPanel />
 
           <section className="u-plate u-plate--pad" aria-labelledby="settings-motion-title">
             <div className="u-panel-title">

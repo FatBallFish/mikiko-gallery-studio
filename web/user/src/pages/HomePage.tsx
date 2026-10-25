@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import type { ImageResult, MediaAccessProjection } from '../../../shared/api-types'
 import { openApi } from '../../../shared/open-api'
 import { userApi } from '../../../shared/user-api'
+import { PublicVideoGallery } from '../features/media/PublicVideoGallery'
 import { Button, EmptyState, ErrorState, GalleryImageFrame, ImageDetailModal, copyText, useApp } from '../components'
 import { useApiResource } from '../useApiResource'
 import { mediaAccess } from '../mediaAccess'
@@ -189,7 +190,9 @@ export function HomePage() {
           </div>
         ) : null}
       </section>
+      <PublicVideoGallery pageSize={6} />
       <ImageDetailModal
+        context="public"
         title="精选作品详情"
         image={selectedImage}
         imageUrl={selectedImage?.url || selectedImage?.download_url ? userApi.imageAssetUrl(selectedImage.url || selectedImage.download_url || '', null) : undefined}

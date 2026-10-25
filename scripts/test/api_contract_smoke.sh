@@ -262,8 +262,9 @@ request() {
   if curl --silent --show-error --fail-with-body --output "$response_file" "$@"; then
     cat "$response_file"
     return 0
+  else
+    status=$?
   fi
-  status=$?
   echo "HTTP request failed: ${method} ${url:-<unknown-url>}" >&2
   cat "$response_file" >&2
   echo >&2
@@ -273,22 +274,36 @@ request() {
 assert_json_field() {
   local json="$1"
   local expression="$2"
-  JSON="$json" python3 - "$expression" <<'PY'
+  local label="${3:-JSON field assertion at script line ${BASH_LINENO[0]}}"
+  JSON="$json" python3 - "$expression" "$label" <<'PY'
 import json
 import os
 import sys
 
-data = json.loads(os.environ["JSON"])
-expr = sys.argv[1]
+expr, label = sys.argv[1:]
+try:
+    data = json.loads(os.environ["JSON"])
+except json.JSONDecodeError:
+    raise SystemExit(f"{label}: invalid JSON (response omitted)")
 value = data
+traversed = []
 for part in expr.split("."):
-    if part:
-        if isinstance(value, list):
-            value = value[int(part)]
-        else:
-            value = value[part]
+    if not part:
+        continue
+    location = ".".join(traversed) or "<root>"
+    if isinstance(value, list):
+        if not part.isdecimal() or int(part) >= len(value):
+            raise SystemExit(f"{label}: cannot resolve {expr}: array {location} has length {len(value)}, requested index {part}")
+        value = value[int(part)]
+    elif isinstance(value, dict):
+        if part not in value:
+            raise SystemExit(f"{label}: cannot resolve {expr}: missing field at {location} (response omitted)")
+        value = value[part]
+    else:
+        raise SystemExit(f"{label}: cannot resolve {expr}: {location} is {type(value).__name__} (response omitted)")
+    traversed.append(part)
 if value in ("", None):
-    raise SystemExit(f"empty JSON field: {expr}")
+    raise SystemExit(f"{label}: empty JSON field: {expr}")
 print(value)
 PY
 }
@@ -1192,28 +1207,14 @@ print(base64.urlsafe_b64encode(sig).decode().rstrip("="))
 PY
 }
 
-signed_request() {
-  local method="$1"
-  local path="$2"
-  local body="${3:-}"
-  local body_hash timestamp signature
-  body_hash="$(body_sha256 "$body")"
-  timestamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-  signature="$(hmac_signature "$API_SECRET" "$method" "$path" "$timestamp" "$body_hash")"
+developer_request() {
+  local method="$1" path="$2" body="${3:-}"
   if [[ -n "$body" ]]; then
     request -X "$method" "$BASE_URL$path" \
-      -H "Content-Type: application/json" \
-      -H "X-Access-Key: $ACCESS_KEY" \
-      -H "X-Timestamp: $timestamp" \
-      -H "X-Body-SHA256: $body_hash" \
-      -H "X-Signature: $signature" \
-      --data "$body"
+      -H "Authorization: Bearer $API_SECRET" \
+      -H "Content-Type: application/json" --data "$body"
   else
-    request -X "$method" "$BASE_URL$path" \
-      -H "X-Access-Key: $ACCESS_KEY" \
-      -H "X-Timestamp: $timestamp" \
-      -H "X-Body-SHA256: $body_hash" \
-      -H "X-Signature: $signature"
+    request -X "$method" "$BASE_URL$path" -H "Authorization: Bearer $API_SECRET"
   fi
 }
 
@@ -1921,7 +1922,10 @@ wait_for_canvas_run_status() {
   local expected_status="$3"
   local body=""
   for _ in {1..160}; do
-    body="$(request "$BASE_URL/api/agent/canvas/v1/canvases/${canvas_id}/runs?refresh=true" -H "Authorization: Bearer $ACCESS_TOKEN")"
+    if ! body="$(request "$BASE_URL/api/agent/canvas/v1/canvases/${canvas_id}/runs?refresh=true" -H "Authorization: Bearer $ACCESS_TOKEN")"; then
+      echo 'Canvas run refresh failed before attachment; stopping canvas smoke.' >&2
+      return 1
+    fi
     if RUNS_JSON="$body" RUN_ID="$run_id" EXPECTED_STATUS="$expected_status" python3 - <<'PY'
 import json
 import os
@@ -2117,7 +2121,7 @@ PY
     --data "{\"project_id\":\"${DEFAULT_PROJECT_ID}\",\"name\":\"Smoke video canvas\",\"template\":\"blank\"}")"
   canvas_id="$(assert_json_field "$canvas_body" "data.id")"
   canvas_revision="$(assert_json_field "$canvas_body" "data.revision")"
-  canvas_document="{\"schema_version\":1,\"viewport\":{\"x\":0,\"y\":0,\"zoom\":1},\"nodes\":[{\"id\":\"video-generation\",\"type\":\"video_generation\",\"position\":{\"x\":400,\"y\":80},\"size\":{\"width\":320,\"height\":240},\"payload\":{\"draft\":{\"route_model_code\":\"smoke-video\",\"task_type\":\"text_to_video\",\"prompt_template\":\"A smoke-test video\",\"duration_seconds\":5,\"resolution\":\"720p\",\"aspect_ratio\":\"16:9\",\"audio_mode\":\"silent\",\"output_count\":1}}}],\"edges\":[]}"
+  canvas_document="{\"schema_version\":1,\"viewport\":{\"x\":0,\"y\":0,\"zoom\":1},\"nodes\":[{\"id\":\"video-generation\",\"type\":\"video_v2\",\"position\":{\"x\":400,\"y\":80},\"size\":{\"width\":320,\"height\":240},\"payload\":{\"draft\":{\"route_model_code\":\"smoke-video\",\"task_type\":\"text_to_video\",\"prompt_template\":\"A smoke-test video\",\"variables\":{},\"duration_seconds\":5,\"resolution\":\"720p\",\"aspect_ratio\":\"16:9\",\"audio_mode\":\"silent\",\"output_count\":1}}}],\"edges\":[]}"
   saved_canvas_body="$(request -X PUT "$BASE_URL/api/agent/canvas/v1/canvases/${canvas_id}/document" \
     -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
     --data "{\"expected_revision\":${canvas_revision},\"document\":${canvas_document}}")"
@@ -2135,18 +2139,28 @@ PY
   canvas_runs_body="$(wait_for_canvas_run_status "$canvas_id" "$canvas_run_id" "attached")"
   assert_json_field "$canvas_runs_body" "data.items.0.attached_revision" >/dev/null
   canvas_detail_body="$(request "$BASE_URL/api/agent/canvas/v1/canvases/${canvas_id}" -H "Authorization: Bearer $ACCESS_TOKEN")"
-  CANVAS_JSON="$canvas_detail_body" GENERATED_ASSET_ID="$generated_video_asset_id" python3 - <<'PY'
+  CANVAS_JSON="$canvas_detail_body" CANVAS_RUNS_JSON="$canvas_runs_body" CANVAS_RUN_ID="$canvas_run_id" python3 - <<'PY'
+import hashlib
 import json
 import os
 
 canvas = json.loads(os.environ["CANVAS_JSON"]).get("data", {})
 document = canvas.get("document", {})
-video_nodes = [node for node in document.get("nodes", []) if node.get("type") == "video" and node.get("asset_id")]
-if not video_nodes:
-    raise SystemExit(f"canvas did not auto-attach a video result node: {document!r}")
-result_ids = {node["id"] for node in video_nodes}
-if not any(edge.get("input_role") == "result" and edge.get("target") in result_ids for edge in document.get("edges", [])):
-    raise SystemExit(f"canvas did not create a stable result edge: {document!r}")
+run = next(item for item in json.loads(os.environ["CANVAS_RUNS_JSON"])["data"]["items"] if item["id"] == os.environ["CANVAS_RUN_ID"])
+asset_ids = run.get("result_asset_ids", [])
+if not asset_ids:
+    raise SystemExit(f"canvas run has no result assets: {run!r}")
+expected = {"video-generation": asset_ids[0]}
+for asset_id in asset_ids[1:]:
+    digest = hashlib.sha256((run["id"] + "\0" + asset_id).encode()).hexdigest()[:24]
+    expected["result-" + digest] = asset_id
+nodes = document.get("nodes", [])
+if len(nodes) != len(expected) or any(node.get("type") != "video_v2" for node in nodes):
+    raise SystemExit(f"canvas did not retain source and overflow v2 nodes: {document!r}")
+if {node["id"]: node.get("asset_id") for node in nodes} != expected:
+    raise SystemExit(f"canvas did not fill source then deterministic overflow nodes: {document!r}")
+if document.get("edges") != []:
+    raise SystemExit(f"canvas v2 results unexpectedly created edges: {document!r}")
 if int(canvas.get("revision", 0)) < 4:
     raise SystemExit(f"canvas revision did not advance after auto-attach: {canvas!r}")
 PY
@@ -2403,16 +2417,66 @@ estimate_body="$(request "$BASE_URL/api/agent/billing/v1/estimate?task_type=text
 key_body="$(request -X POST "$BASE_URL/api/agent/account/v1/api-keys" \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
-  --data '{"name":"smoke-key","total_quota_points":"20.00000","daily_quota_points":"20.00000","rpm_limit":60}')"
+  --data '{"name":"smoke-key","total_quota_points":"20.00000","daily_quota_points":"20.00000","rpm_limit":60,"scopes":["account:read","models:read","images:read","images:write","uploads:read","uploads:write","uploads:delete"]}')"
 ACCESS_KEY="$(assert_json_field "$key_body" "data.access_key")"
 API_SECRET="$(assert_json_field "$key_body" "data.secret")"
 
-open_estimate_path="/api/open/image/v1/estimate?task_type=text_to_image&abstract_model=basic&base_resolution=auto&requested_size=1024x1024&requested_output_image_count=1&reference_image_count=0"
-open_estimate_body="$(signed_request GET "$open_estimate_path")"
+developer_projects="$(request "$BASE_URL/api/agent/project/v1/projects" -H "Authorization: Bearer $ACCESS_TOKEN")"
+DEVELOPER_PROJECT_ID="$(assert_json_field "$developer_projects" "data.default_project_id")"
+open_preflight_input="{\"project_id\":\"$DEVELOPER_PROJECT_ID\",\"task_type\":\"text_to_image\",\"prompt\":\"smoke prompt\",\"abstract_model\":\"basic\",\"base_resolution\":\"auto\",\"requested_size\":\"1024x1024\",\"output_image_count\":1}"
+open_estimate_body="$(developer_request POST /api/open/v1/image-tasks/preflight "$open_preflight_input")"
 [[ "$(assert_json_field "$open_estimate_body" "data.estimated_points")" == "2.00000" ]]
+assert_json_field "$open_estimate_body" "data.quote_token" >/dev/null
+assert_json_field "$(developer_request GET /api/open/v1/me)" "data.id" >/dev/null
+assert_json_field "$(developer_request GET /api/open/v1/me/balance)" "data.available_points" >/dev/null
+developer_request GET /api/open/v1/image-models >/dev/null
+
+open_upload_input="$(PROJECT="$DEVELOPER_PROJECT_ID" IMAGE="$SMOKE_IMAGE_PATH" python3 - <<'PY'
+import hashlib
+import json
+import os
+with open(os.environ['IMAGE'], 'rb') as stream:
+    image = stream.read()
+print(json.dumps({'project_id': os.environ['PROJECT'], 'filename': 'developer-smoke.png',
+                  'media_type': 'image', 'mime_type': 'image/png', 'size_bytes': len(image),
+                  'checksum': hashlib.sha256(image).hexdigest(), 'idempotency_key': 'developer-smoke-upload'}))
+PY
+)"
+open_upload="$(developer_request POST /api/open/v1/uploads "$open_upload_input")"
+OPEN_UPLOAD_ID="$(assert_json_field "$open_upload" data.id)"
+developer_request GET "/api/open/v1/uploads/$OPEN_UPLOAD_ID" >/dev/null
+open_part="$(request -X PUT "$BASE_URL/api/open/v1/uploads/$OPEN_UPLOAD_ID/parts/1" \
+  -H "Authorization: Bearer $API_SECRET" -H "X-Checksum-SHA256: $(assert_json_field "$open_upload_input" checksum)" -H 'Content-Type: application/octet-stream' --data-binary "@$SMOKE_IMAGE_PATH")"
+open_complete_input="$(PART="$open_part" python3 - <<'PY'
+import json
+import os
+print(json.dumps({'parts': [json.loads(os.environ['PART'])['data']]}))
+PY
+)"
+open_complete="$(developer_request POST "/api/open/v1/uploads/$OPEN_UPLOAD_ID/complete" "$open_complete_input")"
+assert_json_field "$open_complete" data.id >/dev/null
+
+# Legacy routes and signature-only requests must fail after direct replacement.
+legacy_status="$(curl --silent --show-error --output "$TMP_DIR/legacy-open.json" --write-out '%{http_code}' "$BASE_URL/api/open/image/v1/estimate" -H "Authorization: Bearer $API_SECRET")"
+[[ "$legacy_status" == "404" ]]
+legacy_hash="$(body_sha256 "$open_preflight_input")"
+legacy_time="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+legacy_signature="$(hmac_signature "$API_SECRET" POST /api/open/v1/image-tasks/preflight "$legacy_time" "$legacy_hash")"
+legacy_auth_status="$(curl --silent --show-error --output "$TMP_DIR/legacy-auth.json" --write-out '%{http_code}' -X POST "$BASE_URL/api/open/v1/image-tasks/preflight" \
+  -H 'Content-Type: application/json' -H "X-Access-Key: $ACCESS_KEY" -H "X-Timestamp: $legacy_time" -H "X-Body-SHA256: $legacy_hash" -H "X-Signature: $legacy_signature" --data "$open_preflight_input")"
+[[ "$legacy_auth_status" == "401" ]]
 
 models_body="$(request "$BASE_URL/v1/models" -H "Authorization: Bearer $API_SECRET")"
-assert_json_field "$models_body" "data.0.id" >/dev/null
+JSON="$models_body" python3 - <<'PY'
+import json
+import os
+import sys
+body = json.loads(os.environ['JSON'])
+items = body.get('data')
+if body.get('object') != 'list' or not isinstance(items, list):
+    raise SystemExit('developer model catalogue GET /v1/models before account setup: expected object=list and data array (response omitted)')
+print(f'developer model catalogue GET /v1/models before account setup: count={len(items)}', file=sys.stderr)
+PY
 
 wrong_method_status="$(curl --silent --output "$TMP_DIR/wrong-method.json" --write-out "%{http_code}" -X POST "$BASE_URL/v1/models" -H "Authorization: Bearer $API_SECRET")"
 [[ "$wrong_method_status" == "405" ]]
@@ -2574,26 +2638,50 @@ assert_json_field "$model_account_model_body" "data.id" >/dev/null
 [[ "$(assert_json_field "$model_account_model_body" "data.max_image_count")" == "2" ]]
 [[ "$(assert_json_field "$model_account_model_body" "data.max_reference_image_count")" == "0" ]]
 
-open_task_body='{"task_type":"text_to_image","prompt":"smoke prompt","abstract_model":"basic","base_resolution":"auto","requested_size":"1024x1024","requested_output_image_count":1,"response_mode":"async"}'
-open_task_path="/api/open/image/v1/tasks"
-open_task_body_hash="$(body_sha256 "$open_task_body")"
-open_task_timestamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-open_task_signature="$(hmac_signature "$API_SECRET" POST "$open_task_path" "$open_task_timestamp" "$open_task_body_hash")"
-open_task_status="$(curl --silent --show-error --output "$TMP_DIR/open-task.json" --write-out "%{http_code}" \
-  -X POST "$BASE_URL$open_task_path" \
-  -H "Content-Type: application/json" \
-  -H "X-Access-Key: $ACCESS_KEY" \
-  -H "X-Timestamp: $open_task_timestamp" \
-  -H "X-Body-SHA256: $open_task_body_hash" \
-  -H "X-Signature: $open_task_signature" \
-  --data "$open_task_body")"
-if [[ "$open_task_status" != "202" ]]; then
-  cat "$TMP_DIR/open-task.json" >&2
-  exit 1
-fi
-open_task_resp="$(cat "$TMP_DIR/open-task.json")"
+# Configure a real public image route before asserting a nonempty developer catalogue.
+# Public visibility uses the current account with multiplier 1 and needs no key-group mutation.
+image_route_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/route-models" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  --data '{"code":"smoke-image","name":"Smoke Image","visibility":"public","media_type":"image","enabled":true,"sort_order":999}')"
+IMAGE_ROUTE_ID="$(assert_json_field "$image_route_body" data.id)"
+IMAGE_ACCOUNT_MODEL_ID="$(assert_json_field "$model_account_model_body" data.id)"
+image_candidate_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/route-models/$IMAGE_ROUTE_ID/candidates" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  --data "{\"account_model_id\":$IMAGE_ACCOUNT_MODEL_ID,\"priority\":1,\"weight\":100,\"fallback_order\":0,\"enabled\":true}")"
+assert_json_field "$image_candidate_body" data.id >/dev/null
+image_price_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/route-model-prices" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  --data "{\"route_model_id\":$IMAGE_ROUTE_ID,\"task_type\":\"text_to_image\",\"base_resolution\":\"1k\",\"base_points\":\"2.00000\",\"reference_multiplier\":\"1.00000\",\"enabled\":true}")"
+assert_json_field "$image_price_body" data.id >/dev/null
+models_body="$(request "$BASE_URL/v1/models" -H "Authorization: Bearer $API_SECRET")"
+assert_json_field "$models_body" data.0.id 'developer model catalogue after real public image route setup' >/dev/null
+JSON="$models_body" python3 - <<'PY'
+import json
+import os
+body = json.loads(os.environ['JSON'])
+if body.get('object') != 'list' or not any(item.get('id') == 'smoke-image' for item in body['data']):
+    raise SystemExit('developer model catalogue after setup: configured public route smoke-image is missing (response omitted)')
+PY
+open_preflight_input="{\"project_id\":\"$DEVELOPER_PROJECT_ID\",\"task_type\":\"text_to_image\",\"prompt\":\"smoke prompt\",\"route_model_code\":\"smoke-image\",\"base_resolution\":\"auto\",\"requested_size\":\"1024x1024\",\"output_image_count\":1}"
+
+# Refresh the quote after provider configuration; create revalidates its versions.
+open_estimate_body="$(developer_request POST /api/open/v1/image-tasks/preflight "$open_preflight_input")"
+open_task_body="$(INPUT="$open_preflight_input" QUOTE="$(assert_json_field "$open_estimate_body" "data.quote_token")" python3 - <<'PY'
+import json
+import os
+body = json.loads(os.environ['INPUT'])
+body['quote_token'] = os.environ['QUOTE']
+body['idempotency_key'] = 'smoke-native-image'
+print(json.dumps(body))
+PY
+)"
+open_task_resp="$(developer_request POST /api/open/v1/image-tasks "$open_task_body")"
 [[ "$(assert_json_field "$open_task_resp" "data.status")" == "queued" ]]
 OPEN_TASK_ID="$(assert_json_field "$open_task_resp" "data.id")"
+open_task_retry="$(developer_request POST /api/open/v1/image-tasks "$open_task_body")"
+[[ "$(assert_json_field "$open_task_retry" "data.id")" == "$OPEN_TASK_ID" ]]
+open_native_detail="$(developer_request GET "/api/open/v1/image-tasks/$OPEN_TASK_ID")"
+[[ "$(assert_json_field "$open_native_detail" "data.id")" == "$OPEN_TASK_ID" ]]
 
 start_worker
 open_task_detail_body="$(wait_for_task_status "$OPEN_TASK_ID" "succeeded")"
@@ -3459,7 +3547,7 @@ assert_readiness_check "$readiness_body" "model_accounts" "pass" >/dev/null
 assert_readiness_check "$readiness_body" "provider_models" "pass" >/dev/null
 assert_readiness_check "$readiness_body" "route_models" "pass" >/dev/null
 assert_readiness_check "$readiness_body" "route_candidates" "pass" >/dev/null
-assert_readiness_check "$readiness_body" "route_prices" "fail" >/dev/null
+assert_readiness_check "$readiness_body" "route_prices" "warn" >/dev/null
 assert_readiness_check "$readiness_body" "video_routes" "pass" >/dev/null
 assert_readiness_check "$readiness_body" "video_prices" "pass" >/dev/null
 assert_readiness_check "$readiness_body" "media_storage" "fail" >/dev/null

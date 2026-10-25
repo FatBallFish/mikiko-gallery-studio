@@ -159,14 +159,39 @@ func (s *MediaStore) UpdateAsset(ctx context.Context, req mediaassetservice.Upda
 			}
 			builder.SetProjectID(*req.ProjectID)
 		}
+		groupName, groupProject := entity.GroupName, entity.ProjectID
+		if req.GroupName != nil {
+			groupName = *req.GroupName
+		}
+		if req.ProjectID != nil {
+			groupProject = *req.ProjectID
+		}
+		if req.GroupID != nil {
+			if req.GroupName != nil {
+				return mediaassetservice.Asset{}, errs.BadRequest("use either group_id or group_name")
+			}
+			groupName = ""
+			if *req.GroupID != uuid.Nil {
+				g, err := (&AssetGroupStore{tx.Client()}).Get(ctx, req.UserID, groupProject.String(), req.GroupID.String())
+				if err != nil {
+					return mediaassetservice.Asset{}, err
+				}
+				groupName = g.Name
+			}
+		}
+		if req.GroupName != nil || req.GroupID != nil || req.ProjectID != nil {
+			if err := setUpdateAssetGroup(ctx, tx, builder, req.UserID, groupProject, groupName); err != nil {
+				return mediaassetservice.Asset{}, err
+			}
+		}
 		updated, err := builder.Save(ctx)
 		if err != nil {
 			return mediaassetservice.Asset{}, err
 		}
 		if entity.LegacyImageResultID != nil {
 			legacyUpdate := tx.ImageResult.UpdateOneID(*entity.LegacyImageResultID)
-			if req.GroupName != nil {
-				legacyUpdate.SetImageGroup(strings.TrimSpace(*req.GroupName))
+			if req.GroupName != nil || req.GroupID != nil || req.ProjectID != nil {
+				legacyUpdate.SetImageGroup(updated.GroupName)
 			}
 			if req.ProjectID != nil {
 				legacyUpdate.SetProjectID(*req.ProjectID)
@@ -320,6 +345,9 @@ func ensureMediaAsset(ctx context.Context, tx *repoent.Tx, userID int64, id uuid
 	}
 	if legacy.Height > 0 {
 		builder.SetHeight(legacy.Height)
+	}
+	if err := setCreateAssetGroup(ctx, tx, builder, legacy.UserID, *projectID, legacy.ImageGroup); err != nil {
+		return nil, err
 	}
 	created, err := builder.Save(ctx)
 	if repoent.IsConstraintError(err) {

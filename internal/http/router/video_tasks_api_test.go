@@ -18,6 +18,7 @@ import (
 	domainvideo "github.com/fatballfish/pic-gallery/internal/domain/video"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/pointledger"
 	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
 	adminvideoservice "github.com/fatballfish/pic-gallery/internal/service/adminvideo"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
@@ -59,7 +60,7 @@ func TestVideoTasksAPICreatesReplaysListsGetsAndCancels(t *testing.T) {
 
 	account, _ := client.ModelAccount.Create().SetName("MiniMax").SetAdapterType("minimax").SetAuthType("api_key").SetBaseURL("https://provider.invalid").SetStatus("enabled").Save(ctx)
 	accountModel, _ := client.ModelAccountModel.Create().SetAccountID(int64(account.ID)).SetModelCode("MiniMax-H3").SetDisplayName("MiniMax H3").SetEnabled(true).Save(ctx)
-	capability := domainvideo.Capability{SchemaVersion: 1, ProviderNativeMaxN: 1, PromptMaxRunes: 7000, TaskTypes: map[domainvideo.TaskType]domainvideo.TaskCapability{domainvideo.TaskTypeImageToVideo: {Durations: domainvideo.DiscreteIntValues(5), Resolutions: []domainvideo.Resolution{domainvideo.Resolution2K}, AspectRatios: []domainvideo.AspectRatio{domainvideo.AspectRatioAdaptive}, AudioModes: []domainvideo.AudioMode{domainvideo.AudioModeSilent}, Inputs: map[domainvideo.InputRole]domainvideo.InputCapability{domainvideo.InputRoleFirstFrame: {Required: true, MaxCount: 1, MaxBytes: 30 << 20, MediaTypes: []string{"image"}, Formats: []string{"image/png"}}}}}}
+	capability := domainvideo.Capability{SchemaVersion: 1, ProviderNativeMaxN: 1, PromptMaxRunes: 7000, TaskTypes: map[domainvideo.TaskType]domainvideo.TaskCapability{domainvideo.TaskTypeImageToVideo: {Durations: domainvideo.DiscreteIntValues(5), Resolutions: []domainvideo.Resolution{domainvideo.Resolution2K}, AspectRatios: []domainvideo.AspectRatio{domainvideo.AspectRatioAdaptive}, AudioModes: []domainvideo.AudioMode{domainvideo.AudioModeSilent}, Inputs: map[domainvideo.InputRole]domainvideo.InputCapability{domainvideo.InputRoleFirstFrame: {Required: true, MaxCount: 1, MaxBytes: 30 << 20, MediaTypes: []string{"image"}, Formats: []string{"png"}}}}}}
 	capabilityJSON := map[string]any{}
 	raw, _ := json.Marshal(capability)
 	_ = json.Unmarshal(raw, &capabilityJSON)
@@ -136,9 +137,37 @@ func TestVideoTasksAPICreatesReplaysListsGetsAndCancels(t *testing.T) {
 	if detail.Code != http.StatusOK {
 		t.Fatalf("detail=%d %s", detail.Code, detail.Body.String())
 	}
-	cancel := authenticatedMediaRequest(t, handler, owner.AccessToken, http.MethodPost, "/api/agent/video/v1/tasks/"+createResponse.Data.ID.String()+":cancel", "", map[string]string{"Idempotency-Key": "cancel-1"})
-	if cancel.Code != http.StatusAccepted || !bytes.Contains(cancel.Body.Bytes(), []byte("cancel_requested")) {
-		t.Fatalf("cancel=%d %s", cancel.Code, cancel.Body.String())
+	beforeCancel, err := billingStore.GetBalance(ctx, userID)
+	if err != nil || beforeCancel.FrozenPoints != createResponse.Data.ReservedPoints || beforeCancel.FrozenPoints == "0.00000" {
+		t.Fatalf("reserved balance=%#v err=%v", beforeCancel, err)
+	}
+	for _, key := range []string{"cancel-1", "cancel-1", "cancel-again"} {
+		cancel := authenticatedMediaRequest(t, handler, owner.AccessToken, http.MethodPost, "/api/agent/video/v1/tasks/"+createResponse.Data.ID.String()+":cancel", "", map[string]string{"Idempotency-Key": key})
+		if cancel.Code != http.StatusAccepted {
+			t.Fatalf("cancel=%d %s", cancel.Code, cancel.Body.String())
+		}
+		var response struct {
+			Data videotaskservice.Task `json:"data"`
+		}
+		if err := json.Unmarshal(cancel.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		if response.Data.Status != domainvideo.TaskStatusCancelled || response.Data.SettlementStatus != "finalized" || response.Data.ActualPoints != "0.00000" || response.Data.SuccessOutputCount != 0 || len(response.Data.Items) != 2 {
+			t.Fatalf("cancelled task=%#v", response.Data)
+		}
+		for _, item := range response.Data.Items {
+			if item.Status != domainvideo.ItemStateCancelled || item.ActualPoints != "0.00000" {
+				t.Fatalf("cancelled item=%#v", item)
+			}
+		}
+		balance, err := billingStore.GetBalance(ctx, userID)
+		if err != nil || balance.AvailablePoints != "1000.00000" || balance.FrozenPoints != "0.00000" {
+			t.Fatalf("cancel balance=%#v err=%v", balance, err)
+		}
+		refunds, err := client.PointLedger.Query().Where(pointledger.TaskIDEQ(createResponse.Data.ID), pointledger.TaskMediaTypeEQ("video"), pointledger.LedgerTypeEQ("refund")).Count(ctx)
+		if err != nil || refunds != 1 {
+			t.Fatalf("refund count=%d err=%v", refunds, err)
+		}
 	}
 }
 
@@ -518,7 +547,7 @@ func newVideoTaskAPIFixture(t *testing.T) videoTaskAPIFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	capability := domainvideo.Capability{SchemaVersion: 1, ProviderNativeMaxN: 1, PromptMaxRunes: 7000, TaskTypes: map[domainvideo.TaskType]domainvideo.TaskCapability{domainvideo.TaskTypeImageToVideo: {Durations: domainvideo.DiscreteIntValues(5), Resolutions: []domainvideo.Resolution{domainvideo.Resolution2K}, AspectRatios: []domainvideo.AspectRatio{domainvideo.AspectRatioAdaptive}, AudioModes: []domainvideo.AudioMode{domainvideo.AudioModeSilent}, Inputs: map[domainvideo.InputRole]domainvideo.InputCapability{domainvideo.InputRoleFirstFrame: {Required: true, MaxCount: 1, MaxBytes: 30 << 20, MediaTypes: []string{"image"}, Formats: []string{"image/png"}}}}}}
+	capability := domainvideo.Capability{SchemaVersion: 1, ProviderNativeMaxN: 1, PromptMaxRunes: 7000, TaskTypes: map[domainvideo.TaskType]domainvideo.TaskCapability{domainvideo.TaskTypeImageToVideo: {Durations: domainvideo.DiscreteIntValues(5), Resolutions: []domainvideo.Resolution{domainvideo.Resolution2K}, AspectRatios: []domainvideo.AspectRatio{domainvideo.AspectRatioAdaptive}, AudioModes: []domainvideo.AudioMode{domainvideo.AudioModeSilent}, Inputs: map[domainvideo.InputRole]domainvideo.InputCapability{domainvideo.InputRoleFirstFrame: {Required: true, MaxCount: 1, MaxBytes: 30 << 20, MediaTypes: []string{"image"}, Formats: []string{"png"}}}}}}
 	capabilityJSON := map[string]any{}
 	raw, _ := json.Marshal(capability)
 	_ = json.Unmarshal(raw, &capabilityJSON)

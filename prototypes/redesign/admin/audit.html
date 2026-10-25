@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>审计日志 — Mikiko Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/admin.css">
+<style>
+  .au-detail { display: grid; gap: 12px; }
+  .au-code { padding: 12px; border: 1px solid var(--a-line); border-radius: 8px; background: var(--a-surface-2); font-family: var(--font-admin-mono); font-size: 11px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+</style>
+</head>
+<body data-site="admin" data-page="audit" data-title="审计日志">
+<div class="a-shell"><div class="a-main">
+  <main class="a-content">
+    <header class="a-page-head">
+      <div class="a-page-head__copy">
+        <span class="a-kicker">Audit Trail</span>
+        <h1>审计日志</h1>
+        <p>管理员操作与敏感变更。操作人、对象与结果直接展示，详情在抽屉中查看完整上下文。</p>
+      </div>
+      <div class="a-page-head__actions">
+        <button class="a-btn a-btn--sm" type="button" data-toast="已导出当前可见日志 CSV">导出日志</button>
+        <button class="a-btn a-btn--sm a-btn--primary" type="button" data-toast="已刷新审计日志">刷新</button>
+      </div>
+    </header>
+
+    <section class="a-filters">
+      <div class="a-filters__row">
+        <label class="a-field"><span>搜索</span><div class="a-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="a-input" placeholder="操作人 / 动作 / 对象 / 详情"></div></label>
+        <label class="a-field"><span>动作</span><select class="a-select"><option>全部动作</option><option>管理员登录</option><option>更新系统配置</option><option>调整积分</option><option>通过公开审核</option><option>确认支付到账</option></select></label>
+        <label class="a-field"><span>结果</span><select class="a-select"><option>全部结果</option><option>成功</option><option>失败</option><option>已拒绝</option></select></label>
+        <label class="a-field"><span>时间范围</span><select class="a-select"><option>最近 24 小时</option><option>最近 7 天</option><option>最近 30 天</option></select></label>
+      </div>
+      <div class="a-filters__foot"><span class="a-filters__result">共 <b>1,284</b> 条 · 最近 100 条</span><div class="a-filters__actions"><button class="a-btn a-btn--sm a-btn--quiet" type="button" data-toast="已清空筛选">清空筛选</button><button class="a-btn a-btn--sm a-btn--primary" type="button" data-toast="已应用筛选">查询</button></div></div>
+    </section>
+
+    <section class="a-panel a-panel--flush" style="margin-top:16px">
+      <div class="a-panel__head"><div><h2>操作记录</h2><p>按发生时间倒序。</p></div><span class="a-hint">保留 180 天</span></div>
+      <div class="a-table-wrap">
+        <table class="a-table" style="min-width:1180px">
+          <thead><tr><th>动作与对象</th><th>操作人</th><th>详情</th><th>结果</th><th>发生时间</th><th class="is-actions">操作</th></tr></thead>
+          <tbody>
+            <tr data-row-open="#audit-detail" style="cursor:pointer">
+              <td><div class="a-cell-stack"><strong>更新系统配置</strong><span>配置 · general.site_name · audit_10241</span></div></td>
+              <td><div class="a-cell-stack"><strong>林知远</strong><span>203.0.113.24</span></div></td>
+              <td class="is-muted">修改站点名称与允许来源</td>
+              <td><span class="a-badge a-badge--ok"><i></i>成功</span></td>
+              <td class="is-muted">10-22 21:42:08</td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#audit-detail" data-row-ignore>详情</button></div></td>
+            </tr>
+            <tr data-row-open="#audit-detail" style="cursor:pointer">
+              <td><div class="a-cell-stack"><strong>调整积分</strong><span>用户 · 岑屿 #10241 · audit_10240</span></div></td>
+              <td><div class="a-cell-stack"><strong>林知远</strong><span>203.0.113.24</span></div></td>
+              <td class="is-muted">补偿 10-21 批次生成失败 · +48.00</td>
+              <td><span class="a-badge a-badge--ok"><i></i>成功</span></td>
+              <td class="is-muted">10-22 21:36:51</td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#audit-detail" data-row-ignore>详情</button></div></td>
+            </tr>
+            <tr data-row-open="#audit-detail" style="cursor:pointer">
+              <td><div class="a-cell-stack"><strong>通过公开审核</strong><span>图片 · img_7f21c4 · audit_10239</span></div></td>
+              <td><div class="a-cell-stack"><strong>周岚</strong><span>198.51.100.8</span></div></td>
+              <td class="is-muted">内容质量稳定，光影与构图符合公开标准</td>
+              <td><span class="a-badge a-badge--ok"><i></i>成功</span></td>
+              <td class="is-muted">10-22 21:20:14</td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#audit-detail" data-row-ignore>详情</button></div></td>
+            </tr>
+            <tr data-row-open="#audit-detail" style="cursor:pointer">
+              <td><div class="a-cell-stack"><strong>管理员登录</strong><span>管理员 · lin.zhiyuan@mikiko.studio · audit_10238</span></div></td>
+              <td><div class="a-cell-stack"><strong>林知远</strong><span>203.0.113.24</span></div></td>
+              <td class="is-muted">密码登录 · Chrome 141 / macOS</td>
+              <td><span class="a-badge a-badge--ok"><i></i>成功</span></td>
+              <td class="is-muted">10-22 21:02:33</td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#audit-detail" data-row-ignore>详情</button></div></td>
+            </tr>
+            <tr data-row-open="#audit-detail" style="cursor:pointer">
+              <td><div class="a-cell-stack"><strong>确认支付到账</strong><span>订单 · MK202610220903 · audit_10237</span></div></td>
+              <td><div class="a-cell-stack"><strong>周岚</strong><span>198.51.100.8</span></div></td>
+              <td class="is-muted">人工补单：渠道金额与订单金额一致</td>
+              <td><span class="a-badge a-badge--ok"><i></i>成功</span></td>
+              <td class="is-muted">10-22 20:44:19</td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#audit-detail" data-row-ignore>详情</button></div></td>
+            </tr>
+            <tr data-row-open="#audit-detail" style="cursor:pointer">
+              <td><div class="a-cell-stack"><strong>更新模型路由</strong><span>路由模型 · plus-image · audit_10236</span></div></td>
+              <td><div class="a-cell-stack"><strong>陈默</strong><span>203.0.113.91</span></div></td>
+              <td class="is-muted">降低 acc-east-2 候选权重 30 → 10</td>
+              <td><span class="a-badge a-badge--bad"><i></i>失败</span></td>
+              <td class="is-muted">10-22 20:11:02</td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#audit-detail" data-row-ignore>详情</button></div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="a-pager"><div class="a-pager__info">显示 <b>1–6</b>，共 <b>1,284</b> 条</div><div class="a-pager__controls"><button class="a-pager__btn" disabled>‹</button><button class="a-pager__btn is-active">1</button><button class="a-pager__btn">2</button><button class="a-pager__btn">3</button><button class="a-pager__btn">…</button><button class="a-pager__btn">64</button><button class="a-pager__btn">›</button></div><div class="a-pager__size"><span>每页</span><select><option>20</option><option>50</option><option>100</option></select></div></div>
+    </section>
+  </main>
+</div></div>
+
+<div class="a-scrim"></div>
+<aside class="a-drawer" id="audit-detail" role="dialog" aria-modal="true" aria-label="审计详情">
+  <header class="a-drawer__head"><div><h2>审计详情</h2><p>audit_10241 · 更新系统配置 · 2026-10-22 21:42:08</p></div><div class="a-drawer__spacer"></div><span class="a-badge a-badge--ok"><i></i>成功</span><button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button></header>
+  <div class="a-drawer__body">
+    <section class="a-drawer__section">
+      <h3>基本信息</h3>
+      <dl class="a-kv">
+        <div><dt>操作人</dt><dd>林知远 · super_admin</dd></div>
+        <div><dt>来源 IP</dt><dd><span class="a-mono">203.0.113.24</span></dd></div>
+        <div><dt>动作</dt><dd>更新系统配置</dd></div>
+        <div><dt>对象</dt><dd>配置 · general.site_name</dd></div>
+        <div><dt>结果</dt><dd><span class="a-badge a-badge--ok"><i></i>成功</span></dd></div>
+        <div><dt>时间</dt><dd>2026-10-22 21:42:08 · UTC+8</dd></div>
+      </dl>
+    </section>
+    <section class="a-drawer__section"><h3>操作详情</h3><div class="a-panel" style="box-shadow:none;padding:14px;font-size:13px;line-height:1.7">修改站点名称从 “Mikiko Studio” 为 “Mikiko Studio”，并追加允许来源 https://mikiko.ai。变更已通过校验，旧值已保留在配置版本 r183。</div></section>
+    <section class="a-drawer__section"><h3>上下文</h3><div class="au-code">{
+  "request_id": "req_8f21c4e0",
+  "user_agent": "Chrome 141 / macOS 15.3",
+  "config_revision": "r184",
+  "prev_revision": "r183",
+  "changed_keys": ["general.allowed_origins"],
+  "ip": "203.0.113.24"
+}</div></section>
+  </div>
+  <footer class="a-drawer__foot"><button class="a-btn a-btn--sm" type="button" data-copy="audit_10241" data-toast="已复制审计 ID">复制审计 ID</button><button class="a-btn a-btn--sm a-btn--primary" type="button" data-close>关闭</button></footer>
+</aside>
+<script src="../assets/shell.js"></script>
+</body>
+</html>

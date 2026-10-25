@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>系统健康 — Mikiko Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/admin.css">
+<style>
+  .mn-seg { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--a-line); border-radius: 8px; background: var(--a-surface); }
+  .mn-seg button { min-height: 30px; padding: 0 11px; border: 0; border-radius: 6px; background: transparent; color: var(--a-ink-3); font-family: var(--font-admin-mono); font-size: 11.5px; }
+  .mn-seg button.is-active { background: var(--a-ink); color: var(--a-canvas); }
+  .mn-chart { height: 170px; }
+  .mn-gauge { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; overflow: hidden; border: 1px solid var(--a-line); border-radius: 10px; background: var(--a-line); }
+  .mn-gauge > div { display: grid; gap: 3px; padding: 13px 14px; background: var(--a-surface); }
+  .mn-gauge span { color: var(--a-ink-3); font-size: 11px; }
+  .mn-gauge b { font-family: var(--font-admin-mono); font-size: 17px; font-weight: 500; }
+  .mn-route { display: grid; grid-template-columns: minmax(0,1fr) 90px 80px 70px 80px; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--a-line); font-size: 13px; }
+  .mn-route:last-child { border-bottom: 0; }
+  .mn-route code { font-family: var(--font-admin-mono); font-size: 11.5px; color: var(--a-ink-2); }
+</style>
+</head>
+<body data-site="admin" data-page="monitoring" data-title="系统健康">
+<div class="a-shell"><div class="a-main">
+  <div class="a-status-strip">
+    <div class="a-status-cell"><span>API</span><strong>运行正常</strong></div>
+    <div class="a-status-cell"><span>运行时长</span><strong>14 天 6 小时</strong></div>
+    <div class="a-status-cell"><span>数据窗口</span><strong>最近 15 分钟</strong></div>
+    <div class="a-status-cell"><span>指标更新</span><strong>2 秒前</strong></div>
+  </div>
+  <main class="a-content">
+    <header class="a-page-head">
+      <div class="a-page-head__copy">
+        <span class="a-kicker">Observability</span>
+        <h1>系统健康</h1>
+        <p>请求负载、响应质量与资源压力。热点接口和诊断项直接给出处理入口。</p>
+      </div>
+      <div class="a-page-head__actions">
+        <div class="mn-seg"><button type="button">5m</button><button class="is-active" type="button">15m</button><button type="button">30m</button><button type="button">60m</button></div>
+        <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>自动刷新</label>
+        <button class="a-btn a-btn--sm" type="button" data-toast="已刷新指标">刷新</button>
+      </div>
+    </header>
+
+    <div class="a-metrics" style="grid-template-columns:repeat(4,1fr)" data-reveal>
+      <div class="a-metric"><div class="a-metric__label">API 状态</div><div class="a-metric__value" style="font-size:22px;color:var(--a-success)">正常</div><div class="a-metric__foot">连续 14 天无重启</div></div>
+      <div class="a-metric"><div class="a-metric__label">当前 QPS</div><div class="a-metric__value">42.8</div><div class="a-metric__foot">峰值 118.4 · 14:32</div></div>
+      <div class="a-metric"><div class="a-metric__label">请求并发</div><div class="a-metric__value">76</div><div class="a-metric__foot">上限 400</div></div>
+      <div class="a-metric"><div class="a-metric__label">P95 延迟</div><div class="a-metric__value">842<span style="font-size:14px;color:var(--a-ink-3)">ms</span></div><div class="a-metric__foot">P99 1,420 ms</div></div>
+      <div class="a-metric"><div class="a-metric__label">5xx 错误率</div><div class="a-metric__value">0.14%</div><div class="a-metric__foot">阈值 1.00%</div></div>
+      <div class="a-metric"><div class="a-metric__label">API CPU</div><div class="a-metric__value">21%</div><div class="a-metric__foot">4 vCPU · 0.84 core</div></div>
+      <div class="a-metric"><div class="a-metric__label">Go Heap</div><div class="a-metric__value">182<span style="font-size:14px;color:var(--a-ink-3)">MB</span></div><div class="a-metric__foot">GC 4 分钟前</div></div>
+      <div class="a-metric"><div class="a-metric__label">Goroutine</div><div class="a-metric__value">1,284</div><div class="a-metric__foot">正常范围</div></div>
+    </div>
+
+    <div class="a-grid a-grid--3" style="margin-top:16px">
+      <section class="a-panel a-panel--pad" data-reveal>
+        <div class="a-section-title" style="margin:0"><div><h2>请求负载</h2><p>QPS</p></div><span class="a-badge a-badge--ok"><i></i>正常</span></div>
+        <div class="a-chart mn-chart"><svg viewBox="0 0 400 150" preserveAspectRatio="none">
+          <line class="a-chart__grid" x1="0" y1="30" x2="400" y2="30"/><line class="a-chart__grid" x1="0" y1="75" x2="400" y2="75"/><line class="a-chart__grid" x1="0" y1="120" x2="400" y2="120"/>
+          <path class="a-chart__area" d="M0 122 L25 118 L50 124 L75 104 L100 112 L125 90 L150 98 L175 72 L200 84 L225 60 L250 70 L275 52 L300 62 L325 44 L350 56 L375 40 L400 48 L400 150 L0 150 Z"/>
+          <path class="a-chart__line" d="M0 122 L25 118 L50 124 L75 104 L100 112 L125 90 L150 98 L175 72 L200 84 L225 60 L250 70 L275 52 L300 62 L325 44 L350 56 L375 40 L400 48"/>
+        </svg></div>
+      </section>
+      <section class="a-panel a-panel--pad" data-reveal>
+        <div class="a-section-title" style="margin:0"><div><h2>响应质量</h2><p>延迟分位</p></div></div>
+        <div class="mn-gauge" style="grid-template-columns:1fr 1fr">
+          <div><span>P50</span><b>186 ms</b></div><div><span>P95</span><b>842 ms</b></div>
+          <div><span>P99</span><b>1.42 s</b></div><div><span>5xx</span><b style="color:var(--a-success)">0.14%</b></div>
+        </div>
+        <div class="a-dist" style="margin-top:14px">
+          <div class="a-dist__row"><span>2xx</span><div class="a-dist__bar"><i style="width:96%;background:var(--a-success)"></i></div><b>96.2%</b></div>
+          <div class="a-dist__row"><span>3xx</span><div class="a-dist__bar"><i style="width:2%;background:#9aa9c4"></i></div><b>1.8%</b></div>
+          <div class="a-dist__row"><span>4xx</span><div class="a-dist__bar"><i style="width:2%;background:var(--a-warn)"></i></div><b>1.9%</b></div>
+          <div class="a-dist__row"><span>5xx</span><div class="a-dist__bar"><i style="width:1%;background:var(--a-danger)"></i></div><b>0.14%</b></div>
+        </div>
+      </section>
+      <section class="a-panel a-panel--pad" data-reveal>
+        <div class="a-section-title" style="margin:0"><div><h2>资源压力</h2><p>宿主与运行时</p></div></div>
+        <div class="mn-gauge" style="grid-template-columns:1fr 1fr">
+          <div><span>CPU</span><b>21%</b></div><div><span>内存</span><b>44%</b></div>
+          <div><span>Go Heap</span><b>182 MB</b></div><div><span>Goroutine</span><b>1,284</b></div>
+        </div>
+        <div class="a-banner a-banner--info" style="margin-top:14px;font-size:12.5px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg>
+          <span>内存与 Goroutine 处于稳定区间；下一档告警阈值 70%。</span>
+        </div>
+      </section>
+    </div>
+
+    <div class="a-grid a-grid--main-side" style="margin-top:16px">
+      <section class="a-panel a-panel--flush" data-reveal>
+        <div class="a-panel__head"><div><h2>热点接口</h2><p>按请求数排序 · 最近 15 分钟</p></div><a class="a-btn a-btn--sm a-btn--quiet" href="call-records.html">查看任务</a></div>
+        <div class="a-table-wrap">
+          <table class="a-table" style="min-width:760px">
+            <thead><tr><th>接口</th><th class="is-num">请求数</th><th class="is-num">QPS</th><th class="is-num">P95</th><th class="is-num">5xx</th><th>状态</th></tr></thead>
+            <tbody>
+              <tr><td><div class="a-cell-stack"><strong>POST /v1/images/generations</strong><span>create_image_task</span></div></td><td class="is-num">18,204</td><td class="is-num">20.2</td><td class="is-num">684 ms</td><td class="is-num">0.08%</td><td><span class="a-badge a-badge--ok"><i></i>正常</span></td></tr>
+              <tr><td><div class="a-cell-stack"><strong>GET /v1/tasks/:id</strong><span>get_task</span></div></td><td class="is-num">14,882</td><td class="is-num">16.5</td><td class="is-num">142 ms</td><td class="is-num">0.01%</td><td><span class="a-badge a-badge--ok"><i></i>正常</span></td></tr>
+              <tr><td><div class="a-cell-stack"><strong>POST /v1/videos</strong><span>create_video_task</span></div></td><td class="is-num">2,264</td><td class="is-num">2.5</td><td class="is-num">1,280 ms</td><td class="is-num">0.38%</td><td><span class="a-badge a-badge--warn"><i></i>承压</span></td></tr>
+              <tr><td><div class="a-cell-stack"><strong>GET /v1/public/gallery</strong><span>list_public_images</span></div></td><td class="is-num">1,908</td><td class="is-num">2.1</td><td class="is-num">310 ms</td><td class="is-num">0.00%</td><td><span class="a-badge a-badge--ok"><i></i>正常</span></td></tr>
+              <tr><td><div class="a-cell-stack"><strong>POST /v1/checkout/orders</strong><span>create_order</span></div></td><td class="is-num">642</td><td class="is-num">0.7</td><td class="is-num">920 ms</td><td class="is-num">0.12%</td><td><span class="a-badge a-badge--ok"><i></i>正常</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <aside style="display:grid;gap:16px">
+        <section class="a-panel a-panel--pad" data-reveal>
+          <div class="a-section-title" style="margin:0"><div><h2>依赖与诊断</h2><p>需要动作的项目</p></div></div>
+          <div class="ov-queue" style="display:grid">
+            <div class="a-banner a-banner--warn" style="margin-bottom:8px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 9v5M12 17h.01"/></svg><div><strong style="font-size:12.5px">2 个视频账号 30 分钟未心跳</strong><div class="a-hint">Seedance 主账号 · 备账号</div><a href="access-accounts.html" class="a-row-btn" style="margin-top:8px">检查账号</a></div></div>
+            <div class="a-banner a-banner--danger" style="margin-bottom:8px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="m6 6 12 12"/></svg><div><strong style="font-size:12.5px">18 次 MODEL_ROUTE_NO_CANDIDATE</strong><div class="a-hint">集中在 pro-image · 夜间批量任务</div><a href="routing.html" class="a-row-btn" style="margin-top:8px">检查路由</a></div></div>
+            <div class="a-banner a-banner--info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg><div><strong style="font-size:12.5px">S3 派生资源队列排队 42</strong><div class="a-hint">处理速率 18/min · 预计 2.3 分钟清空</div></div></div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+</div></div>
+<script src="../assets/shell.js"></script>
+</body>
+</html>

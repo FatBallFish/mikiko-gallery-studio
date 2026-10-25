@@ -2,14 +2,16 @@ openapi: 3.1.0
 info:
   title: Pic Gallery Developer API
   version: 0.2.0
-  description: Public image generation APIs for native AK/SK integrations and OpenAI-compatible clients.
+  description: Unified Bearer developer API, OpenAI-compatible images, OAuth MCP, public gallery and separately authenticated callbacks. Generated from api/openapi; do not edit this copy.
 servers:
   - url: http://localhost:8080
     description: Local API server
 tags:
   - name: Open Image API
-  - name: Cluster Enrollment
   - name: OpenAI Compat
+  - name: Developer API
+  - name: OAuth
+  - name: MCP
 paths:
   /api/open/video/v1/provider-callbacks/{provider_code}/{account_public_id}:
     post:
@@ -47,100 +49,6 @@ paths:
           description: Invalid signature or callback payload
         "404":
           description: Callback endpoint not found
-  /api/open/image/v1/reference-assets/uploads:
-    post:
-      tags:
-        - Open Image API
-      summary: Create an upload session for reference assets
-      operationId: postOpenReferenceAssetUploadSession
-      security:
-        - accessKeyAuth: []
-          accessTimestamp: []
-          accessBodySHA256: []
-          accessSignature: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: ./components/schemas/openapi.yaml#/components/schemas/UploadSessionRequest
-      responses:
-        "201":
-          description: Upload session created
-          content:
-            application/json:
-              schema:
-                $ref: ./components/schemas/openapi.yaml#/components/schemas/UploadSessionResponse
-  /api/open/image/v1/tasks:
-    post:
-      tags:
-        - Open Image API
-      summary: Create an image task through Open API
-      operationId: postOpenImageTask
-      security:
-        - accessKeyAuth: []
-          accessTimestamp: []
-          accessBodySHA256: []
-          accessSignature: []
-      parameters:
-        - $ref: ./components/parameters/common.yaml#/components/parameters/IdempotencyKey
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: ./components/schemas/agent.yaml#/components/schemas/CreateImageTaskRequest
-      responses:
-        "202":
-          description: Task accepted
-          content:
-            application/json:
-              schema:
-                $ref: ./components/schemas/agent.yaml#/components/schemas/ImageTaskResponse
-        "400":
-          description: Invalid task request, including unsupported sync response_mode
-          content:
-            application/json:
-              schema:
-                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
-        "409":
-          description: Capability snapshot changed (`capability_changed`); refresh capabilities and estimate before retrying
-          content:
-            application/json:
-              schema:
-                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
-  /api/open/image/v1/estimate:
-    get:
-      tags:
-        - Open Image API
-      summary: Estimate task points through Open API
-      operationId: getOpenEstimate
-      security:
-        - accessKeyAuth: []
-          accessTimestamp: []
-          accessBodySHA256: []
-          accessSignature: []
-      parameters:
-        - $ref: ./components/parameters/common.yaml#/components/parameters/RouteModelCode
-        - $ref: ./components/parameters/common.yaml#/components/parameters/AbstractModel
-        - $ref: ./components/parameters/common.yaml#/components/parameters/SizeMode
-        - $ref: ./components/parameters/common.yaml#/components/parameters/AspectRatio
-        - $ref: ./components/parameters/common.yaml#/components/parameters/BaseResolution
-        - $ref: ./components/parameters/common.yaml#/components/parameters/Quality
-        - $ref: ./components/parameters/common.yaml#/components/parameters/OutputFormat
-        - $ref: ./components/parameters/common.yaml#/components/parameters/OutputCompression
-        - $ref: ./components/parameters/common.yaml#/components/parameters/Moderation
-        - $ref: ./components/parameters/common.yaml#/components/parameters/RequestedSize
-        - $ref: ./components/parameters/common.yaml#/components/parameters/OutputImageCount
-        - $ref: ./components/parameters/common.yaml#/components/parameters/ReferenceImageCount
-        - $ref: ./components/parameters/common.yaml#/components/parameters/TaskType
-      responses:
-        "200":
-          description: Cost estimate
-          content:
-            application/json:
-              schema:
-                $ref: ./components/schemas/agent.yaml#/components/schemas/EstimateResponse
   /api/open/image/v1/gallery/images:
     get:
       tags:
@@ -298,7 +206,7 @@ paths:
       summary: OpenAI-compatible image generation endpoint
       operationId: postOpenAIImageGeneration
       security:
-        - compatBearerAuth: []
+        - developerBearerAuth: []
       requestBody:
         required: true
         content:
@@ -312,6 +220,29 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/openai-compat.yaml#/components/schemas/OpenAIImageResponse
+            text/event-stream:
+              schema:
+                type: string
+              description: Platform lifecycle and final results; never simulated partial images.
+          headers:
+            X-Task-ID:
+              schema:
+                type: string
+            Location:
+              schema:
+                type: string
+            X-Stream-Protocol:
+              schema:
+                type: string
+        "504":
+          description: "TASK_WAIT_INTERRUPTED: durable task retained. Recover using X-Task-ID and Location headers."
+          headers:
+            X-Task-ID:
+              schema: &a1
+                type: string
+            Location:
+              schema: *a1
+      description: "Bearer API Key; synchronous result by default. Waits up to two minutes; 504 TASK_WAIT_INTERRUPTED retains the durable task. X-Task-ID and Location identify recovery. stream=true emits task and result events (successful result followed by data: [DONE]), or an error event ending the stream; X-Stream-Protocol: platform-image-lifecycle-v1. This is a platform extension, not OpenAI partial-image streaming. partial_images is explicitly unsupported. Native tasks are the canonical persistent async mechanism."
   /v1/images/edits:
     post:
       tags:
@@ -319,7 +250,7 @@ paths:
       summary: OpenAI-compatible image edit endpoint
       operationId: postOpenAIImageEdit
       security:
-        - compatBearerAuth: []
+        - developerBearerAuth: []
       requestBody:
         required: true
         content:
@@ -333,6 +264,29 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/openai-compat.yaml#/components/schemas/OpenAIImageResponse
+            text/event-stream:
+              schema:
+                type: string
+              description: Platform lifecycle and final results; never simulated partial images.
+          headers:
+            X-Task-ID:
+              schema:
+                type: string
+            Location:
+              schema:
+                type: string
+            X-Stream-Protocol:
+              schema:
+                type: string
+        "504":
+          description: "TASK_WAIT_INTERRUPTED: durable task retained. Recover using X-Task-ID and Location headers."
+          headers:
+            X-Task-ID:
+              schema: &a2
+                type: string
+            Location:
+              schema: *a2
+      description: "Bearer API Key; synchronous result by default. Waits up to two minutes; 504 TASK_WAIT_INTERRUPTED retains the durable task. X-Task-ID and Location identify recovery. stream=true emits task and result events (successful result followed by data: [DONE]), or an error event ending the stream; X-Stream-Protocol: platform-image-lifecycle-v1. This is a platform extension, not OpenAI partial-image streaming. partial_images is explicitly unsupported. Native tasks are the canonical persistent async mechanism."
   /v1/models:
     get:
       tags:
@@ -340,7 +294,7 @@ paths:
       summary: OpenAI-compatible model list
       operationId: getOpenAIModels
       security:
-        - compatBearerAuth: []
+        - developerBearerAuth: []
       responses:
         "200":
           description: OpenAI-compatible models
@@ -348,71 +302,1002 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/openai-compat.yaml#/components/schemas/OpenAIModelListResponse
-  /api/open/image/v1/reference-assets:
-    post:
+  /api/public/v1/videos:
+    get:
       tags:
-        - Open Image API
-      summary: Upload a reference asset using multipart form data
-      operationId: postOpenReferenceAssetMultipart
-      security:
-        - accessKeyAuth: []
-          accessTimestamp: []
-          accessBodySHA256: []
-          accessSignature: []
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              required:
-                - file
-              properties:
-                file:
-                  type: string
-                  format: binary
+        - Public Media
+      summary: List approved public videos
+      operationId: listPublicVideos
+      security: []
+      description: Anonymous access; only approved videos. Page values below one become one; page_size below one becomes 20 and values above 100 are capped. Cache-Control is no-store.
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
       responses:
-        "201":
-          description: Reference asset created
+        "200":
+          description: List approved public videos
           content:
             application/json:
               schema:
-                $ref: ./components/schemas/agent.yaml#/components/schemas/ReferenceAssetResponse
-  /api/open/image/v1/reference-assets/{asset_id}:
+                $ref: "#/components/schemas/PublicVideoPageResponse"
+        "503":
+          description: Video publication service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/ErrorEnvelope
+  /api/public/v1/videos/{asset_id}:
     get:
       tags:
-        - Open Image API
-      summary: Get Open API reference asset metadata
-      operationId: getOpenReferenceAsset
-      security:
-        - accessKeyAuth: []
-          accessTimestamp: []
-          accessBodySHA256: []
-          accessSignature: []
-      parameters:
-        - name: asset_id
+        - Public Media
+      summary: Get approved public video
+      operationId: getPublicVideo
+      security: []
+      description: Anonymous approved-only projection; omits owner, project, review reason and execution metadata. Cache-Control is no-store.
+      parameters: &a3
+        - &a4
+          name: asset_id
           in: path
           required: true
           schema:
             type: string
+            format: uuid
       responses:
         "200":
-          description: Reference asset metadata
+          description: Get approved public video
           content:
             application/json:
               schema:
-                $ref: ./components/schemas/agent.yaml#/components/schemas/ReferenceAssetResponse
-  /api/open/image/v1/tasks/{task_id}:
+                $ref: "#/components/schemas/PublicVideoResponse"
+        "404":
+          description: Video not found or inaccessible
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/ErrorEnvelope
+        "503":
+          description: Video publication service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/ErrorEnvelope
+    head:
+      tags:
+        - Public Media
+      summary: Get approved public video headers
+      operationId: headPublicVideo
+      security: []
+      description: Anonymous approved-only projection; omits owner, project, review reason and execution metadata. Cache-Control is no-store. HEAD returns no response body.
+      parameters: *a3
+      responses:
+        "200":
+          description: Get approved public video headers
+        "404":
+          description: Video not found or inaccessible
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/ErrorEnvelope
+        "503":
+          description: Video publication service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/ErrorEnvelope
+  /api/public/v1/videos/{asset_id}/video:
     get:
       tags:
-        - Open Image API
-      summary: Get Open API image task status and results
-      operationId: getOpenTask
+        - Public Media
+      summary: Read video video content
+      operationId: getPublicVideo
+      security: []
+      description: Anonymous; requires approved visibility. Streams stored derivative bytes; never redirects. HEAD returns the same status and headers without a body. Cache-Control is no-store.
+      parameters:
+        - *a4
+        - name: Range
+          in: header
+          schema:
+            type: string
+            description: "One bytes range: start-end, start-, or -suffix. Multiple ranges are rejected."
+      responses:
+        "200":
+          description: Complete content
+          headers:
+            Accept-Ranges: &a5
+              schema:
+                type: string
+                enum:
+                  - bytes
+            Content-Length: &a6
+              schema:
+                type: integer
+                format: int64
+            Cache-Control: &a7
+              schema:
+                type: string
+                enum:
+                  - no-store
+            X-Content-Type-Options: &a8
+              schema:
+                type: string
+                enum:
+                  - nosniff
+          content:
+            video/*:
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: Requested single byte range
+          headers:
+            Accept-Ranges: *a5
+            Content-Length: *a6
+            Cache-Control: *a7
+            X-Content-Type-Options: *a8
+            Content-Range:
+              schema:
+                type: string
+              description: bytes start-end/size
+          content:
+            video/*:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Video not found or inaccessible
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/ErrorEnvelope
+        "416":
+          description: Invalid, multiple, or unsatisfiable range; empty response body
+          headers:
+            Content-Range:
+              schema:
+                type: string
+              description: bytes */size
+        "503":
+          description: Video publication service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/ErrorEnvelope
+    head:
+      tags:
+        - Public Media
+      summary: Inspect video video content
+      operationId: headPublicVideo
+      security: []
+      description: Anonymous; requires approved visibility. Streams stored derivative bytes; never redirects. HEAD returns the same status and headers without a body. Cache-Control is no-store.
+      parameters:
+        - *a4
+        - name: Range
+          in: header
+          schema:
+            type: string
+            description: "One bytes range: start-end, start-, or -suffix. Multiple ranges are rejected."
+      responses:
+        "200":
+          description: Complete content
+          headers:
+            Accept-Ranges: &a9
+              schema:
+                type: string
+                enum:
+                  - bytes
+            Content-Length: &a10
+              schema:
+                type: integer
+                format: int64
+            Cache-Control: &a11
+              schema:
+                type: string
+                enum:
+                  - no-store
+            X-Content-Type-Options: &a12
+              schema:
+                type: string
+                enum:
+                  - nosniff
+        "206":
+          description: Requested single byte range
+          headers:
+            Accept-Ranges: *a9
+            Content-Length: *a10
+            Cache-Control: *a11
+            X-Content-Type-Options: *a12
+            Content-Range:
+              schema:
+                type: string
+              description: bytes start-end/size
+        "404":
+          description: Video not found or inaccessible
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/ErrorEnvelope
+        "416":
+          description: Invalid, multiple, or unsatisfiable range; empty response body
+          headers:
+            Content-Range:
+              schema:
+                type: string
+              description: bytes */size
+        "503":
+          description: Video publication service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/ErrorEnvelope
+  /api/public/v1/videos/{asset_id}/poster:
+    get:
+      tags:
+        - Public Media
+      summary: Read video poster content
+      operationId: getPublicPoster
+      security: []
+      description: Anonymous; requires approved visibility. Streams stored derivative bytes; never redirects. HEAD returns the same status and headers without a body. Cache-Control is no-store.
+      parameters:
+        - *a4
+        - name: Range
+          in: header
+          schema:
+            type: string
+            description: "One bytes range: start-end, start-, or -suffix. Multiple ranges are rejected."
+      responses:
+        "200":
+          description: Complete content
+          headers:
+            Accept-Ranges: &a13
+              schema:
+                type: string
+                enum:
+                  - bytes
+            Content-Length: &a14
+              schema:
+                type: integer
+                format: int64
+            Cache-Control: &a15
+              schema:
+                type: string
+                enum:
+                  - no-store
+            X-Content-Type-Options: &a16
+              schema:
+                type: string
+                enum:
+                  - nosniff
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: Requested single byte range
+          headers:
+            Accept-Ranges: *a13
+            Content-Length: *a14
+            Cache-Control: *a15
+            X-Content-Type-Options: *a16
+            Content-Range:
+              schema:
+                type: string
+              description: bytes start-end/size
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Video not found or inaccessible
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/ErrorEnvelope
+        "416":
+          description: Invalid, multiple, or unsatisfiable range; empty response body
+          headers:
+            Content-Range:
+              schema:
+                type: string
+              description: bytes */size
+        "503":
+          description: Video publication service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/ErrorEnvelope
+    head:
+      tags:
+        - Public Media
+      summary: Inspect video poster content
+      operationId: headPublicPoster
+      security: []
+      description: Anonymous; requires approved visibility. Streams stored derivative bytes; never redirects. HEAD returns the same status and headers without a body. Cache-Control is no-store.
+      parameters:
+        - *a4
+        - name: Range
+          in: header
+          schema:
+            type: string
+            description: "One bytes range: start-end, start-, or -suffix. Multiple ranges are rejected."
+      responses:
+        "200":
+          description: Complete content
+          headers:
+            Accept-Ranges: &a17
+              schema:
+                type: string
+                enum:
+                  - bytes
+            Content-Length: &a18
+              schema:
+                type: integer
+                format: int64
+            Cache-Control: &a19
+              schema:
+                type: string
+                enum:
+                  - no-store
+            X-Content-Type-Options: &a20
+              schema:
+                type: string
+                enum:
+                  - nosniff
+        "206":
+          description: Requested single byte range
+          headers:
+            Accept-Ranges: *a17
+            Content-Length: *a18
+            Cache-Control: *a19
+            X-Content-Type-Options: *a20
+            Content-Range:
+              schema:
+                type: string
+              description: bytes start-end/size
+        "404":
+          description: Video not found or inaccessible
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/ErrorEnvelope
+        "416":
+          description: Invalid, multiple, or unsatisfiable range; empty response body
+          headers:
+            Content-Range:
+              schema:
+                type: string
+              description: bytes */size
+        "503":
+          description: Video publication service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/ErrorEnvelope
+  /api/open/v1/me:
+    get:
+      tags:
+        - Developer API
+      operationId: get_current_user
+      summary: get current user
+      description: Requires account:read.
       security:
-        - accessKeyAuth: []
-          accessTimestamp: []
-          accessBodySHA256: []
-          accessSignature: []
+        - developerBearerAuth: []
+      x-required-scopes:
+        - account:read
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/DeveloperCurrentUser"
+                  meta:
+                    type: object
+                    properties:
+                      request_id:
+                        type: string
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/v1/me/balance:
+    get:
+      tags:
+        - Developer API
+      operationId: get_balance
+      summary: get balance
+      description: Requires account:read.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - account:read
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: ./components/schemas/agent.yaml#/components/schemas/BalanceSummary
+                  meta:
+                    type: object
+                    properties:
+                      request_id:
+                        type: string
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/v1/image-models:
+    get:
+      tags:
+        - Developer API
+      operationId: list_image_models
+      summary: list image models
+      description: Requires models:read. Available model capabilities for the current user groups; do not hardcode parameters.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - models:read
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items: &a21
+                          type: object
+                          additionalProperties: true
+                      model_groups:
+                        type: array
+                        items: *a21
+                      route_model_groups:
+                        type: array
+                        items: *a21
+                      reference_image_max_bytes:
+                        type: integer
+                      reference_image_allowed_mime_types:
+                        type: array
+                        items:
+                          type: string
+                    additionalProperties: true
+                  meta:
+                    type: object
+                    properties:
+                      request_id:
+                        type: string
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/v1/image-tasks/preflight:
+    post:
+      tags:
+        - Developer API
+      operationId: preflight_image_task
+      summary: preflight image task
+      description: Requires images:write. Complete request validation without charging; quote expires and create revalidates.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - images:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeveloperImagePreflightRequest"
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/DeveloperImagePreflight"
+                  meta:
+                    type: object
+                    properties:
+                      request_id:
+                        type: string
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/v1/image-tasks:
+    post:
+      tags:
+        - Developer API
+      operationId: create_image_task
+      summary: create image task
+      description: Requires images:write. Persistent asynchronous task; client disconnect does not cancel it. Save task ID. Quote and idempotency key required; identical replays return existing work.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - images:write
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          schema:
+            type: string
+          description: Overrides idempotency_key in JSON.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeveloperImageCreateRequest"
+      responses:
+        "201":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: ./components/schemas/common.yaml#/components/schemas/ImageTask
+                  meta:
+                    type: object
+                    properties:
+                      request_id:
+                        source: a21
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+    get:
+      tags:
+        - Developer API
+      operationId: list_image_tasks
+      summary: list image tasks
+      description: Requires images:read. Lists owned project tasks with cursor, limit and optional status filter.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - images:read
+      parameters:
+        - name: project_id
+          in: query
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: ./components/schemas/common.yaml#/components/schemas/ImageTask
+                      next_cursor: &a22
+                        type: string
+                    additionalProperties: false
+                  meta:
+                    type: object
+                    properties:
+                      request_id: *a22
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/v1/image-tasks/{task_id}:
+    get:
+      tags:
+        - Developer API
+      operationId: get_image_task
+      summary: get image task
+      description: Requires images:read.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - images:read
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: &a23
+            type: string
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: ./components/schemas/common.yaml#/components/schemas/ImageTask
+                  meta:
+                    type: object
+                    properties:
+                      request_id: *a23
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/v1/image-tasks/{task_id}/events:
+    get:
+      tags:
+        - Developer API
+      operationId: observe_image_task
+      summary: observe image task
+      description: Requires images:read. SSE task.status snapshots (direct task JSON, not a data envelope), emitted on projection change and checked every second. Current authorization is rechecked. id is a projection hash, not a replay cursor. No Last-Event-ID replay. Terminal snapshot ends stream; error event can end stream on access loss.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - images:read
       parameters:
         - name: task_id
           in: path
@@ -421,115 +1306,3027 @@ paths:
             type: string
       responses:
         "200":
-          description: Image task
+          description: Task lifecycle snapshots; never simulated partial images.
           content:
-            application/json:
+            text/event-stream:
               schema:
-                $ref: ./components/schemas/agent.yaml#/components/schemas/ImageTaskResponse
-  /api/open/image/v1/balance:
-    get:
-      tags:
-        - Open Image API
-      summary: Get Open API key user balance
-      operationId: getOpenBalance
-      security:
-        - accessKeyAuth: []
-          accessTimestamp: []
-          accessBodySHA256: []
-          accessSignature: []
-      responses:
-        "200":
-          description: Balance summary
-          content:
-            application/json:
-              schema:
-                $ref: ./components/schemas/agent.yaml#/components/schemas/BalanceResponse
-  /api/open/image/v1/capabilities:
-    get:
-      tags:
-        - Open Image API
-      summary: Get Open API image generation capabilities
-      operationId: getOpenCapabilities
-      security:
-        - accessKeyAuth: []
-          accessTimestamp: []
-          accessBodySHA256: []
-          accessSignature: []
-      responses:
-        "200":
-          description: Capability list
-          content:
-            application/json:
-              schema:
-                $ref: ./components/schemas/agent.yaml#/components/schemas/CapabilitiesResponse
-  /api/open/cluster/v1/challenges:
-    post:
-      tags:
-        - Cluster Enrollment
-      summary: Begin encrypted cluster enrollment
-      operationId: createClusterChallenge
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: ./components/schemas/cluster.yaml#/components/schemas/ClusterChallengeRequest
-      responses:
-        "201":
-          description: Short-lived challenge bound to the token, node, installation, version, and runtime schema
-          content:
-            application/json:
-              schema:
-                $ref: ./components/schemas/cluster.yaml#/components/schemas/ClusterChallengeResponse
+                type: string
+              example: |+
+                event: task.status
+                data: {"id":"...","status":"running"}
+
         "400":
-          description: Invalid or incompatible enrollment metadata
+          description: Invalid input or unsupported parameter
           content:
             application/json:
               schema:
                 $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
         "401":
-          description: Token is invalid, unavailable, revoked, consumed, or expired
+          description: Missing, expired, revoked or disabled credential/account
           content:
             application/json:
               schema:
                 $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
-  /api/open/cluster/v1/join:
-    post:
-      tags:
-        - Cluster Enrollment
-      summary: Complete encrypted cluster enrollment
-      operationId: joinCluster
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: ./components/schemas/cluster.yaml#/components/schemas/ClusterJoinRequest
-      responses:
-        "201":
-          description: Node registration and role-minimized encrypted runtime envelope
-          content:
-            application/json:
-              schema:
-                $ref: ./components/schemas/cluster.yaml#/components/schemas/ClusterJoinResponse
-        "400":
-          description: Invalid enrollment request
+        "402":
+          description: Insufficient balance
           content:
             application/json:
               schema:
                 $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
-        "401":
-          description: Challenge or proof is invalid or expired
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
           content:
             application/json:
               schema:
                 $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
         "409":
-          description: Challenge or token was already consumed, or the node identity conflicts
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
           content:
             application/json:
               schema:
                 $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/v1/video-models:
+    get:
+      tags:
+        - Developer API
+      operationId: list_video_models
+      summary: list video models
+      description: Requires models:read. Available model capabilities for the current user groups; do not hardcode parameters.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - models:read
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      groups:
+                        type: array
+                        items: &a24
+                          type: object
+                          additionalProperties: true
+                      route_model_groups:
+                        type: array
+                        items: *a24
+                    additionalProperties: true
+                  meta:
+                    type: object
+                    properties:
+                      request_id:
+                        type: string
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/v1/video-tasks/preflight:
+    post:
+      tags:
+        - Developer API
+      operationId: preflight_video_task
+      summary: preflight video task
+      description: Requires videos:write. Complete request validation without charging; quote expires and create revalidates.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - videos:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeveloperVideoPreflightRequest"
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/VideoEstimate"
+                  meta:
+                    type: object
+                    properties:
+                      request_id:
+                        type: string
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/v1/video-tasks:
+    post:
+      tags:
+        - Developer API
+      operationId: create_video_task
+      summary: create video task
+      description: Requires videos:write. Persistent asynchronous task; client disconnect does not cancel it. Save task ID. Quote and idempotency key required; identical replays return existing work.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - videos:write
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          schema:
+            type: string
+          description: Overrides idempotency_key in JSON.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeveloperVideoCreateRequest"
+      responses:
+        "201":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      task:
+                        $ref: "#/components/schemas/VideoTask"
+                      replayed:
+                        type: boolean
+                    required:
+                      - task
+                      - replayed
+                    additionalProperties: false
+                  meta:
+                    type: object
+                    properties:
+                      request_id:
+                        source: a24
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+    get:
+      tags:
+        - Developer API
+      operationId: list_video_tasks
+      summary: list video tasks
+      description: Requires videos:read. Cursor pagination with optional status filter.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - videos:read
+      parameters:
+        - name: project_id
+          in: query
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/VideoTask"
+                      next_cursor: &a25
+                        type: string
+                    additionalProperties: false
+                  meta:
+                    type: object
+                    properties:
+                      request_id: *a25
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/v1/video-tasks/{task_id}:
+    get:
+      tags:
+        - Developer API
+      operationId: get_video_task
+      summary: get video task
+      description: Requires videos:read.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - videos:read
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: &a26
+            type: string
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/VideoTask"
+                  meta:
+                    type: object
+                    properties:
+                      request_id: *a26
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/v1/video-tasks/{task_id}/events:
+    get:
+      tags:
+        - Developer API
+      operationId: observe_video_task
+      summary: observe video task
+      description: Requires videos:read. SSE task.status snapshots (direct task JSON, not a data envelope), emitted on projection change and checked every second. Current authorization is rechecked. id is a projection hash, not a replay cursor. No Last-Event-ID replay. Terminal snapshot ends stream; error event can end stream on access loss.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - videos:read
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Task lifecycle snapshots; never simulated partial images.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              example: |+
+                event: task.status
+                data: {"id":"...","status":"running"}
+
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/v1/video-tasks/{task_id}/cancel:
+    post:
+      tags:
+        - Developer API
+      operationId: cancel_video_task
+      summary: cancel video task
+      description: Requires videos:delete. Cancellation follows task/provider state; acceptance is not a guarantee that upstream execution has stopped.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - videos:delete
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: &a27
+            type: string
+        - name: Idempotency-Key
+          in: header
+          schema: *a27
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                idempotency_key: *a27
+              required:
+                - idempotency_key
+              additionalProperties: false
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/VideoTask"
+                  meta:
+                    type: object
+                    properties:
+                      request_id: *a27
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/v1/assets:
+    get:
+      tags:
+        - Developer API
+      operationId: list_assets
+      summary: list assets
+      description: Requires assets:read.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - assets:read
+      parameters:
+        - name: project_id
+          in: query
+          schema:
+            type: string
+        - name: media_type
+          in: query
+          schema:
+            type: string
+        - name: source_type
+          in: query
+          schema:
+            type: string
+        - name: group_name
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: keyword
+          in: query
+          schema:
+            type: string
+        - name: sort_by
+          in: query
+          schema:
+            type: string
+        - name: sort_order
+          in: query
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/DeveloperAsset"
+                      next_cursor: &a28
+                        type: string
+                    additionalProperties: false
+                  meta:
+                    type: object
+                    properties:
+                      request_id: *a28
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/v1/assets/{asset_id}:
+    get:
+      tags:
+        - Developer API
+      operationId: get_asset
+      summary: get asset
+      description: Requires assets:read.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - assets:read
+      parameters:
+        - name: asset_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/DeveloperAsset"
+                  meta:
+                    type: object
+                    properties:
+                      request_id:
+                        source: a29
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+    patch:
+      tags:
+        - Developer API
+      operationId: update_asset
+      summary: update asset
+      description: Requires assets:write.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - assets:write
+      parameters:
+        - name: asset_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeveloperResourceWrite"
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/DeveloperAsset"
+                  meta:
+                    type: object
+                    properties:
+                      request_id:
+                        source: a30
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+    delete:
+      tags:
+        - Developer API
+      operationId: delete_asset
+      summary: delete asset
+      description: Requires assets:delete. Version checks and resource ownership apply.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - assets:delete
+      parameters:
+        - name: asset_id
+          in: path
+          required: true
+          schema: &a29
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeveloperResourceWrite"
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: object
+                    additionalProperties: true
+                  meta:
+                    type: object
+                    properties:
+                      request_id: *a29
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/v1/projects:
+    get:
+      tags:
+        - Developer API
+      operationId: list_projects
+      summary: list projects
+      description: Requires projects:read.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - projects:read
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: ./components/schemas/common.yaml#/components/schemas/Project
+                      next_cursor:
+                        type: string
+                    additionalProperties: false
+                  meta:
+                    type: object
+                    properties:
+                      request_id:
+                        source: a30
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+    post:
+      tags:
+        - Developer API
+      operationId: create_project
+      summary: create project
+      description: Requires projects:write.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - projects:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeveloperResourceWrite"
+      responses:
+        "201":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: ./components/schemas/common.yaml#/components/schemas/Project
+                  meta:
+                    type: object
+                    properties:
+                      request_id:
+                        type: string
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/v1/projects/{project_id}:
+    get:
+      tags:
+        - Developer API
+      operationId: get_project
+      summary: get project
+      description: Requires projects:read.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - projects:read
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: ./components/schemas/common.yaml#/components/schemas/Project
+                  meta:
+                    type: object
+                    properties:
+                      request_id:
+                        source: a31
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+    patch:
+      tags:
+        - Developer API
+      operationId: update_project
+      summary: update project
+      description: Requires projects:write.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - projects:write
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeveloperResourceWrite"
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: ./components/schemas/common.yaml#/components/schemas/Project
+                  meta:
+                    type: object
+                    properties:
+                      request_id:
+                        source: a30
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+    delete:
+      tags:
+        - Developer API
+      operationId: delete_project
+      summary: delete project
+      description: Requires projects:delete. Version checks and resource ownership apply.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - projects:delete
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: &a30
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeveloperResourceWrite"
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: object
+                    additionalProperties: true
+                  meta:
+                    type: object
+                    properties:
+                      request_id: *a30
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/v1/groups:
+    get:
+      tags:
+        - Developer API
+      operationId: list_groups
+      summary: list groups
+      description: Requires groups:read.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - groups:read
+      parameters:
+        - name: project_id
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/DeveloperGroup"
+                      next_cursor:
+                        type: string
+                    additionalProperties: false
+                  meta:
+                    type: object
+                    properties:
+                      request_id:
+                        source: a30
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+    post:
+      tags:
+        - Developer API
+      operationId: create_group
+      summary: create group
+      description: Requires groups:write.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - groups:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeveloperResourceWrite"
+      responses:
+        "201":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/DeveloperGroup"
+                  meta:
+                    type: object
+                    properties:
+                      request_id:
+                        type: string
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/v1/groups/{group_id}:
+    get:
+      tags:
+        - Developer API
+      operationId: get_group
+      summary: get group
+      description: Requires groups:read.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - groups:read
+      parameters:
+        - name: group_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: project_id
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/DeveloperGroup"
+                  meta:
+                    type: object
+                    properties:
+                      request_id:
+                        source: a32
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+    patch:
+      tags:
+        - Developer API
+      operationId: update_group
+      summary: update group
+      description: Requires groups:write.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - groups:write
+      parameters:
+        - name: group_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeveloperResourceWrite"
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/DeveloperGroup"
+                  meta:
+                    type: object
+                    properties:
+                      request_id:
+                        source: a30
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+    delete:
+      tags:
+        - Developer API
+      operationId: delete_group
+      summary: delete group
+      description: Requires groups:delete. Requires project_id and expected_version; deleting the group clears grouping only, never deletes assets.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - groups:delete
+      parameters:
+        - name: group_id
+          in: path
+          required: true
+          schema: &a31
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeveloperResourceWrite"
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: object
+                    additionalProperties: true
+                  meta:
+                    type: object
+                    properties:
+                      request_id: *a31
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/v1/assets/{asset_id}/access:
+    post:
+      tags:
+        - Developer API
+      operationId: get_asset_access
+      summary: get asset access
+      description: Requires assets:read. Returns a temporary access URL; renew after expiry.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - assets:read
+      parameters:
+        - name: asset_id
+          in: path
+          required: true
+          schema: &a32
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                purpose: *a32
+              additionalProperties: false
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/DeveloperAssetAccess"
+                  meta:
+                    type: object
+                    properties:
+                      request_id: *a32
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/v1/uploads:
+    post:
+      tags:
+        - Developer API
+      operationId: create_upload
+      summary: create upload
+      description: Requires uploads:write.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - uploads:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeveloperUploadRequest"
+      responses:
+        "201":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/DeveloperUploadSession"
+                  meta:
+                    type: object
+                    properties:
+                      request_id:
+                        type: string
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/v1/uploads/{upload_id}:
+    get:
+      tags:
+        - Developer API
+      operationId: get_upload
+      summary: get upload
+      description: Requires uploads:read.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - uploads:read
+      parameters:
+        - name: upload_id
+          in: path
+          required: true
+          schema: &a33
+            type: string
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/DeveloperUploadSession"
+                  meta:
+                    type: object
+                    properties:
+                      request_id: *a33
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/v1/uploads/{upload_id}/parts/{part_number}/url:
+    post:
+      tags:
+        - Developer API
+      operationId: get_upload_part_url
+      summary: get upload part url
+      description: Requires uploads:write. Returns an expiring PUT target and required headers. S3 uses direct provider signing; local storage returns a proxy target with X-Upload-Capability and X-Checksum-SHA256 headers. Send raw bytes with the exact Content-Length using all returned headers, without adding an API Key or OAuth token. Local capabilities expire at the earlier of five minutes and the upload session expiry, and are invalidated by credential rotation, revocation, permission removal or account disablement. A SHA256 checksum (hex or base64) is required for local targets.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - uploads:write
+      parameters:
+        - name: upload_id
+          in: path
+          required: true
+          schema: &a34
+            type: string
+        - name: part_number
+          in: path
+          required: true
+          schema: *a34
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                checksum: *a34
+              additionalProperties: false
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                      - url
+                      - headers
+                      - expires_at
+                    properties:
+                      url: &a35
+                        type: string
+                      headers:
+                        type: object
+                        additionalProperties: *a35
+                      expires_at:
+                        type: string
+                        format: date-time
+                  meta:
+                    type: object
+                    properties:
+                      request_id: *a34
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/v1/upload-access/{upload_id}/parts/{part_number}:
+    put:
+      tags:
+        - Developer API
+      operationId: upload_capability_part
+      summary: Upload local multipart bytes using a returned capability
+      description: Use the URL and headers from get_upload_part_url. No API Key or OAuth token is needed. The capability binds the current credential, owner, upload session, part, PUT method, audience, size, checksum and expiry. Query parameters are rejected. The session and credential must still be writable and authorized.
+      security: []
+      parameters:
+        - name: upload_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: part_number
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - name: X-Upload-Capability
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: X-Checksum-SHA256
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: Content-Length
+          in: header
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 33554432
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: Completed part (part_number, etag, checksum and size_bytes) in the standard data envelope
+        "400":
+          description: Invalid length, checksum, bytes or query parameters
+        "401":
+          description: Credential or account no longer available
+        "403":
+          description: Invalid, expired or revoked capability, or session no longer writable
+        "404":
+          description: Session not found or not owned
+        "405":
+          description: PUT required
+  /api/open/v1/uploads/{upload_id}/parts/{part_number}:
+    put:
+      tags:
+        - Developer API
+      operationId: upload_part
+      summary: upload part
+      description: Requires uploads:write. Upload raw bytes with actual Content-Length and checksum.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - uploads:write
+      parameters:
+        - name: upload_id
+          in: path
+          required: true
+          schema: &a36
+            type: string
+        - name: part_number
+          in: path
+          required: true
+          schema: *a36
+        - name: X-Checksum-SHA256
+          in: header
+          schema: *a36
+        - name: Content-Length
+          in: header
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/DeveloperCompletedPart"
+                  meta:
+                    type: object
+                    properties:
+                      request_id: *a36
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+  /api/open/v1/uploads/{upload_id}/complete:
+    post:
+      tags:
+        - Developer API
+      operationId: complete_upload
+      summary: complete upload
+      description: Requires uploads:write.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - uploads:write
+      parameters:
+        - name: upload_id
+          in: path
+          required: true
+          schema: &a37
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                parts:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/DeveloperCompletedPart"
+              required:
+                - parts
+              additionalProperties: false
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/DeveloperAsset"
+                  meta:
+                    type: object
+                    properties:
+                      request_id: *a37
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/v1/uploads/{upload_id}/abort:
+    post:
+      tags:
+        - Developer API
+      operationId: abort_upload
+      summary: abort upload
+      description: Requires uploads:delete.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - uploads:delete
+      parameters:
+        - name: upload_id
+          in: path
+          required: true
+          schema: &a38
+            type: string
+      responses:
+        "200":
+          description: Operation result in the standard data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      aborted:
+                        type: boolean
+                    additionalProperties: false
+                  meta:
+                    type: object
+                    properties:
+                      request_id: *a38
+                    additionalProperties: true
+        "400":
+          description: Invalid input or unsupported parameter
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "401":
+          description: Missing, expired, revoked or disabled credential/account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "402":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "403":
+          description: Required scope or quota not available
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "404":
+          description: Resource not found or not owned
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "409":
+          description: Version conflict, IDEMPOTENCY_CONFLICT or QUOTE_STALE
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        "500":
+          description: Operation unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /.well-known/oauth-protected-resource:
+    get:
+      tags:
+        - OAuth
+      summary: GET /.well-known/oauth-protected-resource
+      description: RFC 9728 protected resource metadata. Resource is canonical issuer + /mcp.
+      security: []
+      responses:
+        "200":
+          description: OAuth response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  resource: &a39
+                    type: string
+                  authorization_servers:
+                    type: array
+                    items: *a39
+                  scopes_supported:
+                    type: array
+                    items: *a39
+                  bearer_methods_supported:
+                    type: array
+                    items: *a39
+                additionalProperties: false
+        "400":
+          description: Invalid OAuth request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthError"
+  /.well-known/oauth-protected-resource/mcp:
+    get:
+      tags:
+        - OAuth
+      summary: GET /.well-known/oauth-protected-resource/mcp
+      description: RFC 9728 protected resource metadata. Resource is canonical issuer + /mcp.
+      security: []
+      responses:
+        "200":
+          description: OAuth response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  resource: &a40
+                    type: string
+                  authorization_servers:
+                    type: array
+                    items: *a40
+                  scopes_supported:
+                    type: array
+                    items: *a40
+                  bearer_methods_supported:
+                    type: array
+                    items: *a40
+                additionalProperties: false
+        "400":
+          description: Invalid OAuth request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthError"
+  /.well-known/oauth-authorization-server:
+    get:
+      tags:
+        - OAuth
+      summary: GET /.well-known/oauth-authorization-server
+      description: RFC 8414 metadata. Canonical configured HTTPS issuer, HTTP loopback development only. PKCE S256, public clients, authorization_code and refresh_token.
+      security: []
+      responses:
+        "200":
+          description: OAuth response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "400":
+          description: Invalid OAuth request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthError"
+  /oauth/authorize:
+    get:
+      tags:
+        - OAuth
+      summary: GET /oauth/authorize
+      description: Browser authorization redirect to stored Studio consent request. response_type=code, code_challenge_method=S256, exact redirect URI and resource binding. No password tool.
+      security: []
+      parameters:
+        - name: response_type
+          in: query
+          schema:
+            type: string
+          required: true
+        - name: client_id
+          in: query
+          schema:
+            type: string
+          required: true
+        - name: redirect_uri
+          in: query
+          schema:
+            type: string
+          required: true
+        - name: resource
+          in: query
+          schema:
+            type: string
+          required: true
+        - name: scope
+          in: query
+          schema:
+            type: string
+          required: true
+        - name: code_challenge
+          in: query
+          schema:
+            type: string
+          required: true
+        - name: code_challenge_method
+          in: query
+          schema:
+            type: string
+          required: true
+        - name: state
+          in: query
+          schema:
+            type: string
+          required: false
+      responses:
+        "303":
+          description: Redirect to Studio browser consent
+          headers:
+            Location:
+              schema:
+                type: string
+        "400":
+          description: Invalid OAuth request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthError"
+  /oauth/token:
+    post:
+      tags:
+        - OAuth
+      summary: POST /oauth/token
+      description: Code exchange requires code, redirect_uri and PKCE verifier; refresh requires refresh_token. Header client authentication and URL query tokens are rejected. Refresh reuse revokes grant family.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                grant_type:
+                  type: string
+                  enum:
+                    - authorization_code
+                    - refresh_token
+                client_id: &a41
+                  type: string
+                resource: *a41
+                code: *a41
+                redirect_uri: *a41
+                code_verifier: *a41
+                refresh_token: *a41
+                scope: *a41
+              required:
+                - grant_type
+                - client_id
+                - resource
+              additionalProperties: false
+      responses:
+        "200":
+          description: OAuth response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthTokenResponse"
+        "400":
+          description: Invalid OAuth request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthError"
+  /oauth/revoke:
+    post:
+      tags:
+        - OAuth
+      summary: POST /oauth/revoke
+      description: Revoke grant associated with access/refresh token; does not end all browser sessions.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                  writeOnly: true
+                client_id:
+                  type: string
+              required:
+                - token
+                - client_id
+              additionalProperties: false
+      responses:
+        "200":
+          description: OAuth response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "400":
+          description: Invalid OAuth request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthError"
+  /oauth/register:
+    post:
+      tags:
+        - OAuth
+      summary: POST /oauth/register
+      description: Bounded dynamic public-client registration when enabled. Safe Client ID Metadata Documents and pre-registration also supported.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OAuthClient"
+      responses:
+        "201":
+          description: OAuth response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthClient"
+        "400":
+          description: Invalid OAuth request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthError"
+  /mcp:
+    post:
+      tags:
+        - MCP
+      summary: MCP Streamable HTTP
+      description: Official Go SDK v1.7.0; protocol 2026-07-28 plus supported prior SDK versions. Initialize, tools/list and tools/call. Browser OAuth only, canonical resource audience. Tool structuredContent and JSON text wrap Execute result in data. Discover actual input/output schemas and annotations using tools/list. No password-login tool, arbitrary URL import or large inline base64 file tools.
+      security:
+        - mcpOAuth: []
+      parameters:
+        - name: MCP-Protocol-Version
+          in: header
+          schema: &a42
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: MCP JSON-RPC message
+      responses:
+        "200":
+          description: MCP JSON or SSE result
+          content:
+            application/json:
+              schema:
+                type: object
+            text/event-stream:
+              schema: *a42
+        "202":
+          description: Notification accepted
+        "401":
+          description: Bearer challenge with protected resource metadata
+          headers:
+            WWW-Authenticate:
+              schema: *a42
+  /api/open/v1/image-tasks/{task_id}/results/{image_id}/access:
+    post:
+      tags:
+        - Developer API
+      operationId: get_image_result_access
+      summary: Renew image result access
+      description: Requires images:read. Resolves an output belonging to the owned task and returns renewable temporary access. Does not require broad asset library access.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - images:read
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: &a43
+            type: string
+        - name: image_id
+          in: path
+          required: true
+          schema: *a43
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                purpose: *a43
+              additionalProperties: false
+      responses:
+        "200":
+          description: Renewed output access
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/DeveloperAssetAccess"
+                  meta:
+                    type: object
+                required:
+                  - data
+        "401":
+          description: Credential unavailable
+        "403":
+          description: Required scope missing
+        "404":
+          description: Owned task output not found
+  /api/open/v1/video-tasks/{task_id}/results/{asset_id}/access:
+    post:
+      tags:
+        - Developer API
+      operationId: get_video_result_access
+      summary: Renew video result access
+      description: Requires videos:read. Resolves an output belonging to the owned task and returns renewable temporary access. Does not require broad asset library access.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes:
+        - videos:read
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: &a44
+            type: string
+        - name: asset_id
+          in: path
+          required: true
+          schema: *a44
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                purpose: *a44
+              additionalProperties: false
+      responses:
+        "200":
+          description: Renewed output access
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/DeveloperAssetAccess"
+                  meta:
+                    type: object
+                required:
+                  - data
+        "401":
+          description: Credential unavailable
+        "403":
+          description: Required scope missing
+        "404":
+          description: Owned task output not found
 components:
   parameters:
     AdminVideoResourceID:
@@ -583,6 +4380,190 @@ components:
           schema:
             $ref: ./components/schemas/common.yaml#/components/schemas/ErrorEnvelope
   schemas:
+    MediaGroupsResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          items:
+            type: string
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    VideoPublication:
+      type: object
+      required:
+        - id
+        - title
+        - media_type
+        - status
+        - video_url
+        - poster_url
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        media_type:
+          type: string
+          enum:
+            - video
+        status:
+          type: string
+          enum:
+            - private
+            - pending_review
+            - approved
+            - rejected
+        prompt:
+          type: string
+        video_url:
+          type: string
+        poster_url:
+          type: string
+        width:
+          type: integer
+        height:
+          type: integer
+        duration_ms:
+          type: integer
+          format: int64
+        published_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    PublicVideo:
+      allOf:
+        - $ref: "#/components/schemas/VideoPublication"
+        - type: object
+          properties:
+            status:
+              type: string
+              enum:
+                - approved
+      description: Public projection excludes owner identity, project, review reason and internal execution metadata.
+    VideoPublicationRecord:
+      allOf:
+        - $ref: "#/components/schemas/VideoPublication"
+        - type: object
+          properties:
+            review_reason:
+              type: string
+    HistoryClearFailedRequest:
+      type: object
+      properties:
+        project_id:
+          type: string
+          description: Optional project scope; omitted or empty string covers all owned projects.
+      additionalProperties: false
+    PublicVideoResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/PublicVideo"
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    VideoPublicationResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/VideoPublicationRecord"
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    PublicVideoPageResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - items
+            - total
+            - page
+            - page_size
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/PublicVideo"
+            total:
+              type: integer
+            page:
+              type: integer
+            page_size:
+              type: integer
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    VideoReviewPageResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - items
+            - total
+            - page
+            - page_size
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/VideoPublicationRecord"
+            total:
+              type: integer
+            page:
+              type: integer
+            page_size:
+              type: integer
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    HistoryClearFailedResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - hidden_count
+          properties:
+            hidden_count:
+              type: integer
+              minimum: 0
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    ImageHistoryRetryResponse:
+      $ref: ./components/schemas/agent.yaml#/components/schemas/ImageTaskResponse
     AgentFeatureFlags:
       type: object
       required:
@@ -805,6 +4786,7 @@ components:
           type: boolean
       additionalProperties: false
     CanvasNode:
+      description: Schema 1 integrated image_v2/video_v2 nodes are empty generation nodes when asset_id is absent, or filled media when present. Empty nodes are valid alone. Only empty v2 nodes accept estimate/generate. Legacy prompt/image/video/ image_generation/video_generation nodes remain readable and deletable; mutations may only retain their IDs and content unchanged. Canvas duplication containing legacy nodes is rejected. Existing legacy runs remain recoverable.
       type: object
       required:
         - id
@@ -818,6 +4800,8 @@ components:
         type:
           type: string
           enum:
+            - image_v2
+            - video_v2
             - prompt
             - image
             - video
@@ -850,6 +4834,28 @@ components:
               type: number
         payload:
           type: object
+          description: Integrated nodes use name as a stable reference alias, title as an editable display name, and draft for generation parameters. Incoming edges supply media; canonical prompt references bind by source payload.name, never title. URLs, provider secrets and embedded binary data must not be persisted.
+          properties:
+            name:
+              type: string
+              description: Stable input reference alias
+            title:
+              type: string
+              description: Editable display title
+            draft:
+              type: object
+              description: Existing image/video request fields; video quote_token is returned by estimate detail.quote_token and persisted here before generate. Media inputs and reference bindings are derived from edges.
+              properties:
+                prompt_template:
+                  type: string
+                  description: Canonical {{$variable}} and {{@alias}} tokens; ${variable} is also accepted.
+                variables:
+                  type: object
+                  additionalProperties:
+                    type: string
+                quote_token:
+                  type: string
+              additionalProperties: true
           additionalProperties: true
       additionalProperties: false
     CanvasEdge:
@@ -880,6 +4886,9 @@ components:
             - reference
             - first_frame
             - last_frame
+            - reference_image
+            - reference_video
+            - reference_audio
             - result
         ordinal:
           type: integer
@@ -1021,6 +5030,12 @@ components:
         attached_revision:
           type: integer
           format: int64
+        progress_stage:
+          type: string
+          description: Actual task-reported stage when refreshed
+        progress_message:
+          type: string
+          description: Actual task-reported progress message when refreshed
       additionalProperties: true
     CanvasCreateRequest:
       type: object
@@ -1643,6 +5658,493 @@ components:
         result_ready:
           type: boolean
       additionalProperties: false
+    DeveloperPoints:
+      type: string
+      pattern: ^-?\d+\.\d{5}$
+      description: Points represented as a five-decimal string; do not convert through binary floating point.
+    DeveloperCurrentUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        email: &a45
+          type: string
+        nickname: *a45
+        status: *a45
+        group_code: *a45
+      required:
+        - id
+        - email
+        - status
+      additionalProperties: false
+    DeveloperImagePreflightRequest:
+      type: object
+      properties:
+        project_id: &a46
+          type: string
+        route_model_code: *a46
+        task_type: *a46
+        quote_token:
+          type: string
+          description: Expiring quote from preflight; binds normalized request, identity and capability/price versions.
+        idempotency_key:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Stable for retries of the same operation. Idempotency-Key header overrides this field.
+        prompt_variables:
+          type: array
+          items:
+            type: object
+            properties:
+              name: *a46
+              value: *a46
+            required:
+              - name
+              - value
+            additionalProperties: false
+        reference_bindings:
+          type: array
+          items:
+            type: object
+            properties:
+              name: *a46
+              asset_id: *a46
+            required:
+              - name
+              - asset_id
+            additionalProperties: false
+        reference_asset_ids:
+          type: array
+          items: *a46
+        abstract_model: *a46
+        prompt: *a46
+        negative_prompt: *a46
+        size_mode: *a46
+        requested_size: *a46
+        base_resolution: *a46
+        quality: *a46
+        output_format: *a46
+        background: *a46
+        moderation: *a46
+        aspect_ratio: *a46
+        capability_version: *a46
+        mask_asset_id: *a46
+        output_image_count: &a47
+          type: integer
+        output_compression: *a47
+        reference_strength: *a47
+        seed: *a47
+      required:
+        - project_id
+        - route_model_code
+      additionalProperties: false
+    DeveloperImageCreateRequest:
+      type: object
+      properties:
+        project_id: &a48
+          type: string
+        route_model_code: *a48
+        task_type: *a48
+        quote_token:
+          type: string
+          description: Expiring quote from preflight; binds normalized request, identity and capability/price versions.
+        idempotency_key:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Stable for retries of the same operation. Idempotency-Key header overrides this field.
+        prompt_variables:
+          type: array
+          items:
+            type: object
+            properties:
+              name: *a48
+              value: *a48
+            required:
+              - name
+              - value
+            additionalProperties: false
+        reference_bindings:
+          type: array
+          items:
+            type: object
+            properties:
+              name: *a48
+              asset_id: *a48
+            required:
+              - name
+              - asset_id
+            additionalProperties: false
+        reference_asset_ids:
+          type: array
+          items: *a48
+        abstract_model: *a48
+        prompt: *a48
+        negative_prompt: *a48
+        size_mode: *a48
+        requested_size: *a48
+        base_resolution: *a48
+        quality: *a48
+        output_format: *a48
+        background: *a48
+        moderation: *a48
+        aspect_ratio: *a48
+        capability_version: *a48
+        mask_asset_id: *a48
+        output_image_count: &a49
+          type: integer
+        output_compression: *a49
+        reference_strength: *a49
+        seed: *a49
+      required:
+        - project_id
+        - route_model_code
+        - idempotency_key
+        - quote_token
+      additionalProperties: false
+    DeveloperVideoPreflightRequest:
+      type: object
+      properties:
+        project_id: &a50
+          type: string
+        route_model_code: *a50
+        task_type: *a50
+        quote_token:
+          type: string
+          description: Expiring quote from preflight; binds normalized request, identity and capability/price versions.
+        idempotency_key:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Stable for retries of the same operation. Idempotency-Key header overrides this field.
+        prompt_template: *a50
+        resolution: *a50
+        aspect_ratio: *a50
+        audio_mode: *a50
+        duration_seconds: &a51
+          type: integer
+        output_count: *a51
+        prompt_variables:
+          type: array
+          items:
+            type: object
+            properties:
+              name: *a50
+              value: *a50
+            required:
+              - name
+              - value
+            additionalProperties: false
+        reference_bindings:
+          type: array
+          items:
+            type: object
+            properties:
+              name: *a50
+              asset_id: *a50
+            required:
+              - name
+              - asset_id
+            additionalProperties: false
+        inputs:
+          type: array
+          items:
+            type: object
+            properties:
+              asset_id: *a50
+              role: *a50
+              ordinal: *a51
+            required:
+              - asset_id
+              - role
+              - ordinal
+            additionalProperties: false
+      required:
+        - project_id
+        - route_model_code
+      additionalProperties: false
+    DeveloperVideoCreateRequest:
+      type: object
+      properties:
+        project_id: &a52
+          type: string
+        route_model_code: *a52
+        task_type: *a52
+        quote_token:
+          type: string
+          description: Expiring quote from preflight; binds normalized request, identity and capability/price versions.
+        idempotency_key:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Stable for retries of the same operation. Idempotency-Key header overrides this field.
+        prompt_template: *a52
+        resolution: *a52
+        aspect_ratio: *a52
+        audio_mode: *a52
+        duration_seconds: &a53
+          type: integer
+        output_count: *a53
+        prompt_variables:
+          type: array
+          items:
+            type: object
+            properties:
+              name: *a52
+              value: *a52
+            required:
+              - name
+              - value
+            additionalProperties: false
+        reference_bindings:
+          type: array
+          items:
+            type: object
+            properties:
+              name: *a52
+              asset_id: *a52
+            required:
+              - name
+              - asset_id
+            additionalProperties: false
+        inputs:
+          type: array
+          items:
+            type: object
+            properties:
+              asset_id: *a52
+              role: *a52
+              ordinal: *a53
+            required:
+              - asset_id
+              - role
+              - ordinal
+            additionalProperties: false
+      required:
+        - project_id
+        - route_model_code
+        - idempotency_key
+        - quote_token
+      additionalProperties: false
+    DeveloperImagePreflight:
+      type: object
+      properties:
+        estimated_points:
+          $ref: "#/components/schemas/DeveloperPoints"
+        quote_token: &a54
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        capability_version: *a54
+        pricing_snapshot:
+          type: object
+      required:
+        - quote_token
+        - expires_at
+      additionalProperties: true
+    DeveloperGroup:
+      type: object
+      properties:
+        id: &a55
+          type: string
+        user_id: &a56
+          type: integer
+        project_id: *a55
+        name: *a55
+        version: *a56
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - project_id
+        - name
+        - version
+      additionalProperties: false
+    DeveloperResourceWrite:
+      type: object
+      properties:
+        project_id: &a57
+          type: string
+        name: *a57
+        group_name: *a57
+        expected_version:
+          type: integer
+        target_project_id: *a57
+        idempotency_key: *a57
+        group_id:
+          type: string
+      additionalProperties: false
+    DeveloperAsset:
+      type: object
+      properties:
+        id: &a58
+          type: string
+        project_id: *a58
+        name: *a58
+        group_id:
+          type:
+            - string
+            - "null"
+        group_name: *a58
+        media_type:
+          type: string
+          enum:
+            - image
+            - video
+            - audio
+        source_type: *a58
+        status: *a58
+        mime_type: *a58
+        file_size_bytes: &a59
+          type: integer
+        version: *a59
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      additionalProperties: true
+    DeveloperUploadRequest:
+      type: object
+      properties:
+        project_id: &a60
+          type: string
+        group_name: *a60
+        filename: *a60
+        media_type: *a60
+        mime_type: *a60
+        size_bytes:
+          type: integer
+        checksum: *a60
+        idempotency_key: *a60
+        group_id:
+          type: string
+      required:
+        - project_id
+        - filename
+        - media_type
+        - mime_type
+        - size_bytes
+        - idempotency_key
+      additionalProperties: false
+    DeveloperUploadSession:
+      type: object
+      properties:
+        id: &a61
+          type: string
+        project_id: *a61
+        group_name: *a61
+        original_filename: *a61
+        declared_media_type: *a61
+        declared_mime_type: *a61
+        declared_size_bytes: &a62
+          type: integer
+        declared_checksum: *a61
+        part_size: *a62
+        part_count: *a62
+        status: *a61
+        reserved_bytes: *a62
+        actual_bytes: *a62
+        completed_parts:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeveloperCompletedPart"
+        asset_id: *a61
+        expires_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - part_size
+        - part_count
+        - status
+      additionalProperties: true
+    DeveloperCompletedPart:
+      type: object
+      properties:
+        part_number: &a63
+          type: integer
+        etag: &a64
+          type: string
+        size_bytes: *a63
+        checksum: *a64
+      additionalProperties: false
+    DeveloperAssetAccess:
+      type: object
+      properties:
+        url:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        range_supported:
+          type: boolean
+      required:
+        - url
+        - expires_at
+        - range_supported
+      additionalProperties: false
+    OAuthError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+      additionalProperties: false
+    OAuthTokenResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+          writeOnly: true
+        token_type:
+          type: string
+          const: Bearer
+        expires_in:
+          type: integer
+        refresh_token:
+          type: string
+          writeOnly: true
+        scope:
+          type: string
+      required:
+        - access_token
+        - token_type
+        - expires_in
+        - refresh_token
+        - scope
+      additionalProperties: false
+    OAuthClient:
+      type: object
+      properties:
+        client_id: &a65
+          type: string
+        client_name: *a65
+        redirect_uris:
+          type: array
+          items: *a65
+        token_endpoint_auth_method:
+          type: string
+          enum:
+            - none
+        grant_types:
+          type: array
+          items: *a65
+        response_types:
+          type: array
+          items: *a65
+      required:
+        - client_name
+        - redirect_uris
+      additionalProperties: false
   requestBodies:
     MediaAssetBatchRequest:
       required: true
@@ -1680,30 +6182,44 @@ components:
                 format: uuid
             additionalProperties: false
   securitySchemes:
+    adminReviewQueryToken:
+      type: apiKey
+      in: query
+      name: access_token
+      description: Administrator access token fallback when Authorization is absent; requires manage:reviews.
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
-    compatBearerAuth:
+    developerBearerAuth:
       type: http
       scheme: bearer
-      bearerFormat: sk-*
-    accessKeyAuth:
-      type: apiKey
-      in: header
-      name: X-Access-Key
-    accessTimestamp:
-      type: apiKey
-      in: header
-      name: X-Timestamp
-      description: RFC3339 timestamp; requests outside the configured drift window are rejected.
-    accessBodySHA256:
-      type: apiKey
-      in: header
-      name: X-Body-SHA256
-      description: Base64url-encoded SHA-256 of the exact request body bytes; use the empty body hash for GET.
-    accessSignature:
-      type: apiKey
-      in: header
-      name: X-Signature
-      description: HMAC-SHA256 over method, request URI, timestamp, and X-Body-SHA256 using the API key secret.
+      bearerFormat: API Key
+      description: Developer API Key. Scopes, current user/key state, expiry, RPM and total/day quota are enforced on each operation. Never send tokens in URLs.
+    mcpOAuth:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: /oauth/authorize
+          tokenUrl: /oauth/token
+          refreshUrl: /oauth/token
+          scopes:
+            account:read: account read
+            models:read: models read
+            images:read: images read
+            images:write: images write
+            videos:read: videos read
+            videos:write: videos write
+            videos:delete: videos delete
+            assets:read: assets read
+            assets:write: assets write
+            assets:delete: assets delete
+            uploads:read: uploads read
+            uploads:write: uploads write
+            uploads:delete: uploads delete
+            projects:read: projects read
+            projects:write: projects write
+            projects:delete: projects delete
+            groups:read: groups read
+            groups:write: groups write
+            groups:delete: groups delete

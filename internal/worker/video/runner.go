@@ -167,6 +167,7 @@ type ProviderResolver interface {
 type ResolvedExecution struct {
 	Provider             providervideo.Provider
 	ArtifactAllowedHosts []string
+	ArtifactHostsEnabled *bool
 }
 
 // Reconciler is an optional provider capability for looking up an uncertain
@@ -456,7 +457,7 @@ func (r *Runner) persistArtifact(ctx context.Context, item WorkItem) error {
 	if err != nil {
 		return r.handleArtifactFailure(ctx, item, fmt.Errorf("resolve artifact provider account: %w", err))
 	}
-	file, size, sum, mimeType, err := r.downloadArtifact(ctx, item.Artifact, execution.ArtifactAllowedHosts)
+	file, size, sum, mimeType, err := r.downloadArtifact(ctx, item.Artifact, execution.ArtifactAllowedHosts, execution.ArtifactHostsEnabled)
 	if err != nil {
 		slog.WarnContext(ctx, "video artifact download failed", "task_id", item.TaskID, "item_id", item.ID,
 			"artifact_url", applogging.SanitizeURL(item.Artifact.URL), "error", err.Error())
@@ -510,7 +511,7 @@ func (r *Runner) persistArtifact(ctx context.Context, item WorkItem) error {
 	return err
 }
 
-func (r *Runner) downloadArtifact(ctx context.Context, artifact providervideo.Artifact, accountHosts []string) (*os.File, int64, string, string, error) {
+func (r *Runner) downloadArtifact(ctx context.Context, artifact providervideo.Artifact, accountHosts []string, enabled ...*bool) (*os.File, int64, string, string, error) {
 	transferCtx, cancel := context.WithTimeout(ctx, r.options.ArtifactTransferTimeout)
 	defer cancel()
 	parsed, err := url.Parse(strings.TrimSpace(artifact.URL))
@@ -518,7 +519,7 @@ func (r *Runner) downloadArtifact(ctx context.Context, artifact providervideo.Ar
 		return nil, 0, "", "", errors.New("artifact URL must use HTTPS and an allowlisted host")
 	}
 	client := *r.httpClient
-	transport, err := r.artifactTransport(accountHosts)
+	transport, err := r.artifactTransport(accountHosts, enabled...)
 	if err != nil {
 		return nil, 0, "", "", err
 	}
@@ -719,12 +720,15 @@ func (r *Runner) allowedArtifactHost(ctx context.Context, host string, accountHo
 	return err == nil
 }
 
-func (r *Runner) resolveArtifactHost(ctx context.Context, host string, accountHosts []string) (net.IP, error) {
+func (r *Runner) resolveArtifactHost(ctx context.Context, host string, accountHosts []string, enabled ...*bool) (net.IP, error) {
 	hostname := strings.TrimSpace(host)
 	if parsedHost, _, err := net.SplitHostPort(hostname); err == nil {
 		hostname = parsedHost
 	}
 	allowedHosts := append(append([]string(nil), accountHosts...), r.options.ArtifactAllowedHosts...)
+	if len(enabled) > 0 && enabled[0] != nil && *enabled[0] {
+		allowedHosts = accountHosts
+	}
 	matched := false
 	for _, allowed := range allowedHosts {
 		if strings.EqualFold(strings.TrimSpace(allowed), host) {
@@ -732,7 +736,15 @@ func (r *Runner) resolveArtifactHost(ctx context.Context, host string, accountHo
 			break
 		}
 	}
-	if !matched {
+	requireHosts := len(allowedHosts) > 0
+	if len(enabled) > 0 && enabled[0] != nil {
+		requireHosts = *enabled[0]
+		// An explicitly enabled empty account list must fail closed even if global hosts exist.
+		if requireHosts && len(accountHosts) == 0 {
+			matched = false
+		}
+	}
+	if requireHosts && !matched {
 		return nil, errors.New("artifact host is not allowlisted")
 	}
 	addresses, err := r.options.ResolveHostIPs(ctx, hostname)
@@ -747,7 +759,7 @@ func (r *Runner) resolveArtifactHost(ctx context.Context, host string, accountHo
 	return append(net.IP(nil), addresses[0]...), nil
 }
 
-func (r *Runner) artifactTransport(accountHosts []string) (http.RoundTripper, error) {
+func (r *Runner) artifactTransport(accountHosts []string, enabled ...*bool) (http.RoundTripper, error) {
 	base := r.httpClient.Transport
 	if base == nil {
 		base = http.DefaultTransport
@@ -756,20 +768,21 @@ func (r *Runner) artifactTransport(accountHosts []string) (http.RoundTripper, er
 	if !ok {
 		return nil, errors.New("artifact HTTP transport cannot enforce address pinning")
 	}
-	return artifactRoundTripper{runner: r, base: transport, accountHosts: append([]string(nil), accountHosts...)}, nil
+	return artifactRoundTripper{runner: r, base: transport, accountHosts: append([]string(nil), accountHosts...), enabled: enabled}, nil
 }
 
 type artifactRoundTripper struct {
 	runner       *Runner
 	base         *http.Transport
 	accountHosts []string
+	enabled      []*bool
 }
 
 func (transport artifactRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
 	if request == nil || request.URL == nil || request.URL.Scheme != "https" {
 		return nil, errors.New("artifact request must use HTTPS")
 	}
-	address, err := transport.runner.resolveArtifactHost(request.Context(), request.URL.Host, transport.accountHosts)
+	address, err := transport.runner.resolveArtifactHost(request.Context(), request.URL.Host, transport.accountHosts, transport.enabled...)
 	if err != nil {
 		return nil, err
 	}

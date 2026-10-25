@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>用户分组 — Mikiko Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/admin.css">
+</head>
+<body data-site="admin" data-page="user-groups" data-title="用户分组">
+<div class="a-shell"><div class="a-main">
+  <main class="a-content">
+    <header class="a-page-head">
+      <div class="a-page-head__copy">
+        <span class="a-kicker">User Groups</span>
+        <h1>用户分组</h1>
+        <p>分组决定路由可见性与计费倍率。成员数量与可见路由直接展示，编辑在右侧抽屉完成。</p>
+      </div>
+      <div class="a-page-head__actions">
+        <button class="a-btn a-btn--sm a-btn--primary" type="button" data-open="#group-edit">添加用户分组</button>
+        <button class="a-btn a-btn--sm" type="button" data-toast="已刷新分组">刷新</button>
+      </div>
+    </header>
+
+    <div class="a-metrics" style="margin-bottom:16px">
+      <div class="a-metric"><div class="a-metric__label">分组总数</div><div class="a-metric__value">4</div><div class="a-metric__foot">3 启用 · 1 停用</div></div>
+      <div class="a-metric"><div class="a-metric__label">默认分组</div><div class="a-metric__value" style="font-size:22px">free</div><div class="a-metric__foot">新用户自动加入</div></div>
+      <div class="a-metric"><div class="a-metric__label">最高倍率</div><div class="a-metric__value">1.5×</div><div class="a-metric__foot">pro</div></div>
+      <div class="a-metric"><div class="a-metric__label">覆盖用户</div><div class="a-metric__value">12,847</div><div class="a-metric__foot">全部已分组</div></div>
+    </div>
+
+    <section class="a-panel a-panel--flush">
+      <div class="a-panel__head">
+        <div style="display:flex;gap:8px;align-items:center">
+          <div class="a-search" style="width:260px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="a-input" placeholder="搜索分组代码或名称"></div>
+          <select class="a-select a-select--sm" style="width:120px"><option>全部状态</option><option>启用</option><option>停用</option></select>
+        </div>
+        <span class="a-hint">共 4 个分组</span>
+      </div>
+      <div class="a-table-wrap">
+        <table class="a-table" style="min-width:1000px">
+          <thead><tr><th>分组</th><th>描述</th><th class="is-num">用户数</th><th class="is-num">计费倍率</th><th class="is-num">可见路由</th><th>状态</th><th class="is-actions">操作</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><div class="a-cell-stack"><strong>Free</strong><span>free</span></div></td>
+              <td class="is-muted">默认分组，仅开放基础图片模型</td>
+              <td class="is-num">8,214</td><td class="is-num">1.0×</td><td class="is-num">3</td>
+              <td><span class="a-badge a-badge--ok"><i></i>启用</span> <span class="a-badge a-badge--accent">默认</span></td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#group-edit">编辑</button><button class="a-row-btn" type="button" data-toast="已跳转到路由模型并筛选 free">可见路由</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="默认分组不可删除" data-row-ignore>⋯</button></div></td>
+            </tr>
+            <tr>
+              <td><div class="a-cell-stack"><strong>Base</strong><span>base</span></div></td>
+              <td class="is-muted">常规创作，开放标准与高清图片</td>
+              <td class="is-num">2,886</td><td class="is-num">1.0×</td><td class="is-num">6</td>
+              <td><span class="a-badge a-badge--ok"><i></i>启用</span></td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#group-edit">编辑</button><button class="a-row-btn" type="button" data-toast="已筛选可见路由">可见路由</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="更多操作" data-row-ignore>⋯</button></div></td>
+            </tr>
+            <tr>
+              <td><div class="a-cell-stack"><strong>Plus</strong><span>plus</span></div></td>
+              <td class="is-muted">进阶创作者，开放参考图与视频模型</td>
+              <td class="is-num">1,284</td><td class="is-num">1.2×</td><td class="is-num">12</td>
+              <td><span class="a-badge a-badge--ok"><i></i>启用</span></td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#group-edit">编辑</button><button class="a-row-btn" type="button" data-toast="已筛选可见路由">可见路由</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="更多操作" data-row-ignore>⋯</button></div></td>
+            </tr>
+            <tr>
+              <td><div class="a-cell-stack"><strong>Pro</strong><span>pro</span></div></td>
+              <td class="is-muted">商业与团队，开放全部路由与高分辨率</td>
+              <td class="is-num">463</td><td class="is-num">1.5×</td><td class="is-num">14</td>
+              <td><span class="a-badge"><i></i>停用</span></td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#group-edit">编辑</button><button class="a-row-btn" type="button" data-toast="已筛选可见路由">可见路由</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="更多操作" data-row-ignore>⋯</button></div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div></div>
+
+<div class="a-scrim"></div>
+<aside class="a-drawer" id="group-edit" role="dialog" aria-modal="true" aria-label="编辑用户分组">
+  <header class="a-drawer__head">
+    <div><h2>编辑分组 · Plus</h2><p>分组代码 plus · 1,284 名用户</p></div>
+    <div class="a-drawer__spacer"></div>
+    <span class="a-badge a-badge--ok"><i></i>启用</span>
+    <button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </header>
+  <div class="a-drawer__body">
+    <form class="a-form" onsubmit="event.preventDefault()">
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">1</span>基本信息</h3><p>代码用于 API 与持久化；名称用于界面展示。</p></div>
+        <label class="a-field"><span>分组代码 <span class="a-required">*</span></span><input class="a-input" value="plus" style="font-family:var(--font-admin-mono)"><span class="a-hint">创建后不可修改。仅允许小写字母、数字与连字符。</span></label>
+        <label class="a-field"><span>分组名称 <span class="a-required">*</span></span><input class="a-input" value="Plus"></label>
+        <label class="a-field"><span>描述</span><textarea class="a-textarea">进阶创作者，开放参考图与视频模型。</textarea></label>
+      </section>
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">2</span>计费与排序</h3></div>
+        <div class="a-form__pair">
+          <label class="a-field"><span>计费倍率</span><input class="a-input" value="1.2" inputmode="decimal"><span class="a-hint">按基础价格 × 1.2 计费。</span></label>
+          <label class="a-field"><span>排序值</span><input class="a-input" value="30" inputmode="numeric"><span class="a-hint">数值越小越靠前。</span></label>
+        </div>
+      </section>
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">3</span>可见范围</h3><p>成员可在创作台与 API 中看到这些路由。</p></div>
+        <div class="a-panel" style="box-shadow:none">
+          <div class="a-panel__body" style="padding:14px;display:grid;gap:8px">
+            <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>plus-image · 写实与参考图</label>
+            <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>pro-image · 高分辨率</label>
+            <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>seedance-2.5 · 视频</label>
+            <label class="a-switch"><input type="checkbox"><span class="a-switch__track"></span>hailuo-02 · 视频</label>
+          </div>
+        </div>
+        <a class="a-btn a-btn--sm" href="routing.html" style="justify-self:start">在路由模型中配置完整可见性</a>
+      </section>
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">4</span>状态</h3></div>
+        <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>启用该分组</label>
+        <label class="a-switch"><input type="checkbox"><span class="a-switch__track"></span>设为默认分组（新用户自动加入）</label>
+      </section>
+    </form>
+    <div class="a-banner a-banner--info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg><div><strong style="font-size:13px">停用分组不会删除用户</strong><div class="a-hint">成员会保留，但在可见范围调整前无法使用该分组的模型。</div></div></div>
+  </div>
+  <footer class="a-drawer__foot">
+    <button class="a-btn a-btn--sm a-btn--danger" type="button" data-toast="删除分组需先转移成员" data-tone="bad">删除分组</button>
+    <div style="flex:1"></div>
+    <button class="a-btn a-btn--sm" type="button" data-close>取消</button>
+    <button class="a-btn a-btn--sm a-btn--primary" type="button" data-close data-toast="分组已保存" data-tone="ok">保存更改</button>
+  </footer>
+</aside>
+<script src="../assets/shell.js"></script>
+</body>
+</html>

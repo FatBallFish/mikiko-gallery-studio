@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>登录 — Mikiko Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Manrope:wght@300..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/user.css">
+<style>
+  .lg-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .lg-or { display: flex; align-items: center; gap: 12px; color: var(--ink-3); font-size: 11px; }
+  .lg-or::before, .lg-or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  .otp { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+  .otp input { width: 100%; height: 48px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font-family: var(--font-mono); font-size: 18px; text-align: center; outline: none; }
+  .otp input:focus { border-color: var(--accent-line); box-shadow: 0 0 0 3px rgba(217,168,106,.12); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body data-site="user" data-page="login">
+<div class="u-login">
+  <div class="u-login__scene">
+    <img src="https://picsum.photos/seed/mikiko-login-scene/1200/1600" data-seed="login-scene" alt="Mikiko 工作室场景">
+    <div class="u-login__scene-copy">
+      <span class="u-eyebrow">Mikiko Studio Account</span>
+      <h2>每一次登录，<br>都回到你的创作现场</h2>
+      <p>参数、草稿、未归位的结果与最近任务都留在原处。你只需要决定下一张画面。</p>
+    </div>
+  </div>
+  <div class="u-login__pane">
+    <div class="u-login__form">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <a class="u-landing__brand" href="landing.html" style="font-size:16px"><i style="width:30px;height:30px;font-size:13px">M</i>Mikiko Studio</a>
+        <button class="u-icon-btn" type="button" data-theme-toggle aria-label="切换主题"></button>
+      </div>
+
+      <div style="display:grid;gap:7px">
+        <h1 class="u-h2" style="font-size:32px">登录创作空间</h1>
+        <p class="u-sub" style="font-size:13px">使用邮箱验证码或密码继续。首次通过统一身份登录会引导你设置本地密码。</p>
+      </div>
+
+      <div class="u-login__tabs" role="tablist" data-tabs="login">
+        <button type="button" class="is-active" data-tab="password" role="tab">密码登录</button>
+        <button type="button" data-tab="code" role="tab">邮箱验证码</button>
+      </div>
+
+      <div data-tab-panels="login">
+        <form class="u-login__form" data-panel="password" style="max-width:none" onsubmit="event.preventDefault();location.href='home.html'">
+          <label class="u-field"><span class="u-label">邮箱</span>
+            <input class="u-input" type="email" value="lin.zhiyuan@studio.moe" autocomplete="email" placeholder="you@example.com">
+          </label>
+          <label class="u-field"><span class="u-label">密码 <a class="u-link" href="#" style="font-size:11px" onclick="event.preventDefault();Mikiko.toast('已发送重置验证码到邮箱','ok')">忘记密码</a></span>
+            <input class="u-input" type="password" value="password123" autocomplete="current-password">
+          </label>
+          <div class="lg-row">
+            <label class="u-switch"><input type="checkbox" checked><span class="u-switch__track"></span>在此设备保持登录</label>
+            <span class="u-meta">会话 30 天</span>
+          </div>
+          <button class="u-btn u-btn--primary u-btn--lg u-btn--block" type="submit">进入工作室</button>
+          <div class="lg-or">或</div>
+          <button class="u-btn u-btn--lg u-btn--block" type="button" onclick="Mikiko.toast('正在跳转 Mikiko ID 统一身份…')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="17" height="17"><path d="M12 3a9 9 0 0 1 9 9v3a3 3 0 0 1-6 0v-3a3 3 0 1 0-6 0v5a2 2 0 0 0 2 2h3"/></svg>
+            使用 Mikiko ID 登录
+          </button>
+          <p class="u-meta" style="text-align:center">还没有账户？<a class="u-link" href="#" onclick="event.preventDefault();Mikiko.toast('注册流程：邮箱 → 验证码 → 设置密码')">通过邮箱注册</a></p>
+        </form>
+
+        <form class="u-login__form" data-panel="code" hidden style="max-width:none" onsubmit="event.preventDefault();location.href='home.html'">
+          <label class="u-field"><span class="u-label">邮箱</span>
+            <input class="u-input" type="email" value="lin.zhiyuan@studio.moe" autocomplete="email">
+          </label>
+          <div class="u-field">
+            <div class="lg-row"><span class="u-label">6 位验证码</span><span class="u-cooldown">59s 后可重发</span></div>
+            <div class="otp">
+              <input maxlength="1" value="4"><input maxlength="1" value="8"><input maxlength="1" value="1"><input maxlength="1" value="7"><input maxlength="1" value="2"><input maxlength="1" value="9">
+            </div>
+          </div>
+          <button class="u-btn u-btn--primary u-btn--lg u-btn--block" type="submit">验证并登录</button>
+          <button class="u-btn u-btn--quiet u-btn--block" type="button" onclick="Mikiko.toast('验证码已重新发送','ok')">重新发送验证码</button>
+          <p class="u-meta" style="text-align:center"><a class="u-link" href="#" onclick="event.preventDefault()">返回密码登录</a></p>
+        </form>
+      </div>
+
+      <p class="u-meta" style="line-height:1.7">登录即表示同意 <a class="u-link" href="settings.html">服务协议</a> 与 <a class="u-link" href="settings.html">隐私条款</a>。账户异常会写入审计日志。</p>
+    </div>
+  </div>
+</div>
+<script src="../assets/shell.js"></script>
+</body>
+</html>

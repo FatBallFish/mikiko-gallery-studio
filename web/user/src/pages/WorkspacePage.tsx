@@ -1,3 +1,6 @@
+import { canHideHistoryRecord, canRetryImageHistory } from './historyRecordActions'
+import { useHistoryRecordActions } from './HistoryRecordControls'
+import { creationReuseEvent } from '../features/media/mediaCreationNavigation'
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronUp, Copy, Download, Info, Pencil, RotateCcw } from 'lucide-react'
 import type { Capability, CapabilityModelGroup, EstimateRequest, GalleryImage, ImageResult, ImageTask, ImageTaskStatus, ImageTaskType, ReferenceAsset, UserProfile } from '../../../shared/api-types'
@@ -187,6 +190,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const [moderation, setModeration] = useState('auto')
   const [estimateSnapshot, setEstimateSnapshot] = useState<WorkspaceEstimateSnapshot>({ key: '', estimate: null, error: '' })
   const [records, setRecords] = useState<ImageTask[]>([])
+  const historyActions = useHistoryRecordActions()
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(() => initialTaskId?.trim() || null)
   const selectedTaskIdRef = useRef<string | null>(selectedTaskId)
   const projectSelectionRef = useRef<WorkspaceProjectSelection>({
@@ -548,6 +552,15 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     if (!draft) return undefined
     return applyCreationDraft(draft)
   }, [applyCreationDraft, capability])
+
+  useEffect(() => {
+    const restore = () => {
+      const draft = consumeWorkspaceCreationDraft(window.sessionStorage, window.history)
+      if (draft) applyCreationDraft(draft)
+    }
+    window.addEventListener(creationReuseEvent, restore)
+    return () => window.removeEventListener(creationReuseEvent, restore)
+  }, [applyCreationDraft])
 
   function reuseTaskConfig(task: ImageTask) {
     try {
@@ -1124,22 +1137,25 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 
   function beginRenameReference(asset: ReferenceAsset) {
     setRenamingReferenceID(asset.id)
-    setRenamingReferenceName(asset.name)
+    setRenamingReferenceName(asset.display_name || asset.name)
   }
 
   async function saveReferenceName(asset: ReferenceAsset) {
     const nextName = renamingReferenceName.trim()
-    if (!nextName || nextName === asset.name) {
+    if (!nextName || nextName === (asset.display_name || asset.name)) {
       setRenamingReferenceID(null)
       return
     }
     setRenamingReferenceBusy(true)
     try {
-      const renamed = await userApi.renameReferenceAsset(asset.id, nextName)
+      const renamed = asset.media_asset_id
+        ? await userApi.getMediaAsset(asset.media_asset_id).then((media) => userApi.updateMediaAsset(media, { name: nextName })).then((media) => ({ ...asset, display_name: media.name }))
+        : await userApi.renameReferenceAsset(asset.id, nextName)
       setEditRefs((items) => items.map((item) => item.id === asset.id ? renamed : item))
       setPrompt((current) => renamePromptReference(current, asset.name, renamed.name))
       setRenamingReferenceID(null)
       app.notify('success', '资产名称已更新')
+      window.dispatchEvent(new Event('mgs:media-assets-changed'))
     } catch (err) {
       app.notify('error', errorMessage(err))
     } finally {
@@ -1158,6 +1174,52 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     if (interaction.outputTab === 'current') setOutputTab('current')
     setHistoryTaskDialog(null)
     setHistoryPreviewReturnTarget(null)
+  }
+
+  async function retryHistoryTask(task: ImageTask) {
+    if (!canRetryImageHistory(task.status)) return
+    const selection = { ...projectSelectionRef.current }
+    await historyActions.run(async () => {
+      const retry = await userApi.retryTask(task.id)
+      if (projectSelectionRef.current.projectID !== selection.projectID || projectSelectionRef.current.generation !== selection.generation) return
+      setRecords((items) => mergeWorkspaceTaskRecords(items, retry, { limit: 21, preserveIds: [task.id] }))
+      setSelectedTaskId(retry.id)
+      setOutputTab('current')
+      app.navigate('genpic', { taskId: retry.id })
+      app.notify('success', '已创建新的重试任务，原记录已保留')
+      await app.refreshAccount()
+    })
+  }
+
+  function removeHistoryRecords(ids: string[]) {
+    setRecords((items) => items.filter((item) => !ids.includes(item.id)))
+    setHistoryTaskDialog((task) => task && ids.includes(task.id) ? null : task)
+    if (selectedTaskIdRef.current && ids.includes(selectedTaskIdRef.current)) {
+      setSelectedTaskId(null)
+      app.navigate('genpic')
+    }
+  }
+
+  function confirmHideHistoryTask(task: ImageTask) {
+    if (!canHideHistoryRecord(task.status)) return
+    historyActions.confirm(false, async () => {
+      await userApi.hideTaskHistory(task.id)
+      removeHistoryRecords([task.id])
+      app.notify('success', '历史记录已删除，素材已保留')
+    })
+  }
+
+  function confirmClearFailedHistory() {
+    const projectID = selectedProjectID
+    historyActions.confirm(true, async () => {
+      const result = await userApi.clearFailedTaskHistory({ project_id: projectID })
+      if (projectSelectionRef.current.projectID === projectID) {
+        const items = await userApi.listHistoryTasks({ project_id: projectID })
+        if (projectSelectionRef.current.projectID === projectID) setRecords(items)
+        setHistoryTaskDialog(null)
+      }
+      app.notify('success', `已清空 ${result.hidden_count} 条失败记录`)
+    })
   }
 
   function openHistoryTaskDialog(task: ImageTask) {
@@ -1269,11 +1331,11 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                 accessToken={app.session?.token}
                 onMediaRefresh={() => refreshWorkspaceReference(asset.id)}
               />
-              <button type="button" className={workspaceClasses.refRemove} title="移除编辑图片" aria-label={`移除 ${asset.name || '参考图'}`} onClick={() => removeEditAsset(asset)}><CloseGlyph /></button>
+              <button type="button" className={workspaceClasses.refRemove} title="移除编辑图片" aria-label={`移除 ${asset.display_name || asset.name || '参考图'}`} onClick={() => removeEditAsset(asset)}><CloseGlyph /></button>
             </div>
             <div className="reference-name-row">
-              <span title={asset.name}>{asset.name}</span>
-              <button type="button" title="重命名资产" aria-label={`重命名资产 ${asset.name}`} onClick={() => beginRenameReference(asset)}><Pencil size={13} /></button>
+              <span title={asset.display_name || asset.name}>{asset.display_name || asset.name}</span>
+              <button type="button" title="重命名资产" aria-label={`重命名资产 ${asset.display_name || asset.name}`} onClick={() => beginRenameReference(asset)}><Pencil size={13} /></button>
             </div>
           </div>
         ))}
@@ -1661,7 +1723,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
               <input id="reference-rename-input" autoFocus className="u-input" value={renamingReferenceName} maxLength={64} onChange={(event) => setRenamingReferenceName(event.target.value)} />
               <div className="reference-rename-dialog-actions">
                 <Button type="button" tone="ghost" disabled={renamingReferenceBusy} onClick={() => setRenamingReferenceID(null)}>取消</Button>
-                <Button type="submit" busy={renamingReferenceBusy} disabled={!renamingReferenceName.trim() || renamingReferenceName.trim() === asset.name}>保存</Button>
+                <Button type="submit" busy={renamingReferenceBusy} disabled={!renamingReferenceName.trim() || renamingReferenceName.trim() === (asset.display_name || asset.name)}>保存</Button>
               </div>
             </form>
           </Modal>
@@ -1714,37 +1776,9 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                 onPreviewImage={setPreviewImage}
                 onReuseConfig={reuseTaskConfig}
                 onOpenDetail={() => setHistoryTaskDialog(latestTask)}
-                onRetryTask={async (task) => {
-                  setBusy(true)
-                  try {
-                    const retry = await userApi.retryTask(task.id)
-                    setRecords((items) => mergeWorkspaceTaskRecords(items, retry, {
-                      limit: 20,
-                      preserveIds: selectedTaskIdRef.current ? [selectedTaskIdRef.current] : [],
-                    }))
-                    setSelectedTaskId(retry.id)
-                    app.navigate('genpic', { taskId: retry.id })
-                    app.notify('success', '已重新提交生成任务')
-                    await app.refreshAccount()
-                  } catch (err) {
-                    app.notify('error', errorMessage(err))
-                  } finally {
-                    setBusy(false)
-                  }
-                }}
-                onDeleteTask={async (task) => {
-                  try {
-                    await userApi.deleteTask(task.id)
-                    setRecords((items) => items.filter((item) => item.id !== task.id))
-                    if (selectedTaskIdRef.current === task.id) {
-                      setSelectedTaskId(null)
-                      app.navigate('genpic')
-                    }
-                    app.notify('success', '失败记录已删除')
-                  } catch (err) {
-                    app.notify('error', errorMessage(err))
-                  }
-                }}
+                historyBusy={historyActions.busy}
+                onRetryTask={(task) => retryHistoryTask(task)}
+                onDeleteTask={(task) => { confirmHideHistoryTask(task); return Promise.resolve() }}
                 accessToken={app.session?.token}
                 onDownloadImage={downloadWorkspaceImage}
                 onImageMediaRefresh={refreshWorkspaceImage}
@@ -1771,9 +1805,11 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           </div>
         ) : (
           <div className="cr-canvas-panel">
-            <HistoryCreationGrid tasks={historyTasks} profile={app.profile} accessToken={app.session?.token} onPreviewImage={setPreviewImage} onOpenTaskDialog={openHistoryTaskDialog} onMediaRefresh={refreshWorkspaceImage} />
+            <div className="u-toolbar"><button className="u-btn u-btn--sm" type="button" disabled={historyActions.busy || !selectedProjectID} onClick={confirmClearFailedHistory}>{historyActions.busy ? '处理中...' : '清空全部失败记录'}</button></div>
+            <HistoryCreationGrid busy={historyActions.busy} onRetry={retryHistoryTask} onHide={confirmHideHistoryTask} tasks={historyTasks} profile={app.profile} accessToken={app.session?.token} onPreviewImage={setPreviewImage} onOpenTaskDialog={openHistoryTaskDialog} onMediaRefresh={refreshWorkspaceImage} />
           </div>
         )}
+        {historyActions.feedback}
         <div ref={feedEndRef} />
 
         <ImageDetailModal
@@ -1798,7 +1834,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
             label: '复用配置',
             icon: <PublicDetailIcon name="edit" />,
             onClick: () => {
-              stageWorkspaceCreationDraft(previewImage.creationDraft!, window.sessionStorage, window.history)
+              applyCreationDraft(previewImage.creationDraft!)
               setPreviewImage(null)
               setHistoryTaskDialog(null)
               setHistoryPreviewReturnTarget(null)
@@ -1885,11 +1921,11 @@ function ReferenceAssetPreview({ asset, accessToken, onClick, onMediaRefresh }: 
   if (onClick) {
     return (
       <button className="u-detail__ref" type="button" onClick={() => onClick(previewURL, asset)}>
-        <RefreshableMediaImage className="size-full object-cover" src={previewURL} mediaExpiresAt={asset.preview_expires_at} alt={asset.name || '参考图'} onMediaRefresh={onMediaRefresh} />
+        <RefreshableMediaImage className="size-full object-cover" src={previewURL} mediaExpiresAt={asset.preview_expires_at} alt={asset.display_name || asset.name || '参考图'} onMediaRefresh={onMediaRefresh} />
       </button>
     )
   }
-  return <RefreshableMediaImage src={previewURL} mediaExpiresAt={asset.preview_expires_at} alt={asset.name || '参考图'} className="size-full object-cover" onMediaRefresh={onMediaRefresh} />
+  return <RefreshableMediaImage src={previewURL} mediaExpiresAt={asset.preview_expires_at} alt={asset.display_name || asset.name || '参考图'} className="size-full object-cover" onMediaRefresh={onMediaRefresh} />
 }
 
 function SparkleGlyph() {
@@ -2109,7 +2145,10 @@ function formatCompactDuration(ms: number) {
   return `${seconds}s`
 }
 
-function HistoryCreationGrid({ tasks, profile, accessToken, onPreviewImage, onOpenTaskDialog, onMediaRefresh }: {
+function HistoryCreationGrid({ busy, onRetry, onHide, tasks, profile, accessToken, onPreviewImage, onOpenTaskDialog, onMediaRefresh }: {
+  busy: boolean
+  onRetry: (task: ImageTask) => Promise<void>
+  onHide: (task: ImageTask) => void
   tasks: ImageTask[]
   profile?: Pick<UserProfile, 'display_name'> | null
   accessToken?: string | null
@@ -2153,6 +2192,9 @@ function HistoryCreationGrid({ tasks, profile, accessToken, onPreviewImage, onOp
           {rows.map((task) => (
             <HistoryCreationCard
               key={task.id}
+              busy={busy}
+              onRetry={onRetry}
+              onHide={onHide}
               task={task}
               profile={profile}
               accessToken={accessToken}
@@ -2167,7 +2209,10 @@ function HistoryCreationGrid({ tasks, profile, accessToken, onPreviewImage, onOp
   )
 }
 
-function HistoryCreationCard({ task, profile, accessToken, onPreviewImage, onOpenTaskDialog, onMediaRefresh }: {
+function HistoryCreationCard({ busy, onRetry, onHide, task, profile, accessToken, onPreviewImage, onOpenTaskDialog, onMediaRefresh }: {
+  busy: boolean
+  onRetry: (task: ImageTask) => Promise<void>
+  onHide: (task: ImageTask) => void
   task: ImageTask
   profile?: Pick<UserProfile, 'display_name'> | null
   accessToken?: string | null
@@ -2208,7 +2253,8 @@ function HistoryCreationCard({ task, profile, accessToken, onPreviewImage, onOpe
   }
 
   return (
-    <button type="button" className="u-card cr-card-button group" disabled={!interaction.openDialog && !interaction.openLightbox} onClick={openPreview} aria-label={task.prompt || task.title || '未命名创作'}>
+    <article className="u-card group">
+    <button type="button" className="cr-card-button" disabled={!interaction.openDialog && !interaction.openLightbox} onClick={openPreview} aria-label={task.prompt || task.title || '未命名创作'}>
       <span className="u-card__media">
         {imageSlot && imageUrl ? (
           <RefreshableMediaImage className={workspaceClasses.historyImage} src={imageUrl} mediaExpiresAt={imageSlot.image.preview_expires_at} alt={task.title} onMediaRefresh={() => onMediaRefresh(imageSlot.image.id)} />
@@ -2234,6 +2280,11 @@ function HistoryCreationCard({ task, profile, accessToken, onPreviewImage, onOpe
         </span>
       </span>
     </button>
+    <div className="cr-task-actions">
+      {canRetryImageHistory(task.status) ? <button className="u-btn u-btn--sm" type="button" disabled={busy} onClick={() => void onRetry(task)}>{busy ? '处理中...' : '重试（新任务）'}</button> : null}
+      {canHideHistoryRecord(task.status) ? <button className="u-btn u-btn--sm" type="button" disabled={busy} onClick={() => onHide(task)}>删除记录</button> : null}
+    </div>
+    </article>
   )
 }
 
@@ -2252,7 +2303,7 @@ function HistoryTaskGalleryModal({ task, accessToken, onPreviewImage, onImageMed
   const referenceImages = task.reference_assets.map((asset) => ({
     id: asset.id,
     url: referenceAssetPreviewURL(asset, accessToken),
-    alt: asset.name || '原图引用',
+    alt: asset.display_name || asset.name || '原图引用',
     mediaExpiresAt: asset.preview_expires_at,
     onMediaRefresh: asset.id ? () => onReferenceMediaRefresh(asset.id) : undefined,
   })).filter((item) => item.url)
@@ -2393,12 +2444,13 @@ function HistoryTaskGalleryModal({ task, accessToken, onPreviewImage, onImageMed
   )
 }
 
-function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPreviewImage, onRetryTask, onDeleteTask, accessToken, onDownloadImage, onImageMediaRefresh, onReferenceMediaRefresh, onReuseConfig, onOpenDetail }: {
+function GenerationOutput({ historyBusy, task, profile, onCopyPrompt, onUseReference, onPreviewImage, onRetryTask, onDeleteTask, accessToken, onDownloadImage, onImageMediaRefresh, onReferenceMediaRefresh, onReuseConfig, onOpenDetail }: {
   task: ImageTask
   profile?: Pick<UserProfile, 'display_name'> | null
   onCopyPrompt: () => Promise<void>
   onUseReference: (image: ImageResult) => Promise<void>
   onPreviewImage: (image: ImagePreviewPayload) => void
+  historyBusy: boolean
   onRetryTask: (task: ImageTask) => Promise<void>
   onDeleteTask: (task: ImageTask) => Promise<void>
   accessToken?: string
@@ -2502,7 +2554,7 @@ function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPrevi
           ) : isTerminalStatus(task.status) ? (
             <div className="u-stage">
               <div className="cr-stage-message">
-                <TaskFailureBlock task={task} onRetry={() => onRetryTask(task)} onDelete={() => onDeleteTask(task)} />
+                <TaskFailureBlock busy={historyBusy} task={task} onRetry={() => onRetryTask(task)} onDelete={() => onDeleteTask(task)} />
               </div>
             </div>
           ) : (
@@ -2590,7 +2642,7 @@ function GenerationSlotFailure({ title, reason, code }: { title: string; reason:
   )
 }
 
-function TaskFailureBlock({ task, onRetry, onDelete }: { task: ImageTask; onRetry: () => Promise<void>; onDelete: () => Promise<void> }) {
+function TaskFailureBlock({ busy, task, onRetry, onDelete }: { busy: boolean; task: ImageTask; onRetry: () => Promise<void>; onDelete: () => Promise<void> }) {
   const view = workspaceTaskFailureView(task)
   return (
     <div className="cr-slot-failure" role="alert">
@@ -2610,8 +2662,8 @@ function TaskFailureBlock({ task, onRetry, onDelete }: { task: ImageTask; onRetr
         </dl>
       ) : null}
       <div className="cr-task-actions">
-        <button className="u-btn u-btn--sm u-btn--primary" type="button" onClick={() => void onRetry()}>重试</button>
-        <button className="u-btn u-btn--sm" type="button" onClick={() => void onDelete()}>删除</button>
+        {canRetryImageHistory(task.status) ? <button className="u-btn u-btn--sm u-btn--primary" type="button" disabled={busy} onClick={() => void onRetry()}>{busy ? '提交中...' : '重试（新任务）'}</button> : null}
+        <button className="u-btn u-btn--sm" type="button" disabled={busy} onClick={() => void onDelete()}>删除记录</button>
       </div>
     </div>
   )

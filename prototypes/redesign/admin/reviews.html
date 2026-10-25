@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>审核队列 — Mikiko Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/admin.css">
+</head>
+<body data-site="admin" data-page="reviews" data-title="审核队列">
+<div class="a-shell"><div class="a-main">
+  <main class="a-content">
+    <header class="a-page-head">
+      <div class="a-page-head__copy">
+        <span class="a-kicker">Public Review</span>
+        <h1>审核队列</h1>
+        <p>左侧选队列、中间看大图、右侧做决策。审核原因写入审计日志，键盘可用上下方向键切换。</p>
+      </div>
+      <div class="a-page-head__actions">
+        <button class="a-btn a-btn--sm" type="button" data-toast="已刷新审核队列">刷新</button>
+      </div>
+    </header>
+
+    <div class="a-tabs" data-tabs="review">
+      <button class="a-tab is-active" data-tab="review-pending">待处理 <span class="a-tab__count">7</span></button>
+      <button class="a-tab" data-tab="review-approved">已公开</button>
+      <button class="a-tab" data-tab="review-rejected">已驳回</button>
+      <button class="a-tab" data-tab="review-unpublished">已下架</button>
+      <button class="a-tab" data-tab="review-all">全部</button>
+    </div>
+
+    <div data-tab-panels="review">
+      <div data-panel="review-pending">
+        <div class="a-review">
+          <section class="a-review__col">
+            <div class="a-review__col-head" style="display:flex;justify-content:space-between;align-items:center"><span>待处理队列 · 7</span><span class="a-badge a-badge--warn">最早 2h14m</span></div>
+            <div class="a-review__list">
+              <button class="a-review__item is-active" type="button"><strong>黄昏温室 · 第 1 张</strong><span>岑屿 · 10-22 18:42 · 文生图</span></button>
+              <button class="a-review__item" type="button"><strong>盐湖逆光人像</strong><span>苏迟 · 10-22 17:20 · 参考图</span></button>
+              <button class="a-review__item" type="button"><strong>雨后混凝土立面</strong><span>沈砚白 · 10-22 16:04 · 文生图</span></button>
+              <button class="a-review__item" type="button"><strong>织物褶皱研究</strong><span>何弦 · 10-22 14:48 · 图片编辑</span></button>
+              <button class="a-review__item" type="button"><strong>雾中林道</strong><span>陆小满 · 10-22 13:22 · 文生图</span></button>
+              <button class="a-review__item" type="button"><strong>玻璃罩里的干花</strong><span>叶青禾 · 10-22 11:06 · 文生图</span></button>
+              <button class="a-review__item" type="button"><strong>空无一人的站台</strong><span>顾亦然 · 10-22 09:31 · 文生图</span></button>
+            </div>
+            <div class="a-pager" style="padding:10px 14px"><span class="a-pager__info">第 1 页 · 7 条</span><div class="a-pager__controls"><button class="a-pager__btn is-active">1</button></div></div>
+          </section>
+          <section class="a-review__col">
+            <div class="a-review__col-head">预览</div>
+            <div class="a-review__canvas">
+              <figure style="display:grid;gap:10px;justify-items:center;max-width:100%">
+                <img src="https://picsum.photos/seed/review-main/900/1150" data-seed="review-main" alt="待审图片">
+                <figcaption class="a-hint" style="font-family:var(--font-admin-mono);font-size:11px">1120 × 1400 · PNG · 6.2 MB</figcaption>
+              </figure>
+            </div>
+            <div style="padding:14px 18px;border-top:1px solid var(--a-line);display:grid;gap:7px">
+              <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="a-badge a-badge--accent">文生图</span><span class="a-badge">plus-image</span><span class="a-badge">2K</span><span class="a-badge">4:5</span></div>
+              <div style="font-size:12.5px;line-height:1.65;color:var(--a-ink-2);max-height:76px;overflow:auto">黄昏时分的玻璃温室，暖金色斜光穿过锈蚀的钢架，空气中有细小尘埃悬浮。前景是几株叶片卷曲的热带植物，背景虚化成深绿。胶片颗粒，柔和的高光溢出，安静的叙事感。</div>
+            </div>
+          </section>
+          <aside class="a-review__col a-review__col--side">
+            <div class="a-review__col-head">审核动作</div>
+            <div class="a-review__side">
+              <div class="a-panel" style="box-shadow:none;padding:13px">
+                <div style="display:flex;align-items:center;gap:9px"><span class="a-cell-entity__avatar">岑</span><div><strong style="display:block;font-size:12.5px">岑屿</strong><span class="a-hint">cenyu@atelier.moe · plus</span></div></div>
+                <div class="a-hint" style="margin-top:8px">这是该用户第 12 次申请公开，历史通过 11 次，无驳回记录。</div>
+              </div>
+              <label class="a-field"><span>审核原因</span><textarea class="a-textarea" style="min-height:88px" placeholder="通过/驳回/下架的原因会写入审计日志"></textarea></label>
+              <div style="display:grid;gap:7px">
+                <button class="a-btn a-btn--sm a-btn--primary" type="button" data-open="#review-confirm">通过并公开</button>
+                <button class="a-btn a-btn--sm" type="button" data-open="#review-confirm">驳回</button>
+                <button class="a-btn a-btn--sm a-btn--danger" type="button" data-open="#review-confirm" data-tone="bad">下架</button>
+              </div>
+              <div class="a-banner a-banner--info" style="font-size:12px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg><span>快捷原因：违规内容、低质量图片、版权风险。</span></div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="a-badge">违规内容</span><span class="a-badge">低质量图片</span><span class="a-badge">版权风险</span></div>
+            </div>
+          </aside>
+        </div>
+      </div>
+      <div data-panel="review-approved" hidden><div class="a-empty"><span class="a-empty__icon">✓</span><h3>已公开列表</h3><p>通过审核的图片会在此按公开时间排序；本原型仅展示待处理工作台。</p><button class="a-btn a-btn--sm" type="button" data-toast="已切换到待处理">返回待处理</button></div></div>
+      <div data-panel="review-rejected" hidden><div class="a-empty"><span class="a-empty__icon">×</span><h3>已驳回列表</h3><p>驳回原因与操作人会保留在审计日志。</p></div></div>
+      <div data-panel="review-unpublished" hidden><div class="a-empty"><span class="a-empty__icon">↓</span><h3>已下架列表</h3><p>下架不会删除原图，仅从公开广场移除。</p></div></div>
+      <div data-panel="review-all" hidden><div class="a-empty"><span class="a-empty__icon">◫</span><h3>全部公开图片</h3><p>使用筛选条与状态标签组合查询。</p></div></div>
+    </div>
+  </main>
+</div></div>
+
+<div class="a-scrim"></div>
+<div class="a-modal" id="review-confirm" role="dialog" aria-modal="true" aria-label="确认审核决策">
+  <div class="a-modal__head">
+    <div><h2>确认审核决策</h2><p class="a-hint" style="margin-top:3px">黄昏温室 · 第 1 张 · 岑屿</p></div>
+    <button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </div>
+  <label class="a-field"><span>原因 <span class="a-required">*</span></span><textarea class="a-textarea" placeholder="例如：内容质量稳定，光影与构图符合公开标准"></textarea><span class="a-hint">原因会写入审计日志，用户可在公开状态中看到结果。</span></label>
+  <div class="a-modal__foot">
+    <button class="a-btn a-btn--sm" type="button" data-close>取消</button>
+    <button class="a-btn a-btn--sm a-btn--primary" type="button" data-close data-toast="审核决策已提交" data-tone="ok">确认提交</button>
+  </div>
+</div>
+<script src="../assets/shell.js"></script>
+</body>
+</html>

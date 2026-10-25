@@ -25,6 +25,7 @@ const (
 )
 
 type CreateRequest struct {
+	Scopes           []string
 	UserID           int64
 	Name             string
 	GroupCode        string
@@ -46,6 +47,7 @@ type ResetSecretResult struct {
 }
 
 type UpdateRequest struct {
+	Scopes           *[]string
 	Name             *string
 	GroupCode        *string
 	TotalQuotaPoints *string
@@ -73,6 +75,7 @@ type PreparedHMAC struct {
 }
 
 type Service struct {
+	usageReader                UsageReader
 	store                      *MemoryStore
 	signingSecretEncryptionKey string
 }
@@ -117,16 +120,15 @@ func (s *Service) CreateKey(ctx context.Context, req CreateRequest) (CreateResul
 	if secret == "" {
 		secret = "sk-" + randomToken()
 	}
-	secretCiphertext, err := s.encryptSecret(secret)
+	scopes, err := normalizeScopes(req.Scopes)
 	if err != nil {
-		return CreateResult{}, errs.Internal("failed to protect api key secret")
+		return CreateResult{}, err
 	}
 	key := domainapikey.APIKey{
 		UserID:           req.UserID,
 		AccessKey:        "ak-" + randomToken(),
 		SecretHash:       domainapikey.HashSecret(secret),
-		SecretCiphertext: secretCiphertext,
-		SigningSecret:    secretCiphertext,
+		Scopes:           scopes,
 		Name:             defaultString(req.Name, "api-key"),
 		Status:           domainapikey.StatusActive,
 		GroupCode:        defaultString(req.GroupCode, "basic"),
@@ -174,6 +176,13 @@ func (s *Service) Update(ctx context.Context, userID, id int64, req UpdateReques
 	key, err := s.store.GetByID(ctx, userID, id)
 	if err != nil {
 		return domainapikey.APIKey{}, mapLifecycleError(err, "api key not found", "failed to load api key")
+	}
+	if req.Scopes != nil {
+		scopes, err := normalizeScopes(*req.Scopes)
+		if err != nil {
+			return domainapikey.APIKey{}, err
+		}
+		key.Scopes = scopes
 	}
 	if req.Name != nil {
 		key.Name = defaultString(*req.Name, "api-key")
@@ -230,11 +239,7 @@ func (s *Service) ResetSecret(ctx context.Context, userID, id int64) (ResetSecre
 		return ResetSecretResult{}, errs.BadRequest("user_id and id are required")
 	}
 	secret := "sk-" + randomToken()
-	secretCiphertext, err := s.encryptSecret(secret)
-	if err != nil {
-		return ResetSecretResult{}, errs.Internal("failed to protect api key secret")
-	}
-	key, err := s.store.UpdateSecretForUser(ctx, userID, id, domainapikey.HashSecret(secret), secretCiphertext)
+	key, err := s.store.UpdateSecretForUser(ctx, userID, id, domainapikey.HashSecret(secret), "")
 	if err != nil {
 		return ResetSecretResult{}, mapLifecycleError(err, "api key not found", "failed to reset api key secret")
 	}
@@ -380,6 +385,7 @@ func (s *Service) acceptKey(ctx context.Context, key domainapikey.APIKey) (domai
 	}
 	_ = s.store.UpdateLastUsedAt(ctx, key.ID, time.Now().UTC())
 	return domainapikey.Identity{
+		Scopes:    domainapikey.EffectiveScopes(key.Scopes),
 		APIKeyID:  key.ID,
 		UserID:    key.UserID,
 		AccessKey: key.AccessKey,
@@ -511,4 +517,29 @@ func quotaReservationKey(keyID int64, reservationID string) string {
 
 func normalizePoints(value decimal.Decimal) string {
 	return value.Round(5).StringFixed(5)
+}
+
+func normalizeScopes(scopes []string) ([]string, error) {
+	if scopes == nil {
+		return domainapikey.LegacyScopes(), nil
+	}
+	result := []string{}
+	seen := map[string]bool{}
+	for _, scope := range scopes {
+		valid := false
+		for _, supported := range domainapikey.SupportedScopes() {
+			if scope == supported {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return nil, errs.BadRequest("unsupported api key scope: " + scope)
+		}
+		if !seen[scope] {
+			result = append(result, scope)
+			seen[scope] = true
+		}
+	}
+	return result, nil
 }

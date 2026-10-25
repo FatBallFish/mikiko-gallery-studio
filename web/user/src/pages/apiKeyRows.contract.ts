@@ -79,13 +79,13 @@ if (maskSecretPreview('sk_once_abc123') !== 'sk_onc••••••••c123'
 }
 
 const sample = apiKeyQuickstart(apiKey({ access_key: 'pk_test_123456', secret_preview: 'sk_once_abc123' }))
-if (!sample.code.includes('Authorization: Bearer sk_onc••••••••c123') || !sample.code.includes('/v1/images/generations')) {
-  throw new Error(`api key quickstart should use masked selected secret and OpenAI-compatible path, got ${sample.code}`)
+if (!sample.code.includes('Authorization: Bearer $STUDIO_API_KEY') || !sample.code.includes('/v1/images/generations')) {
+  throw new Error(`api key quickstart should use an environment variable and OpenAI-compatible path, got ${sample.code}`)
 }
 if (sample.code.includes('Bearer pk_test_123456') || sample.code.includes('sk_once_abc123') || sample.code.includes('api.picgallery.ai')) {
   throw new Error(`api key quickstart must not expose access keys, raw secrets, or old brand domains, got ${sample.code}`)
 }
-if (sample.visibleCredentials.accessKey !== 'pk_tes••••••••3456' || sample.visibleCredentials.secretKey !== 'sk_onc••••••••c123') {
+if (sample.visibleCredentials.accessKey !== 'pk_tes••••••••3456' || sample.visibleCredentials.secretKey !== '$STUDIO_API_KEY') {
   throw new Error(`api key quickstart should expose masked visible credential metadata, got ${JSON.stringify(sample.visibleCredentials)}`)
 }
 if (sample.title !== '示例请求 (cURL)' || sample.copyLabel !== '复制示例') {
@@ -93,7 +93,7 @@ if (sample.title !== '示例请求 (cURL)' || sample.copyLabel !== '复制示例
 }
 
 const emptySample = apiKeyQuickstart(null)
-if (!emptySample.code.includes('sk_live_xxx') || emptySample.code.includes('pk_live_xxx')) {
+if (!emptySample.code.includes('$STUDIO_API_KEY') || emptySample.code.includes('pk_live_xxx')) {
   throw new Error(`api key quickstart should have a safe placeholder when no key exists, got ${emptySample.code}`)
 }
 
@@ -202,3 +202,8 @@ function apiKey(patch: Partial<ApiKey>): ApiKey {
     last_used_at: patch.last_used_at ?? null,
   }
 }
+
+const scopedEdit = apiKeyUpdatePayload({ ...editForm, scopes: ['assets:read', 'assets:delete'] })
+if (scopedEdit.scopes?.join(',') !== 'assets:read,assets:delete') throw new Error('edited scopes must reach the API')
+const emptyScopeEdit = apiKeyUpdatePayload({ ...editForm, scopes: [] })
+if (emptyScopeEdit.scopes?.length !== 0) throw new Error('empty scopes must remain an explicit revocation')

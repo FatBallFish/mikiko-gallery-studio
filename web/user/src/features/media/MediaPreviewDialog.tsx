@@ -5,8 +5,11 @@ import { userApi } from '../../../../shared/user-api'
 import { cn } from '../../../../shared/classnames'
 import { Drawer, ImageZoomPreview, useApp } from '../../components'
 import { formatBytes } from './MediaAssetCard'
-import { mediaAudioCoordinator } from './mediaExperience'
+import { mediaAudioCoordinator, mediaCreationActions } from './mediaExperience'
+import { continueMediaCreation, mediaDownloadFilename } from './mediaCreationNavigation'
 import type { MediaCreationAction } from './mediaExperience'
+import { MediaGroupSelectionDialog } from './MediaGroupSelectionDialog'
+import { Modal } from '../../components'
 import { OverlayPortal } from '../../ui/overlayPortal'
 
 const mediaTypeLabels = { image: '图片', video: '视频', audio: '音频' } as const
@@ -32,16 +35,30 @@ function assetDate(value: string) {
   return parsed.toLocaleString('zh-CN', { hour12: false })
 }
 
-export function MediaPreviewDialog({ asset, projects, creationActions, onClose, onChanged, onDeleted, onContinue }: {
+export function MediaPreviewDialog({ asset, projects, creationActions: suppliedActions, onClose, onChanged, onDeleted, onContinue: _onContinue }: {
   asset: MediaAsset
   projects: Project[]
-  creationActions: MediaCreationAction[]
+  creationActions?: MediaCreationAction[]
   onClose: () => void
   onChanged: (asset: MediaAsset) => void
   onDeleted: (asset: MediaAsset) => void
-  onContinue: (options: MediaCreationAction['options']) => void
+  onContinue?: (options: MediaCreationAction['options']) => void
 }) {
   const app = useApp()
+  const creationActions = suppliedActions?.length ? suppliedActions : mediaCreationActions(asset)
+  const [prompt, setPrompt] = useState('')
+  useEffect(() => {
+    let alive = true
+    setPrompt('')
+    if (asset.source_task_id) {
+      const request = asset.source_task_kind === 'video' ? userApi.getVideoTask(asset.source_task_id).then((task) => task.prompt_template) : userApi.getTask(asset.source_task_id).then((task) => task.prompt)
+      void request.then((value) => { if (alive) setPrompt(value) }).catch(() => undefined)
+    }
+    return () => { alive = false }
+  }, [asset.id, asset.source_task_id, asset.source_task_kind])
+  const continueCreation = (options: MediaCreationAction['options']) => {
+    void continueMediaCreation(options).then(onClose).catch((error) => app.notify('error', error instanceof Error ? error.message : '无法继续创作'))
+  }
   const mediaURL = (url?: string) => url ? userApi.mediaAssetUrl(url, app.session?.token) : ''
   const [access, setAccess] = useState<MediaAccessProjection | null>(null)
   const [poster, setPoster] = useState<MediaAccessProjection | null>(null)
@@ -51,6 +68,8 @@ export function MediaPreviewDialog({ asset, projects, creationActions, onClose, 
   const imageFallbackTried = useRef(false)
   const [fullscreen, setFullscreen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [groupOpen, setGroupOpen] = useState(false)
+  const [renameValue, setRenameValue] = useState<string | null>(null)
   const [canvases, setCanvases] = useState<CreativeCanvas[]>([])
   const [canvasID, setCanvasID] = useState('')
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -101,28 +120,21 @@ export function MediaPreviewDialog({ asset, projects, creationActions, onClose, 
 
   useEffect(() => {
     let alive = true
+    if (asset.media_type === 'video') return undefined
     void userApi.listCanvases({ project_id: asset.project_id }).then((items) => {
       if (!alive) return
       setCanvases(items)
       setCanvasID((current) => current || items[0]?.id || '')
     }).catch(() => undefined)
     return () => { alive = false }
-  }, [asset.project_id])
+  }, [asset.project_id, asset.media_type])
 
   const rename = async () => {
-    const name = window.prompt('资产名称', asset.name)?.trim()
-    if (!name || name === asset.name) return
+    const name = renameValue?.trim()
+    if (!name || name === asset.name) { setRenameValue(null); return }
     setBusy(true)
-    try { onChanged(await userApi.updateMediaAsset(asset, { name })) }
+    try { onChanged(await userApi.updateMediaAsset(asset, { name })); setRenameValue(null) }
     catch (caught) { app.notify('error', caught instanceof Error ? caught.message : '重命名失败') }
-    finally { setBusy(false) }
-  }
-  const group = async () => {
-    const groupName = window.prompt('分组名称', asset.group_name)?.trim()
-    if (groupName === undefined) return
-    setBusy(true)
-    try { onChanged(await userApi.updateMediaAsset(asset, { group_name: groupName })) }
-    catch (caught) { app.notify('error', caught instanceof Error ? caught.message : '设置分组失败') }
     finally { setBusy(false) }
   }
   const transfer = async (projectID: string) => {
@@ -144,7 +156,7 @@ export function MediaPreviewDialog({ asset, projects, creationActions, onClose, 
       const projection = await userApi.getMediaAssetAccess(asset.id, 'download')
       const link = globalThis.document.createElement('a')
       link.href = mediaURL(projection.url)
-      link.download = asset.name
+      link.download = mediaDownloadFilename(asset)
       link.rel = 'noopener'
       link.click()
     } catch (caught) {
@@ -156,10 +168,10 @@ export function MediaPreviewDialog({ asset, projects, creationActions, onClose, 
     if (!canvas) return
     const count = canvas.document.nodes.length
     const node = {
-      id: crypto.randomUUID(), type: asset.media_type, asset_id: asset.id,
+      id: crypto.randomUUID(), type: asset.media_type === 'image' ? 'image_v2' : asset.media_type === 'video' ? 'video_v2' : asset.media_type, asset_id: asset.id,
       position: { x: 80 + (count % 4) * 280, y: 80 + Math.floor(count / 4) * 220 },
       size: { width: 240, height: asset.media_type === 'audio' ? 120 : 180 },
-      payload: { title: asset.name, mime_type: asset.mime_type },
+      payload: { title: asset.name, name: `asset_${asset.id.replace(/-/g, '')}`, mime_type: asset.mime_type, width: asset.width, height: asset.height },
     } as const
     setBusy(true)
     try {
@@ -285,6 +297,7 @@ export function MediaPreviewDialog({ asset, projects, creationActions, onClose, 
                 <div className="u-meta">{assetDate(asset.created_at)} · {asset.source_type || '平台资产'}</div>
               </div>
 
+              {asset.media_type === 'video' ? <div className="u-detail__section"><h4>Prompt</h4><div className="u-prompt" tabIndex={0} aria-label="Prompt">{prompt || '未记录 Prompt'}</div></div> : null}
               <div className="u-detail__section">
                 <h4>文件信息</h4>
                 <dl className="u-facts">
@@ -303,16 +316,16 @@ export function MediaPreviewDialog({ asset, projects, creationActions, onClose, 
                       {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
                     </select>
                   </label>
-                  <label className="u-field">
+                  {asset.media_type !== 'video' ? <label className="u-field">
                     <span className="u-label">添加到画布</span>
                     <select className="u-select" value={canvasID} disabled={busy || !canvases.length} onChange={(event) => setCanvasID(event.target.value)}>
                       <option value="">{canvases.length ? '选择画布' : '暂无画布'}</option>
                       {canvases.map((canvas) => <option key={canvas.id} value={canvas.id}>{canvas.name}</option>)}
                     </select>
-                  </label>
+                  </label> : null}
                 </div>
                 <div className="u-actions">
-                  <button className="u-btn u-btn--sm" type="button" disabled={busy || !canvasID} onClick={() => void addToCanvas()}>添加到画布</button>
+                  {asset.media_type !== 'video' ? <button className="u-btn u-btn--sm" type="button" disabled={busy || !canvasID} onClick={() => void addToCanvas()}>添加到画布</button> : null}
                 </div>
               </div>
 
@@ -320,26 +333,26 @@ export function MediaPreviewDialog({ asset, projects, creationActions, onClose, 
                 <h4>更多操作</h4>
                 <div className="u-actions">
                   {creationActions.map((action) => (
-                    <button key={action.label} className="u-action" type="button" onClick={() => onContinue(action.options)}>
+                    <button key={action.label} className="u-action" type="button" onClick={() => continueCreation(action.options)}>
                       <ExternalLink size={14} strokeWidth={1.6} aria-hidden="true" />{action.label}
                     </button>
                   ))}
-                  <button className="u-action" type="button" onClick={() => void rename()}><Pencil size={14} strokeWidth={1.6} aria-hidden="true" />重命名</button>
-                  <button className="u-action" type="button" onClick={() => void group()}><FolderInput size={14} strokeWidth={1.6} aria-hidden="true" />设置分组</button>
+                  <button className="u-action" type="button" disabled={busy} onClick={() => setRenameValue(asset.name)}><Pencil size={14} strokeWidth={1.6} aria-hidden="true" />重命名</button>
+                  <button className="u-action" type="button" disabled={busy} onClick={() => setGroupOpen(true)}><FolderInput size={14} strokeWidth={1.6} aria-hidden="true" />设置分组</button>
                 </div>
               </div>
             </div>
 
             <div className="u-detail__foot">
               <button className="u-btn u-btn--primary u-btn--sm" type="button" onClick={() => void download()}><Download size={14} strokeWidth={1.6} aria-hidden="true" />下载原件</button>
-              <button className="u-btn u-btn--sm" type="button" disabled={busy} onClick={() => void rename()}>重命名</button>
-              <button className="u-btn u-btn--sm" type="button" disabled={busy} onClick={() => void group()}>设置分组</button>
               <button className="u-btn u-btn--sm u-btn--danger" type="button" disabled={busy} onClick={() => void remove()}><Trash2 size={14} strokeWidth={1.6} aria-hidden="true" />删除</button>
             </div>
           </section>
         </div>
       </Drawer>
       {fullscreen && asset.media_type === 'video' ? <VideoFullscreenPreview asset={asset} onClose={() => setFullscreen(false)} /> : null}
+      {groupOpen ? <MediaGroupSelectionDialog value={asset.group_name} projectId={asset.project_id} onClose={() => setGroupOpen(false)} onSelect={async (group_name) => { onChanged(await userApi.updateMediaAsset(asset, { group_name })) }} /> : null}
+      {renameValue !== null ? <Modal title="重命名资产" onClose={() => setRenameValue(null)}><form onSubmit={(event) => { event.preventDefault(); void rename() }}><label className="u-field"><span className="u-label">资产名称</span><input className="u-input" autoFocus value={renameValue} onChange={(event) => setRenameValue(event.target.value)} /></label><button type="submit" className="u-btn u-btn--primary" disabled={busy || !renameValue.trim()}>保存</button></form></Modal> : null}
       {imageFullScreen}
     </>
   )

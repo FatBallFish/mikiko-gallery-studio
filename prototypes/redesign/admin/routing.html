@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>路由模型 — Mikiko Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/admin.css">
+<style>
+  .rt-layout { display: grid; grid-template-columns: 300px minmax(0,1fr); gap: 16px; align-items: start; }
+  .rt-list { display: grid; }
+  .rt-item { display: grid; gap: 4px; width: 100%; padding: 13px 15px; border: 0; border-bottom: 1px solid var(--a-line); background: transparent; text-align: left; transition: background var(--t-fast); }
+  .rt-item:hover { background: var(--a-surface-2); }
+  .rt-item.is-active { background: var(--a-accent-soft); box-shadow: inset 2px 0 0 var(--a-accent); }
+  .rt-item strong { font-size: 13px; }
+  .rt-item span { color: var(--a-ink-3); font-family: var(--font-admin-mono); font-size: 10.5px; }
+  .rt-item__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .rt-candidate { display: grid; grid-template-columns: minmax(0,1.35fr) minmax(0,1fr) 56px 56px 56px 128px; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--a-line); font-size: 13px; }
+  .rt-candidate:last-child { border-bottom: 0; }
+  .rt-groups { display: flex; flex-wrap: wrap; gap: 6px; }
+  .rt-group-list { display: grid; gap: 8px; }
+  .rt-group-row { display: grid; grid-template-columns: 38px minmax(0,1.2fr) 120px 92px auto; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--a-line); border-radius: 9px; background: var(--a-surface); }
+  .rt-group-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; background: var(--a-accent-soft); color: var(--a-accent); font-size: 15px; font-weight: 600; }
+  .rt-group-row .a-cell-stack strong { font-size: 13px; }
+  .rt-group-row .a-cell-stack span { color: var(--a-ink-3); font-family: var(--font-admin-mono); font-size: 10.5px; }
+  .rt-price-wrap { overflow-x: auto; border: 1px solid var(--a-line); border-radius: 9px; }
+  .rt-price-table { width: 100%; min-width: 620px; border-collapse: collapse; }
+  .rt-price-table th { padding: 9px 12px; border-bottom: 1px solid var(--a-line); background: var(--a-surface-2); color: var(--a-ink-3); font-family: var(--font-admin-mono); font-size: 10px; font-weight: 600; letter-spacing: .06em; text-align: left; text-transform: uppercase; }
+  .rt-price-table td { padding: 10px 12px; border-bottom: 1px solid var(--a-line); font-size: 12.5px; }
+  .rt-price-table tr:last-child td { border-bottom: 0; }
+  .rt-price-table .is-num { text-align: right; font-family: var(--font-admin-mono); font-variant-numeric: tabular-nums; }
+  .rt-candidates { min-width: 0; }
+  .rt-empty { display: grid; justify-items: start; gap: 8px; padding: 28px; border: 1px dashed var(--a-line-2); border-radius: 10px; background: var(--a-surface); }
+  .rt-empty strong { font-size: 15px; }
+  .rt-empty p { max-width: 56ch; color: var(--a-ink-3); font-size: 13px; line-height: 1.6; }
+  @media (max-width: 900px) {
+    .rt-layout { grid-template-columns: 1fr; }
+    .rt-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+    .rt-candidates { overflow-x: auto; }
+    .rt-candidate { min-width: 680px; }
+    .rt-group-row { grid-template-columns: 38px minmax(0,1fr); }
+    .rt-group-row > .a-badge, .rt-group-row > .a-row-actions { grid-column: 2; }
+  }
+</style>
+</head>
+<body data-site="admin" data-page="routing" data-title="路由模型">
+<div class="a-shell"><div class="a-main">
+  <main class="a-content">
+    <header class="a-page-head">
+      <div class="a-page-head__copy">
+        <span class="a-kicker">Model Routing</span>
+        <h1>路由模型</h1>
+        <p>图片与视频路由分开维护。图片路由按路由 + 任务类型 + 基础分辨率定价；视频路由使用候选厂商原生费率、分辨率映射与最低任务积分。</p>
+      </div>
+      <div class="a-page-head__actions">
+        <button class="a-btn a-btn--sm" type="button" data-toast="已刷新路由">刷新</button>
+        <button class="a-btn a-btn--sm a-btn--primary" type="button" data-open="#image-route-edit" id="rt-add-route">新增图片路由</button>
+      </div>
+    </header>
+
+    <div class="a-tabs" data-tabs="rt-media">
+      <button class="a-tab is-active" data-tab="rt-image">图片</button>
+      <button class="a-tab" data-tab="rt-video">视频</button>
+      <button class="a-tab" data-tab="rt-audio">音频</button>
+      <button class="a-tab" data-tab="rt-text">文本</button>
+    </div>
+
+    <section class="a-panel a-panel--pad" style="margin-bottom:16px">
+      <div class="a-section-title" style="margin-bottom:12px"><div><h2>模型分组</h2><p>分组决定路由的用户可见性；图标、成员数量与状态在一个列表中维护。</p></div><button class="a-btn a-btn--sm" type="button" data-open="#group-edit" data-group-mode="create">新建分组</button></div>
+      <div class="rt-group-list">
+        <div class="rt-group-row">
+          <span class="rt-group-icon" style="background:var(--a-info-soft);color:var(--a-info)">◇</span>
+          <div class="a-cell-stack"><strong>free</strong><span>free · 公开可见 · 无门槛</span></div>
+          <span class="a-hint">3 条路由</span><span class="a-badge a-badge--ok"><i></i>启用</span>
+          <div class="a-row-actions"><button class="a-row-btn" type="button" data-open="#group-edit" data-group-mode="edit" data-group-name="free" data-group-code="free" data-group-icon="◇" data-group-desc="公开可见的基础分组" data-group-sort="10">编辑</button><button class="a-row-btn" type="button" data-toast="free 分组仍有 3 条路由引用" data-tone="bad">删除</button></div>
+        </div>
+        <div class="rt-group-row">
+          <span class="rt-group-icon">◆</span>
+          <div class="a-cell-stack"><strong>base</strong><span>base · 注册用户默认分组</span></div>
+          <span class="a-hint">6 条路由</span><span class="a-badge a-badge--ok"><i></i>启用</span>
+          <div class="a-row-actions"><button class="a-row-btn" type="button" data-open="#group-edit" data-group-mode="edit" data-group-name="base" data-group-code="base" data-group-icon="◆" data-group-desc="注册用户默认分组" data-group-sort="20">编辑</button><button class="a-row-btn" type="button" data-toast="base 分组仍有 6 条路由引用" data-tone="bad">删除</button></div>
+        </div>
+        <div class="rt-group-row">
+          <span class="rt-group-icon" style="background:var(--a-warn-soft);color:var(--a-warn)">✦</span>
+          <div class="a-cell-stack"><strong>plus</strong><span>plus · 付费创作者</span></div>
+          <span class="a-hint">12 条路由</span><span class="a-badge a-badge--ok"><i></i>启用</span>
+          <div class="a-row-actions"><button class="a-row-btn" type="button" data-open="#group-edit" data-group-mode="edit" data-group-name="plus" data-group-code="plus" data-group-icon="✦" data-group-desc="付费创作者分组" data-group-sort="30">编辑</button><button class="a-row-btn" type="button" data-toast="plus 分组仍有 12 条路由引用" data-tone="bad">删除</button></div>
+        </div>
+        <div class="rt-group-row">
+          <span class="rt-group-icon" style="background:var(--a-surface-3);color:var(--a-ink-3)">▲</span>
+          <div class="a-cell-stack"><strong>pro</strong><span>pro · 高用量团队 · 已停用</span></div>
+          <span class="a-hint">14 条路由</span><span class="a-badge"><i></i>停用</span>
+          <div class="a-row-actions"><button class="a-row-btn" type="button" data-open="#group-edit" data-group-mode="edit" data-group-name="pro" data-group-code="pro" data-group-icon="▲" data-group-desc="高用量团队分组" data-group-sort="40">编辑</button><button class="a-row-btn" type="button" data-toast="已删除 pro 分组（原型）" data-tone="bad">删除</button></div>
+        </div>
+      </div>
+    </section>
+
+    <div data-tab-panels="rt-media">
+      <div data-panel="rt-image">
+        <div class="a-metrics" style="margin-bottom:16px">
+          <div class="a-metric"><div class="a-metric__label">图片路由</div><div class="a-metric__value">6</div><div class="a-metric__foot">4 可被用户使用</div></div>
+          <div class="a-metric"><div class="a-metric__label">候选模型</div><div class="a-metric__value">14</div><div class="a-metric__foot">启用 12 · 全部为图片模型</div></div>
+          <div class="a-metric"><div class="a-metric__label">任务类型</div><div class="a-metric__value">2</div><div class="a-metric__foot">文生图 / 图片编辑</div></div>
+          <div class="a-metric"><div class="a-metric__label">阻断项</div><div class="a-metric__value" style="color:var(--a-danger)">2</div><div class="a-metric__foot">缺候选 / 缺价格</div></div>
+        </div>
+        <div class="rt-layout">
+          <section class="a-panel a-panel--flush">
+            <div class="a-panel__head" style="padding:13px 15px"><div><h2 style="font-size:13px">图片路由列表</h2></div><span class="a-hint">6</span></div>
+            <div style="padding:11px 13px;border-bottom:1px solid var(--a-line)"><div class="a-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="a-input a-input--sm" placeholder="搜索名称 / 代码 / 分组"></div></div>
+            <div class="rt-list">
+              <button class="rt-item is-active" type="button"><div class="rt-item__head"><strong>Plus Image</strong><span class="a-badge a-badge--ok"><i></i>可用</span></div><span>plus-image · 4 个候选</span></button>
+              <button class="rt-item" type="button"><div class="rt-item__head"><strong>Pro Image</strong><span class="a-badge a-badge--ok"><i></i>可用</span></div><span>pro-image · 5 个候选</span></button>
+              <button class="rt-item" type="button"><div class="rt-item__head"><strong>Base Image</strong><span class="a-badge a-badge--ok"><i></i>可用</span></div><span>base-image · 3 个候选</span></button>
+              <button class="rt-item" type="button"><div class="rt-item__head"><strong>图片编辑</strong><span class="a-badge a-badge--warn"><i></i>缺价格</span></div><span>image-edit · 2 个候选</span></button>
+              <button class="rt-item" type="button"><div class="rt-item__head"><strong>实验 · 超分</strong><span class="a-badge a-badge--bad"><i></i>缺候选</span></div><span>experimental-upscale · 0 个候选</span></button>
+              <button class="rt-item" type="button"><div class="rt-item__head"><strong>旧版 Plus</strong><span class="a-badge"><i></i>已停用</span></div><span>plus-image-legacy · 2 个候选</span></button>
+            </div>
+            <div class="a-pager" style="padding:10px 13px"><span class="a-pager__info">共 6 条路由</span><div class="a-pager__controls"><button class="a-pager__btn is-active">1</button></div></div>
+          </section>
+          <section style="display:grid;gap:16px">
+            <div class="a-panel a-panel--pad">
+              <div class="a-section-title" style="margin-bottom:14px">
+                <div style="display:flex;align-items:center;gap:10px"><h2 style="font-size:17px">Plus Image</h2><span class="a-tag">plus-image</span><span class="a-badge a-badge--ok"><i></i>可被用户使用</span></div>
+                <div class="a-row-actions"><button class="a-row-btn" type="button" data-open="#image-route-edit">编辑图片路由</button><button class="a-btn a-btn--sm a-btn--primary" type="button" data-open="#candidate-edit">配置候选</button></div>
+              </div>
+              <div class="a-grid rt-metrics" style="grid-template-columns:repeat(4,minmax(0,1fr));gap:10px">
+                <div class="a-panel" style="box-shadow:none;padding:12px"><div class="a-hint" style="font-size:11px">创作类型</div><strong style="font-size:13px">图片</strong></div>
+                <div class="a-panel" style="box-shadow:none;padding:12px"><div class="a-hint" style="font-size:11px">任务类型</div><strong style="font-size:13px">文生图 / 编辑</strong></div>
+                <div class="a-panel" style="box-shadow:none;padding:12px"><div class="a-hint" style="font-size:11px">候选模型</div><strong style="font-size:13px">4 个 · 启用 4</strong></div>
+                <div class="a-panel" style="box-shadow:none;padding:12px"><div class="a-hint" style="font-size:11px">价格配置</div><strong style="font-size:13px">8 个启用</strong></div>
+              </div>
+            </div>
+            <div class="a-panel a-panel--flush">
+              <div class="a-panel__head"><div><h2>候选模型</h2><p>候选只包含图片真实模型；按优先级与权重调度。</p></div><button class="a-row-btn" type="button" data-toast="已打开候选排序">调整顺序</button></div>
+              <div class="rt-candidates" style="padding:0 16px">
+                <div class="rt-candidate" style="color:var(--a-ink-3);font-size:11.5px;font-weight:600;border-bottom:1px solid var(--a-line-2)"><span>真实账号 / 模型</span><span>能力</span><span>优先级</span><span>权重</span><span>兜底</span><span></span></div>
+                <div class="rt-candidate"><div class="a-cell-stack"><strong>acc-east-1 / Seedream 4.0</strong><span>seedream-4.0</span></div><div style="display:flex;gap:4px;flex-wrap:wrap"><span class="a-badge">文生图</span><span class="a-badge">编辑</span></div><span class="a-num">100</span><span class="a-num">70</span><span class="a-num">1</span><div class="a-row-actions"><span class="a-badge a-badge--ok"><i></i>启用</span><button class="a-row-btn" type="button" data-open="#candidate-edit">编辑</button></div></div>
+                <div class="rt-candidate"><div class="a-cell-stack"><strong>acc-east-2 / Seedream 4.0</strong><span>seedream-4.0</span></div><div style="display:flex;gap:4px;flex-wrap:wrap"><span class="a-badge">文生图</span><span class="a-badge">编辑</span></div><span class="a-num">100</span><span class="a-num">30</span><span class="a-num">2</span><div class="a-row-actions"><span class="a-badge a-badge--warn"><i></i>异常</span><button class="a-row-btn" type="button" data-open="#candidate-edit">编辑</button></div></div>
+                <div class="rt-candidate"><div class="a-cell-stack"><strong>openrouter / Flux 1.1 Pro</strong><span>flux-1.1-pro</span></div><div style="display:flex;gap:4px;flex-wrap:wrap"><span class="a-badge">文生图</span></div><span class="a-num">80</span><span class="a-num">20</span><span class="a-num">3</span><div class="a-row-actions"><span class="a-badge a-badge--ok"><i></i>启用</span><button class="a-row-btn" type="button" data-open="#candidate-edit">编辑</button></div></div>
+                <div class="rt-candidate"><div class="a-cell-stack"><strong>acc-east-1 / Seedream Edit</strong><span>seedream-edit</span></div><div style="display:flex;gap:4px;flex-wrap:wrap"><span class="a-badge">编辑</span></div><span class="a-num">60</span><span class="a-num">10</span><span class="a-num">4</span><div class="a-row-actions"><span class="a-badge"><i></i>停用</span><button class="a-row-btn" type="button" data-open="#candidate-edit">编辑</button></div></div>
+              </div>
+              <div class="a-pager"><span class="a-pager__info">4 个候选 · 按兜底顺序排列</span><button class="a-btn a-btn--sm" type="button" data-open="#candidate-edit">添加候选</button></div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <div data-panel="rt-video" hidden>
+        <div class="a-metrics" style="margin-bottom:16px">
+          <div class="a-metric"><div class="a-metric__label">视频路由</div><div class="a-metric__value">5</div><div class="a-metric__foot">4 可被用户使用</div></div>
+          <div class="a-metric"><div class="a-metric__label">候选模型</div><div class="a-metric__value">9</div><div class="a-metric__foot">全部为视频真实模型</div></div>
+          <div class="a-metric"><div class="a-metric__label">任务类型</div><div class="a-metric__value">3</div><div class="a-metric__foot">文生/图生/首尾帧</div></div>
+          <div class="a-metric"><div class="a-metric__label">阻断项</div><div class="a-metric__value" style="color:var(--a-danger)">2</div><div class="a-metric__foot">缺映射 / 缺费率</div></div>
+        </div>
+        <div class="rt-layout">
+          <section class="a-panel a-panel--flush">
+            <div class="a-panel__head" style="padding:13px 15px"><div><h2 style="font-size:13px">视频路由列表</h2></div><span class="a-hint">5</span></div>
+            <div style="padding:11px 13px;border-bottom:1px solid var(--a-line)"><div class="a-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="a-input a-input--sm" placeholder="搜索视频路由 / 代码 / 分组"></div></div>
+            <div class="rt-list">
+              <button class="rt-item is-active" type="button"><div class="rt-item__head"><strong>Plus Video</strong><span class="a-badge a-badge--ok"><i></i>可用</span></div><span>plus-video · 3 个候选 · 原生费率</span></button>
+              <button class="rt-item" type="button"><div class="rt-item__head"><strong>Seedance Fast</strong><span class="a-badge a-badge--ok"><i></i>可用</span></div><span>seedance-fast · 2 个候选</span></button>
+              <button class="rt-item" type="button"><div class="rt-item__head"><strong>MiniMax Hailuo</strong><span class="a-badge a-badge--ok"><i></i>可用</span></div><span>minimax-video · 2 个候选</span></button>
+              <button class="rt-item" type="button"><div class="rt-item__head"><strong>Video Edit</strong><span class="a-badge a-badge--warn"><i></i>缺映射</span></div><span>video-edit · 1 个候选</span></button>
+              <button class="rt-item" type="button"><div class="rt-item__head"><strong>Legacy Video</strong><span class="a-badge"><i></i>已停用</span></div><span>legacy-video · 1 个候选</span></button>
+            </div>
+            <div class="a-pager" style="padding:10px 13px"><span class="a-pager__info">共 5 条视频路由</span><div class="a-pager__controls"><button class="a-pager__btn is-active">1</button></div></div>
+          </section>
+          <section style="display:grid;gap:16px">
+            <div class="a-panel a-panel--pad">
+              <div class="a-section-title" style="margin-bottom:14px">
+                <div style="display:flex;align-items:center;gap:10px"><h2 style="font-size:17px">Plus Video</h2><span class="a-tag">plus-video</span><span class="a-badge a-badge--ok"><i></i>可被用户使用</span></div>
+                <div class="a-row-actions"><button class="a-row-btn" type="button" data-open="#video-route-edit">编辑视频路由</button><button class="a-btn a-btn--sm a-btn--primary" type="button" data-open="#video-candidate-edit">配置候选</button></div>
+              </div>
+              <div class="a-grid rt-metrics" style="grid-template-columns:repeat(4,minmax(0,1fr));gap:10px">
+                <div class="a-panel" style="box-shadow:none;padding:12px"><div class="a-hint" style="font-size:11px">创作类型</div><strong style="font-size:13px">视频</strong></div>
+                <div class="a-panel" style="box-shadow:none;padding:12px"><div class="a-hint" style="font-size:11px">任务类型</div><strong style="font-size:13px">文生 / 图生 / 首尾帧</strong></div>
+                <div class="a-panel" style="box-shadow:none;padding:12px"><div class="a-hint" style="font-size:11px">候选模型</div><strong style="font-size:13px">3 个 · 全部已验证</strong></div>
+                <div class="a-panel" style="box-shadow:none;padding:12px"><div class="a-hint" style="font-size:11px">报价方式</div><strong style="font-size:13px">原生费率 · 最低 10 积分</strong></div>
+              </div>
+            </div>
+            <div class="a-panel a-panel--flush">
+              <div class="a-panel__head"><div><h2>候选分辨率映射</h2><p>路由分辨率映射到厂商原生分辨率；用户可选参数由候选能力自动汇总。</p></div><button class="a-row-btn" type="button" data-toast="已打开映射排序">调整顺序</button></div>
+              <div class="a-table-wrap">
+                <table class="a-table" style="min-width:820px">
+                  <thead><tr><th>真实模型</th><th>路由分辨率</th><th>厂商原分辨率</th><th>原生费率</th><th>状态</th><th class="is-actions">操作</th></tr></thead>
+                  <tbody>
+                    <tr><td><div class="a-cell-stack"><strong>Seedance 1.5 Pro</strong><span>seedance-main · seedance-1-5-pro</span></div></td><td class="a-mono">720p</td><td class="a-mono">720p</td><td><span class="a-badge a-badge--ok"><i></i>¥46 / 百万 Token</span></td><td><span class="a-badge a-badge--ok"><i></i>启用</span></td><td class="is-actions"><button class="a-row-btn" type="button" data-open="#video-route-edit">编辑</button></td></tr>
+                    <tr><td><div class="a-cell-stack"><strong>Seedance 1.0 Lite</strong><span>seedance-main · seedance-1-0-lite</span></div></td><td class="a-mono">720p</td><td class="a-mono">720p</td><td><span class="a-badge a-badge--ok"><i></i>¥18 / 百万 Token</span></td><td><span class="a-badge a-badge--ok"><i></i>启用</span></td><td class="is-actions"><button class="a-row-btn" type="button" data-open="#video-route-edit">编辑</button></td></tr>
+                    <tr><td><div class="a-cell-stack"><strong>MiniMax Hailuo 02</strong><span>minimax-main · minimax-hailuo-02</span></div></td><td class="a-mono">720p</td><td class="a-mono">768p</td><td><span class="a-badge a-badge--ok"><i></i>¥0.50 / 秒</span></td><td><span class="a-badge a-badge--ok"><i></i>启用</span></td><td class="is-actions"><button class="a-row-btn" type="button" data-open="#video-route-edit">编辑</button></td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="a-pager"><span class="a-pager__info">3 个候选 · 最大输出 1 个 · 兜底按优先级</span><button class="a-btn a-btn--sm" type="button" data-open="#video-route-edit">配置映射</button></div>
+            </div>
+            <div class="a-banner a-banner--warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 9v5M12 17h.01"/></svg><div><strong style="font-size:13px">Video Edit 缺少 720p → 768p 映射</strong><div class="a-hint">未映射的分辨率不会参与报价；补齐前该组合会在提交前阻断。</div></div></div>
+          </section>
+        </div>
+      </div>
+
+      <div data-panel="rt-audio" hidden><div class="rt-empty"><strong>音频路由暂未开放</strong><p>音频模型运行时接入后，可在此维护多候选路由、参数映射与原生费率。</p></div></div>
+      <div data-panel="rt-text" hidden><div class="rt-empty"><strong>文本暂使用默认模型</strong><p>提示词优化当前通过默认文本模型工作，不提供尚未实现的多候选路由。</p></div></div>
+    </div>
+  </main>
+</div></div>
+
+<div class="a-scrim"></div>
+
+<aside class="a-drawer" id="image-route-edit" role="dialog" aria-modal="true" aria-label="编辑图片路由模型">
+  <header class="a-drawer__head">
+    <div><h2>编辑图片路由模型</h2><p>Plus Image · plus-image · 图片</p></div>
+    <div class="a-drawer__spacer"></div>
+    <span class="a-badge a-badge--ok"><i></i>可被用户使用</span>
+    <button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </header>
+  <div class="a-drawer__body" style="padding-bottom:0">
+    <div class="a-tabs" data-tabs="image-route">
+      <button class="a-tab is-active" data-tab="image-base">基础信息</button>
+      <button class="a-tab" data-tab="image-pricing">图片价格</button>
+    </div>
+    <div data-tab-panels="image-route">
+      <div data-panel="image-base">
+        <form class="a-form">
+          <section class="a-form__section">
+            <div class="a-form__head"><h3><span class="a-form__num">1</span>标识</h3></div>
+            <label class="a-field"><span>路由代码 <span class="a-required">*</span></span><input class="a-input" value="plus-image" style="font-family:var(--font-admin-mono)"><span class="a-hint">用户端与 API 使用的抽象模型代码，创建后不可修改。</span></label>
+            <label class="a-field"><span>路由名称</span><input class="a-input" value="Plus Image"></label>
+            <label class="a-field"><span>路由图标</span><select class="a-select"><option>◈ 图片</option><option>✦ 精选</option><option>◆ 基础</option><option>▲ 高级</option></select><span class="a-hint">显示在用户端模型选择与后台路由列表。</span></label>
+            <label class="a-field"><span>描述</span><textarea class="a-textarea">进阶创作者使用的图片路由，覆盖文生图与图片编辑。</textarea></label>
+          </section>
+          <section class="a-form__section">
+            <div class="a-form__head"><h3><span class="a-form__num">2</span>可见性</h3></div>
+            <label class="a-field"><span>可见范围</span><select class="a-select"><option>按分组可见</option><option>全员可见</option><option>隐藏</option></select></label>
+            <label class="a-field"><span>可见分组</span><div style="display:grid;gap:7px;padding:12px;border:1px solid var(--a-line);border-radius:8px"><label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span><span><b style="font-family:var(--font-admin-mono)">◇ free</b> · 公开可见</span></label><label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span><span><b style="font-family:var(--font-admin-mono)">◆ base</b> · 注册用户</span></label><label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span><span><b style="font-family:var(--font-admin-mono)">✦ plus</b> · 付费创作者</span></label></div></label>
+            <label class="a-field"><span>排序值</span><input class="a-input" value="20" inputmode="numeric"></label>
+            <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>启用该路由</label>
+          </section>
+          <section class="a-form__section">
+            <div class="a-form__head"><h3><span class="a-form__num">3</span>能力检查</h3></div>
+            <div class="a-banner a-banner--info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg><div><strong style="font-size:13px">当前可用</strong><div class="a-hint">4 个图片候选启用，8 个图片价格启用，3 个分组可见。</div></div></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="a-btn a-btn--sm" type="button" onclick="document.querySelector('[data-tabs=&quot;image-route&quot;] [data-tab=&quot;image-pricing&quot;]').click()">配置图片价格</button><button class="a-btn a-btn--sm" type="button" data-open="#candidate-edit">配置候选</button></div>
+          </section>
+        </form>
+      </div>
+      <div data-panel="image-pricing" hidden>
+        <div class="a-banner a-banner--info" style="margin-bottom:14px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg><div><strong style="font-size:13px">图片价格按路由 + 任务类型 + 基础分辨率维护</strong><div class="a-hint">参考图倍率只影响含参考图的图片编辑任务；历史流水不回溯重算。</div></div></div>
+        <div class="rt-price-wrap">
+          <table class="rt-price-table">
+            <thead><tr><th>任务类型</th><th>基础分辨率</th><th class="is-num">基础积分</th><th class="is-num">参考图倍率</th><th>状态</th><th></th></tr></thead>
+            <tbody>
+              <tr><td>文生图</td><td>1K</td><td class="is-num">4.00000</td><td class="is-num">1.00</td><td><span class="a-badge a-badge--ok"><i></i>启用</span></td><td><button class="a-row-btn" type="button" data-toast="已打开文生图 1K 价格">编辑</button></td></tr>
+              <tr><td>文生图</td><td>2K</td><td class="is-num">6.00000</td><td class="is-num">1.00</td><td><span class="a-badge a-badge--ok"><i></i>启用</span></td><td><button class="a-row-btn" type="button" data-toast="已打开文生图 2K 价格">编辑</button></td></tr>
+              <tr><td>文生图</td><td>4K</td><td class="is-num">12.00000</td><td class="is-num">1.00</td><td><span class="a-badge a-badge--ok"><i></i>启用</span></td><td><button class="a-row-btn" type="button" data-toast="已打开文生图 4K 价格">编辑</button></td></tr>
+              <tr><td>图片编辑</td><td>2K</td><td class="is-num">8.00000</td><td class="is-num">1.50</td><td><span class="a-badge a-badge--ok"><i></i>启用</span></td><td><button class="a-row-btn" type="button" data-toast="已打开图片编辑 2K 价格">编辑</button></td></tr>
+              <tr><td>图片编辑</td><td>4K</td><td class="is-num">—</td><td class="is-num">—</td><td><span class="a-badge a-badge--warn"><i></i>缺价格</span></td><td><button class="a-row-btn" type="button" data-toast="已打开补齐图片编辑 4K 价格">补齐</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="a-banner a-banner--warn" style="margin-top:14px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 9v5M12 17h.01"/></svg><div><strong style="font-size:13px">缺价会在提交前阻断</strong><div class="a-hint">当前「图片编辑 · 4K」缺少价格；补齐前用户端不会展示该组合。</div></div></div>
+      </div>
+    </div>
+  </div>
+  <footer class="a-drawer__foot">
+    <button class="a-btn a-btn--sm a-btn--danger" type="button" data-toast="删除路由需先解除候选与价格引用" data-tone="bad">删除路由</button>
+    <div style="flex:1"></div>
+    <button class="a-btn a-btn--sm" type="button" data-close>取消</button>
+    <button class="a-btn a-btn--sm a-btn--primary" type="button" data-close data-toast="图片路由已保存" data-tone="ok">保存路由</button>
+  </footer>
+</aside>
+
+<aside class="a-drawer" id="video-route-edit" role="dialog" aria-modal="true" aria-label="编辑视频路由模型">
+  <header class="a-drawer__head">
+    <div><h2>编辑视频路由模型</h2><p>Plus Video · plus-video · 视频</p></div>
+    <div class="a-drawer__spacer"></div>
+    <span class="a-badge a-badge--ok"><i></i>可被用户使用</span>
+    <button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </header>
+  <div class="a-drawer__body" style="padding-bottom:0">
+    <div class="a-tabs" data-tabs="video-route">
+      <button class="a-tab is-active" data-tab="video-base">基础信息</button>
+      <button class="a-tab" data-tab="video-params">视频参数</button>
+      <button class="a-tab" data-tab="video-pricing">视频报价</button>
+    </div>
+    <div data-tab-panels="video-route">
+      <div data-panel="video-base">
+        <form class="a-form">
+          <section class="a-form__section">
+            <div class="a-form__head"><h3><span class="a-form__num">1</span>标识</h3></div>
+            <label class="a-field"><span>路由代码 <span class="a-required">*</span></span><input class="a-input" value="plus-video" style="font-family:var(--font-admin-mono)"><span class="a-hint">视频路由只绑定视频真实模型。</span></label>
+            <label class="a-field"><span>路由名称</span><input class="a-input" value="Plus Video"></label>
+            <label class="a-field"><span>路由图标</span><select class="a-select"><option>▶ 视频</option><option>✦ 精选</option><option>◆ 基础</option><option>▲ 高级</option></select><span class="a-hint">显示在用户端模型选择与后台路由列表。</span></label>
+            <label class="a-field"><span>描述</span><textarea class="a-textarea">进阶创作者使用的视频路由，覆盖文生视频、图生视频与首尾帧。</textarea></label>
+          </section>
+          <section class="a-form__section">
+            <div class="a-form__head"><h3><span class="a-form__num">2</span>可见性</h3></div>
+            <label class="a-field"><span>可见范围</span><select class="a-select"><option>按分组可见</option><option>全员可见</option><option>隐藏</option></select></label>
+            <label class="a-field"><span>可见分组</span><div style="display:grid;gap:7px;padding:12px;border:1px solid var(--a-line);border-radius:8px"><label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span><span><b style="font-family:var(--font-admin-mono)">◆ base</b> · 注册用户</span></label><label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span><span><b style="font-family:var(--font-admin-mono)">✦ plus</b> · 付费创作者</span></label><label class="a-switch"><input type="checkbox"><span class="a-switch__track"></span><span><b style="font-family:var(--font-admin-mono)">▲ pro</b> · 高用量团队</span></label></div></label>
+            <label class="a-field"><span>排序值</span><input class="a-input" value="10" inputmode="numeric"></label>
+            <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>启用该路由</label>
+          </section>
+          <section class="a-form__section">
+            <div class="a-form__head"><h3><span class="a-form__num">3</span>能力检查</h3></div>
+            <div class="a-banner a-banner--info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg><div><strong style="font-size:13px">当前可用</strong><div class="a-hint">3 个视频候选已验证，3 个候选原生费率已配置，2 个分组可见。</div></div></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="a-btn a-btn--sm" type="button" onclick="document.querySelector('[data-tabs=&quot;video-route&quot;] [data-tab=&quot;video-params&quot;]').click()">配置视频参数</button><button class="a-btn a-btn--sm" type="button" data-open="#video-candidate-edit">配置候选</button></div>
+          </section>
+        </form>
+      </div>
+
+      <div data-panel="video-params" hidden>
+        <form class="a-form">
+          <section class="a-form__section">
+            <div class="a-form__head"><h3><span class="a-form__num">1</span>输出与状态</h3></div>
+            <div class="a-form__pair">
+              <label class="a-field"><span>平台最大输出数</span><input class="a-input" value="1" inputmode="numeric"><span class="a-hint">1–4；实际可用数量受候选能力限制。</span></label>
+              <label class="a-field"><span>状态</span><select class="a-select"><option>启用</option><option>停用</option></select></label>
+            </div>
+            <div class="a-form__pair">
+              <label class="a-field"><span>最低任务积分</span><input class="a-input" value="10.00000" inputmode="decimal"></label>
+              <label class="a-field"><span>积分取整步长</span><select class="a-select"><option>1</option><option>5</option><option>10</option></select></label>
+            </div>
+          </section>
+          <section class="a-form__section">
+            <div class="a-form__head"><h3><span class="a-form__num">2</span>默认参数</h3><p>用户可选参数由已绑定真实模型的能力自动汇总；这里只维护默认值。</p></div>
+            <div class="a-form__pair">
+              <label class="a-field"><span>默认任务类型</span><select class="a-select"><option>文生视频</option><option>图生视频</option><option>首尾帧生视频</option></select></label>
+              <label class="a-field"><span>默认时长（秒）</span><select class="a-select"><option>5</option><option>10</option></select></label>
+            </div>
+            <div class="a-form__pair">
+              <label class="a-field"><span>默认分辨率</span><select class="a-select"><option>720p</option><option>1080p</option></select></label>
+              <label class="a-field"><span>默认比例</span><select class="a-select"><option>16:9</option><option>9:16</option><option>1:1</option></select></label>
+            </div>
+            <label class="a-field"><span>默认音频</span><select class="a-select"><option>静音</option><option>生成音频</option></select></label>
+          </section>
+          <section class="a-form__section">
+            <div class="a-form__head"><h3><span class="a-form__num">3</span>候选分辨率映射</h3><p>路由分辨率到厂商原生分辨率的映射；未映射的组合不参与报价。</p></div>
+            <div class="rt-price-wrap">
+              <table class="rt-price-table">
+                <thead><tr><th>真实模型</th><th>路由分辨率</th><th>厂商原生分辨率</th><th></th></tr></thead>
+                <tbody>
+                  <tr><td>Seedance 1.5 Pro</td><td>720p</td><td>720p</td><td><button class="a-row-btn" type="button" data-toast="已删除映射" data-tone="bad">删除</button></td></tr>
+                  <tr><td>Seedance 1.0 Lite</td><td>720p</td><td>720p</td><td><button class="a-row-btn" type="button" data-toast="已删除映射" data-tone="bad">删除</button></td></tr>
+                  <tr><td>MiniMax Hailuo 02</td><td>720p</td><td>768p</td><td><button class="a-row-btn" type="button" data-toast="已删除映射" data-tone="bad">删除</button></td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="a-row-actions" style="margin-top:10px"><button class="a-btn a-btn--sm" type="button" data-toast="已添加一行分辨率映射">添加映射</button></div>
+          </section>
+        </form>
+      </div>
+
+      <div data-panel="video-pricing" hidden>
+        <div class="a-banner a-banner--info" style="margin-bottom:14px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg><div><strong style="font-size:13px">视频销售价来自候选厂商原生费率</strong><div class="a-hint">系统按可用候选中的最高人民币成本，经全局汇率换算为积分，再应用最低任务积分与取整步长；这里不手工填写每秒售价。</div></div></div>
+        <div class="rt-price-wrap">
+          <table class="rt-price-table">
+            <thead><tr><th>真实模型</th><th>厂商</th><th>费率版本</th><th>原生费率摘要</th><th>状态</th></tr></thead>
+            <tbody>
+              <tr><td>Seedance 1.5 Pro</td><td>Seedance</td><td class="a-mono">v3</td><td>720p ¥46 / 百万 Token</td><td><span class="a-badge a-badge--ok"><i></i>可报价</span></td></tr>
+              <tr><td>Seedance 1.0 Lite</td><td>Seedance</td><td class="a-mono">v2</td><td>720p ¥18 / 百万 Token</td><td><span class="a-badge a-badge--ok"><i></i>可报价</span></td></tr>
+              <tr><td>MiniMax Hailuo 02</td><td>MiniMax</td><td class="a-mono">v1</td><td>768p ¥0.50 / 秒 · 输入 ¥0.50 / 秒</td><td><span class="a-badge a-badge--ok"><i></i>可报价</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="a-grid a-grid--4" style="margin-top:14px">
+          <div class="a-panel" style="box-shadow:none;padding:13px"><div class="a-hint">最高销售价</div><strong style="font-size:14px">¥2.80</strong></div>
+          <div class="a-panel" style="box-shadow:none;padding:13px"><div class="a-hint">全局汇率</div><strong style="font-size:14px">1 积分 = ¥0.01</strong></div>
+          <div class="a-panel" style="box-shadow:none;padding:13px"><div class="a-hint">单结果积分</div><strong style="font-size:14px">280</strong></div>
+          <div class="a-panel" style="box-shadow:none;padding:13px"><div class="a-hint">最低任务积分</div><strong style="font-size:14px">10 · 步长 1</strong></div>
+        </div>
+        <div class="a-row-actions" style="margin-top:14px"><button class="a-btn a-btn--sm a-btn--primary" type="button" data-toast="试算完成：5s / 720p / 16:9 / 静音">运行报价试算</button></div>
+      </div>
+    </div>
+  </div>
+  <footer class="a-drawer__foot">
+    <button class="a-btn a-btn--sm a-btn--danger" type="button" data-toast="删除视频配置不会删除路由与候选" data-tone="bad">删除视频配置</button>
+    <div style="flex:1"></div>
+    <button class="a-btn a-btn--sm" type="button" data-close>取消</button>
+    <button class="a-btn a-btn--sm a-btn--primary" type="button" data-close data-toast="视频路由已保存" data-tone="ok">保存视频路由</button>
+  </footer>
+</aside>
+
+<aside class="a-drawer" id="candidate-edit" role="dialog" aria-modal="true" aria-label="配置图片候选模型">
+  <header class="a-drawer__head">
+    <div><h2>配置图片候选</h2><p>Plus Image · 4 个候选</p></div>
+    <div class="a-drawer__spacer"></div>
+    <button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </header>
+  <div class="a-drawer__body">
+    <form class="a-form">
+      <section class="a-form__section">
+        <div class="a-form__head"><h3>候选模型</h3><p>只列出图片真实模型（文生图 / 图片编辑）。</p></div>
+        <label class="a-field"><span>真实模型 <span class="a-required">*</span></span><select class="a-select"><option>acc-east-1 / Seedream 4.0</option><option>acc-east-2 / Seedream 4.0</option><option>openrouter / Flux 1.1 Pro</option><option>acc-east-1 / Seedream Edit</option></select></label>
+        <div class="a-form__pair">
+          <label class="a-field"><span>优先级</span><input class="a-input" value="100" inputmode="numeric"></label>
+          <label class="a-field"><span>权重</span><input class="a-input" value="70" inputmode="numeric"></label>
+        </div>
+        <label class="a-field"><span>兜底顺序</span><input class="a-input" value="1" inputmode="numeric"><span class="a-hint">从 1 开始，数字越小越早回退。</span></label>
+        <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>启用该候选</label>
+      </section>
+    </form>
+  </div>
+  <footer class="a-drawer__foot"><button class="a-btn a-btn--sm a-btn--danger" type="button" data-toast="删除候选需确认" data-tone="bad">移除候选</button><div style="flex:1"></div><button class="a-btn a-btn--sm" type="button" data-close>取消</button><button class="a-btn a-btn--sm a-btn--primary" type="button" data-close data-toast="图片候选已保存" data-tone="ok">保存候选</button></footer>
+</aside>
+
+<aside class="a-drawer" id="video-candidate-edit" role="dialog" aria-modal="true" aria-label="配置视频候选模型">
+  <header class="a-drawer__head">
+    <div><h2>配置视频候选</h2><p>Plus Video · 3 个候选</p></div>
+    <div class="a-drawer__spacer"></div>
+    <button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </header>
+  <div class="a-drawer__body">
+    <form class="a-form">
+      <section class="a-form__section">
+        <div class="a-form__head"><h3>候选模型</h3><p>只列出已验证且启用的视频真实模型。</p></div>
+        <label class="a-field"><span>真实模型 <span class="a-required">*</span></span><select class="a-select"><option>seedance-main / Seedance 1.5 Pro</option><option>seedance-main / Seedance 1.0 Lite</option><option>minimax-main / MiniMax Hailuo 02</option></select></label>
+        <div class="a-form__pair">
+          <label class="a-field"><span>优先级</span><input class="a-input" value="100" inputmode="numeric"></label>
+          <label class="a-field"><span>权重</span><input class="a-input" value="70" inputmode="numeric"></label>
+        </div>
+        <label class="a-field"><span>兜底顺序</span><input class="a-input" value="1" inputmode="numeric"><span class="a-hint">从 1 开始，数字越小越早回退。</span></label>
+        <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>启用该候选</label>
+      </section>
+    </form>
+  </div>
+  <footer class="a-drawer__foot"><button class="a-btn a-btn--sm a-btn--danger" type="button" data-toast="删除候选需确认" data-tone="bad">移除候选</button><div style="flex:1"></div><button class="a-btn a-btn--sm" type="button" data-close>取消</button><button class="a-btn a-btn--sm a-btn--primary" type="button" data-close data-toast="视频候选已保存" data-tone="ok">保存候选</button></footer>
+</aside>
+
+<aside class="a-drawer" id="group-edit" role="dialog" aria-modal="true" aria-label="编辑模型分组">
+  <header class="a-drawer__head"><div><h2 id="group-edit-title">新建模型分组</h2><p id="group-edit-subtitle">分组代码会出现在路由可见性配置中</p></div><div class="a-drawer__spacer"></div><button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button></header>
+  <div class="a-drawer__body">
+    <form class="a-form">
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">1</span>标识</h3></div>
+        <label class="a-field"><span>分组图标</span><select class="a-select" id="group-icon"><option value="◇">◇ 菱形 · free</option><option value="◆">◆ 实心菱形 · base</option><option value="✦">✦ 星形 · plus</option><option value="▲">▲ 三角 · pro</option><option value="●">● 圆形 · 自定义</option></select><span class="a-hint">图标会显示在分组列表、路由可见性与用户端分组标识中。</span></label>
+        <label class="a-field"><span>分组代码 <span class="a-required">*</span></span><input class="a-input" id="group-code" placeholder="例如：studio"><span class="a-hint">创建后不可修改；用于路由可见性配置。</span></label>
+        <label class="a-field"><span>分组名称</span><input class="a-input" id="group-name" placeholder="例如：Studio"></label>
+        <label class="a-field"><span>描述</span><textarea class="a-textarea" id="group-desc" placeholder="说明这个分组对谁可见"></textarea></label>
+      </section>
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">2</span>状态与排序</h3></div>
+        <label class="a-field"><span>排序值</span><input class="a-input" id="group-sort" value="40" inputmode="numeric"><span class="a-hint">数值越小越靠前。</span></label>
+        <label class="a-switch"><input type="checkbox" id="group-enabled" checked><span class="a-switch__track"></span>启用该分组</label>
+      </section>
+    </form>
+    <div class="a-banner a-banner--info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg><div><strong style="font-size:13px">分组与用户分组不是同一套配置</strong><div class="a-hint">这里定义路由可见性；用户属于哪个分组在“用户分组”页面维护。</div></div></div>
+  </div>
+  <footer class="a-drawer__foot"><button class="a-btn a-btn--sm" type="button" data-close>取消</button><button class="a-btn a-btn--sm a-btn--primary" type="button" data-close data-toast="分组已保存" data-tone="ok" id="group-save">创建分组</button></footer>
+</aside>
+
+<script src="../assets/shell.js"></script>
+<script>
+  document.addEventListener('click', function (event) {
+    const tab = event.target.closest('[data-tabs="rt-media"] [data-tab]');
+    if (tab) {
+      const button = document.getElementById('rt-add-route');
+      if (tab.dataset.tab === 'rt-video') {
+        button.textContent = '新增视频路由';
+        button.dataset.open = '#video-route-edit';
+      } else {
+        button.textContent = '新增图片路由';
+        button.dataset.open = '#image-route-edit';
+      }
+    }
+    const trigger = event.target.closest('[data-open="#group-edit"]');
+    if (trigger) {
+      const editing = trigger.dataset.groupMode === 'edit';
+      setTimeout(function () {
+        document.getElementById('group-edit-title').textContent = editing ? '编辑模型分组' : '新建模型分组';
+        document.getElementById('group-edit-subtitle').textContent = editing ? '修改图标、名称、描述与状态' : '分组代码会出现在路由可见性配置中';
+        document.getElementById('group-save').textContent = editing ? '保存分组' : '创建分组';
+        document.getElementById('group-name').value = trigger.dataset.groupName || '';
+        document.getElementById('group-code').value = trigger.dataset.groupCode || '';
+        document.getElementById('group-icon').value = trigger.dataset.groupIcon || '◇';
+        document.getElementById('group-desc').value = trigger.dataset.groupDesc || '';
+        document.getElementById('group-sort').value = trigger.dataset.groupSort || '40';
+      }, 0);
+    }
+  }, true);
+</script>
+</body>
+</html>

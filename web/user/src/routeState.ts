@@ -19,7 +19,7 @@ export type UserRouteOptions = {
   canvasId?: string | null
 }
 
-export const userRouteSet = new Set<RouteId>(['landing', 'login', 'home', 'genpic', 'creative-canvas', 'gallery', 'projects', 'public-gallery', 'checkout', 'api-keys', 'profile', 'settings'])
+export const userRouteSet = new Set<RouteId>(['landing', 'login', 'home', 'genpic', 'creative-canvas', 'gallery', 'projects', 'public-gallery', 'checkout', 'api-keys', 'profile', 'settings', 'oauth-consent'])
 
 export function parseUserHashState(hash: string): UserRouteState {
   const raw = hash.replace(/^#\/?/, '')

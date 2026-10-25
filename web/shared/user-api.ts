@@ -56,7 +56,7 @@ import type {
   VideoTask,
 } from './api-types'
 import { API_PATHS } from './api-types'
-import { fillPath, getDefaultBaseUrl, normalizePage, sharedApiClient, withQuery } from './http-client'
+import { fillPath, normalizePage, sharedApiClient, withQuery } from './http-client'
 import { mediaAssetURL } from './media-url'
 import { normalizeCreativeCanvas } from './canvas-document'
 
@@ -613,7 +613,7 @@ export const userApi = {
 	estimateVideo: (req: VideoEstimateRequest, signal?: AbortSignal) => sharedApiClient.request<VideoEstimate>(API_PATHS.agent.videoEstimates, { method: 'POST', body: buildVideoEstimateWireRequest(req), signal }),
 	createVideoTask: (req: VideoCreateTaskRequest, idempotencyKey: string = crypto.randomUUID()) => sharedApiClient.request<VideoTask>(API_PATHS.agent.videoTasks, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: { ...buildVideoEstimateWireRequest(req), quote_token: req.quote_token } }),
   listVideoTasks: async (filters: { project_id: string; status?: string; cursor?: string; limit?: number }) => {
-    const response = await sharedApiClient.request<{ items?: VideoTask[]; next_cursor?: string } | VideoTask[]>(API_PATHS.agent.videoTasks, { query: filters })
+    const response = await sharedApiClient.request<{ items?: VideoTask[]; next_cursor?: string } | VideoTask[]>('/api/agent/video/v1/history/tasks', { query: filters })
     const raw = Array.isArray(response) ? response : response.items ?? []
     // Older projections serialize empty inputs/items as null; normalize so
     // every consumer can map over them safely.
@@ -630,11 +630,12 @@ export const userApi = {
 	duplicateCanvas: async (canvas_id: string, input: { name?: string; project_id?: string } = {}) => normalizeCreativeCanvas(await sharedApiClient.request<CreativeCanvas>('/api/agent/canvas/v1/canvases/{canvas_id}:duplicate', { method: 'POST', pathParams: { canvas_id }, body: input })),
 	transferCanvas: async (canvas_id: string, target_project_id: string, expected_metadata_version: number) => normalizeCreativeCanvas(await sharedApiClient.request<CreativeCanvas>('/api/agent/canvas/v1/canvases/{canvas_id}:transfer-project', { method: 'POST', pathParams: { canvas_id }, body: { target_project_id, expected_metadata_version } })),
 	saveCanvasDocument: async (canvas_id: string, expected_revision: number, document: CanvasDocument) => normalizeCreativeCanvas(await sharedApiClient.request<CreativeCanvas>('/api/agent/canvas/v1/canvases/{canvas_id}/document', { method: 'PUT', pathParams: { canvas_id }, body: { expected_revision, document } })),
-	estimateCanvasNode: (canvas_id: string, node_id: string) => sharedApiClient.request<{ points: string; detail?: Record<string, unknown> }>('/api/agent/canvas/v1/canvases/{canvas_id}/nodes/{node_id}:estimate', { method: 'POST', pathParams: { canvas_id, node_id } }),
+	estimateCanvasNode: (canvas_id: string, node_id: string, signal?: AbortSignal) => sharedApiClient.request<{ points: string; detail?: Record<string, unknown> }>('/api/agent/canvas/v1/canvases/{canvas_id}/nodes/{node_id}:estimate', { method: 'POST', pathParams: { canvas_id, node_id }, signal }),
 	generateCanvasNode: (canvas_id: string, node_id: string, idempotencyKey = crypto.randomUUID()) => sharedApiClient.request<CanvasRun>('/api/agent/canvas/v1/canvases/{canvas_id}/nodes/{node_id}:generate', { method: 'POST', pathParams: { canvas_id, node_id }, headers: { 'Idempotency-Key': idempotencyKey } }),
 	listCanvasRuns: async (canvas_id: string, refresh = false) => (await sharedApiClient.request<{ items: CanvasRun[] }>('/api/agent/canvas/v1/canvases/{canvas_id}/runs', { pathParams: { canvas_id }, query: { refresh } })).items ?? [],
 	attachCanvasRun: (canvas_id: string, run_id: string, recovery_position?: { x: number; y: number }) => sharedApiClient.request<CanvasRun>('/api/agent/canvas/v1/canvases/{canvas_id}/runs/{run_id}:attach-results', { method: 'POST', pathParams: { canvas_id, run_id }, body: recovery_position ? { recovery_position } : undefined }),
 	cancelCanvasRun: (canvas_id: string, run_id: string) => sharedApiClient.request<CanvasRun>('/api/agent/canvas/v1/canvases/{canvas_id}/runs/{run_id}:cancel', { method: 'POST', pathParams: { canvas_id, run_id } }),
+  listMediaGroups: (projectID?: string) => sharedApiClient.request<string[]>('/api/agent/media/v1/groups', { query: projectID ? { project_id: projectID } : undefined }),
   listMediaAssets: async (filters: MediaAssetFilters) => {
     const response = await sharedApiClient.request<MediaAssetPage | MediaAsset[]>(API_PATHS.agent.mediaAssets, { query: filters })
     return Array.isArray(response) ? { items: response } : { items: response.items ?? [], next_cursor: response.next_cursor }
@@ -656,25 +657,19 @@ export const userApi = {
   }),
   getMediaExportJob: (job_id: string, signal?: AbortSignal) => sharedApiClient.request<MediaExportStatus>(API_PATHS.agent.mediaExportJob, { pathParams: { job_id }, signal }),
   downloadMediaExport: (job_id: string, signal?: AbortSignal) => sharedApiClient.blob(API_PATHS.agent.mediaExportDownload, { pathParams: { job_id }, signal }),
-  initMediaUpload: (input: MediaUploadInit, idempotencyKey: string) => sharedApiClient.request<MediaUploadSession>(API_PATHS.agent.mediaUploads, {
-    method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: input,
+  initMediaUpload: (input: MediaUploadInit, idempotencyKey: string, signal?: AbortSignal) => sharedApiClient.request<MediaUploadSession>(API_PATHS.agent.mediaUploads, {
+    method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: input, signal,
   }),
-  getMediaUpload: (upload_id: string) => sharedApiClient.request<MediaUploadSession>(API_PATHS.agent.mediaUploadDetail, { pathParams: { upload_id } }),
-  signMediaUploadPart: (upload_id: string, part_number: number, checksum: string) => sharedApiClient.request<MediaPartTarget>(API_PATHS.agent.mediaUploadPartSign, {
-    method: 'POST', pathParams: { upload_id, part_number }, body: { checksum },
+  getMediaUpload: (upload_id: string, signal?: AbortSignal) => sharedApiClient.request<MediaUploadSession>(API_PATHS.agent.mediaUploadDetail, { pathParams: { upload_id }, signal }),
+  signMediaUploadPart: (upload_id: string, part_number: number, checksum: string, signal?: AbortSignal) => sharedApiClient.request<MediaPartTarget>(API_PATHS.agent.mediaUploadPartSign, {
+    method: 'POST', pathParams: { upload_id, part_number }, body: { checksum }, signal,
   }),
-  uploadMediaProxyPart: async (upload_id: string, part_number: number, chunk: Blob, checksum: string, accessToken?: string | null, signal?: AbortSignal) => {
-    const path = fillPath(API_PATHS.agent.mediaUploadPart, { upload_id, part_number })
-    const response = await fetch(`${getDefaultBaseUrl()}${path}`, {
-      method: 'PUT', credentials: 'include', body: chunk, signal,
-      headers: { 'Content-Type': 'application/octet-stream', 'X-Content-SHA256': checksum, ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
-    })
-    const payload = await response.json()
-    if (!response.ok) throw Object.assign(new Error(payload?.error?.message ?? '分片上传失败'), { status: response.status })
-    return (payload?.data ?? payload) as MediaCompletedPart
-  },
-  completeMediaUpload: (upload_id: string, parts: MediaCompletedPart[]) => sharedApiClient.request<MediaAsset>(API_PATHS.agent.mediaUploadComplete, {
-    method: 'POST', pathParams: { upload_id }, body: { parts },
+  uploadMediaProxyPart: (upload_id: string, part_number: number, chunk: Blob, checksum: string, _accessToken?: string | null, signal?: AbortSignal) => sharedApiClient.request<MediaCompletedPart>(API_PATHS.agent.mediaUploadPart, {
+    method: 'PUT', pathParams: { upload_id, part_number }, rawBody: chunk, signal,
+    headers: { 'Content-Type': 'application/octet-stream', 'X-Content-SHA256': checksum },
+  }),
+  completeMediaUpload: (upload_id: string, parts: MediaCompletedPart[], signal?: AbortSignal) => sharedApiClient.request<MediaAsset>(API_PATHS.agent.mediaUploadComplete, {
+    method: 'POST', pathParams: { upload_id }, body: { parts }, signal,
   }),
   abortMediaUpload: (upload_id: string) => sharedApiClient.request<{ status: string }>(API_PATHS.agent.mediaUploadDetail, { method: 'DELETE', pathParams: { upload_id } }),
   estimatePromptOptimization: (prompt: string, mediaType?: 'image' | 'video', routeModelCode?: string) => sharedApiClient.request<PromptOptimizationEstimate>(API_PATHS.agent.promptOptimizationEstimate, { method: 'POST', body: { prompt, ...(mediaType ? { media_type: mediaType } : {}), ...(routeModelCode ? { route_model_code: routeModelCode } : {}) } }),
@@ -741,6 +736,11 @@ export const userApi = {
 	batchDownloadGalleryImages: (image_ids: string[], project_id: string) => sharedApiClient.blob(API_PATHS.agent.galleryBatchDownload, { method: 'POST', body: { image_ids, project_id } }) as Promise<Blob | GalleryExportStatus>,
 	getGalleryExportJob: (job_id: string, signal?: AbortSignal) => sharedApiClient.request<GalleryExportStatus>(API_PATHS.agent.galleryExportJob, { pathParams: { job_id }, signal }),
 	downloadGalleryExport: (job_id: string, signal?: AbortSignal) => sharedApiClient.blob(API_PATHS.agent.galleryExportDownload, { pathParams: { job_id }, signal }),
+  hideTaskHistory: (task_id: string) => sharedApiClient.request<void>(API_PATHS.agent.historyTaskDetail, { method: 'DELETE', pathParams: { task_id } }),
+  clearFailedTaskHistory: (filters: { project_id?: string } = {}) => sharedApiClient.request<{ hidden_count: number }>('/api/agent/image/v1/history/tasks/clear-failed', { method: 'POST', body: filters }),
+  hideVideoTaskHistory: (task_id: string) => sharedApiClient.request<void>('/api/agent/video/v1/history/tasks/{task_id}', { method: 'DELETE', pathParams: { task_id } }),
+  clearFailedVideoTaskHistory: (filters: { project_id?: string } = {}) => sharedApiClient.request<{ hidden_count: number }>('/api/agent/video/v1/history/tasks/clear-failed', { method: 'POST', body: filters }),
+  retryVideoTask: (task_id: string) => sharedApiClient.request<VideoTask>('/api/agent/video/v1/history/tasks/{task_id}/retry', { method: 'POST', pathParams: { task_id } }),
   retryTask: async (task_id: string) => toTask(await sharedApiClient.request(API_PATHS.agent.historyTaskRetry, { method: 'POST', pathParams: { task_id } })),
   deleteTask: (task_id: string) => sharedApiClient.request<void>(API_PATHS.agent.historyTaskDetail, { method: 'DELETE', pathParams: { task_id } }),
   deleteGalleryImage: (image_id: string) => sharedApiClient.request<void>(API_PATHS.agent.galleryImageDetail, { method: 'DELETE', pathParams: { image_id } }),
@@ -780,7 +780,7 @@ function toApiKey(raw: any): ApiKey {
     id: String(raw.id),
     access_key: raw.access_key ?? raw.key_prefix ?? '',
     secret_preview: raw.secret ?? raw.secret_preview,
-    scopes: raw.scopes ?? ['images:write', 'images:read'],
+    scopes: raw.scopes ?? ['account:read', 'models:read', 'images:read', 'images:write'],
     rpm_limit: Number(raw.rpm_limit ?? 0),
     expires_at: raw.expires_at ?? null,
     created_at: raw.created_at ?? '',

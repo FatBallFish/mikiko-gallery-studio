@@ -129,6 +129,7 @@ func (s *MemoryStore) UpdateForUser(ctx context.Context, userID int64, key domai
 		return s.delegate.UpdateForUser(ctx, userID, key)
 	}
 	return s.updateForUser(ctx, userID, key.ID, func(existing *domainapikey.APIKey) {
+		existing.Scopes = domainapikey.EffectiveScopes(key.Scopes)
 		existing.Name = key.Name
 		existing.GroupCode = key.GroupCode
 		existing.TotalQuotaPoints = cloneStringPtr(key.TotalQuotaPoints)

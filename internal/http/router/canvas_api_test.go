@@ -36,6 +36,13 @@ func TestCanvasAPICRUDRevisionConflictAndOwnerIsolation(t *testing.T) {
 	if err := json.Unmarshal(created.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
+	for _, kind := range []string{"prompt", "image_generation", "video_generation"} {
+		legacy := `{"project_id":"` + projectID.String() + `","name":"Legacy","document":{"schema_version":1,"viewport":{"x":0,"y":0,"zoom":1},"nodes":[{"id":"old","type":"` + kind + `","position":{"x":0,"y":0},"size":{"width":320,"height":240}}],"edges":[]}}`
+		rejected := authenticatedProjectRequest(t, handler, owner.AccessToken, http.MethodPost, "/api/agent/canvas/v1/canvases", legacy, nil)
+		if rejected.Code != http.StatusUnprocessableEntity || !bytes.Contains(rejected.Body.Bytes(), []byte(`"validation_code":"deprecated_node"`)) {
+			t.Fatalf("deprecated create=%d %s", rejected.Code, rejected.Body.String())
+		}
+	}
 	foreign := authenticatedProjectRequest(t, handler, other.AccessToken, http.MethodGet, "/api/agent/canvas/v1/canvases/"+payload.Data.ID, "", nil)
 	if foreign.Code != http.StatusNotFound {
 		t.Fatalf("foreign=%d %s", foreign.Code, foreign.Body.String())
@@ -128,7 +135,7 @@ func TestCanvasAPIAttachUnplacedResultsAtViewportCenter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	created.Document.Nodes = created.Document.Nodes[:1]
+	created.Document.Nodes = nil
 	created.Document.Edges = nil
 	if _, err := service.SaveDocument(t.Context(), canvasservice.SaveDocumentRequest{UserID: claims.UserID, CanvasID: created.ID, ExpectedRevision: created.Revision, Document: created.Document}); err != nil {
 		t.Fatal(err)
@@ -144,7 +151,7 @@ func TestCanvasAPIAttachUnplacedResultsAtViewportCenter(t *testing.T) {
 		t.Fatalf("recover=%d %s", response.Code, response.Body.String())
 	}
 	after, err := service.Get(t.Context(), claims.UserID, created.ID)
-	if err != nil || len(after.Document.Nodes) != 2 || after.Document.Nodes[1].Position.X != 540 || after.Document.Nodes[1].Position.Y != 330 {
+	if err != nil || len(after.Document.Nodes) != 1 || after.Document.Nodes[0].Position.X != 540 || after.Document.Nodes[0].Position.Y != 330 {
 		t.Fatalf("recovered canvas=(%#v,%v)", after.Document, err)
 	}
 }

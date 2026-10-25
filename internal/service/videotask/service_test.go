@@ -64,6 +64,30 @@ func TestServiceCreateVerifiesQuoteOwnershipTemplateAndIdempotency(t *testing.T)
 	}
 }
 
+func TestServiceAPIKeyAttributionAndReplayWithoutQuote(t *testing.T) {
+	projectID := uuid.New()
+	store := &memoryTaskStore{}
+	quotes := &fakeQuoteVerifier{estimate: videotask.Estimate{MaxReservedPoints: "10.00000"}}
+	service := videotask.NewService(store, quotes, &fakeProjectResolver{project: domainproject.Project{ID: projectID.String(), UserID: 44, Status: "active"}}, store, time.Now)
+	req := videotask.CreateRequest{UserID: 44, APIKeyID: 91, ProjectID: projectID, IdempotencyKey: "key-replay", QuoteToken: "quote", RouteModelCode: "cinema", TaskType: "text_to_video", PromptTemplate: "ocean", DurationSeconds: 5, Resolution: "720p", AspectRatio: "16:9", AudioMode: "silent", OutputCount: 1}
+	created, _, err := service.Create(t.Context(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.APIKeyID != 91 || created.RoutingSnapshot["api_key_id"] != int64(91) || created.RoutingSnapshot["api_key_quota_reservation_id"] != created.ID.String() {
+		t.Fatalf("attribution=%#v", created)
+	}
+	req.QuoteToken = ""
+	replayed, found, err := service.Replay(t.Context(), req)
+	if err != nil || !found || replayed.ID != created.ID || store.createCalls != 1 {
+		t.Fatalf("replay=%#v found=%v err=%v", replayed, found, err)
+	}
+	req.APIKeyID++
+	if _, _, err := service.Replay(t.Context(), req); !errors.Is(err, videotask.ErrIdempotencyConflict) {
+		t.Fatalf("different key replay=%v", err)
+	}
+}
+
 func TestServiceNormalizesDisplayCasedEnumTokens(t *testing.T) {
 	projectID := uuid.New()
 	store := &memoryTaskStore{}

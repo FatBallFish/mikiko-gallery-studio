@@ -19,7 +19,7 @@ for (const required of ['role="listbox"', 'role="option"', 'aria-haspopup="listb
   if (!modelGroupSelectSource.includes(required)) throw new Error(`model group listbox must implement ${required}`)
 }
 
-for (const required of ['className="reference-name-row"', 'title={asset.name}', '<Modal title="重命名资产"']) {
+for (const required of ['className="reference-name-row"', 'title={asset.display_name || asset.name}', '<Modal title="重命名资产"']) {
   if (!source.includes(required)) throw new Error(`reference asset naming must implement ${required}`)
 }
 if (source.includes('className="reference-name-editor"')) {

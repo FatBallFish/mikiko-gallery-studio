@@ -13,6 +13,7 @@ import (
 	domainapikey "github.com/fatballfish/pic-gallery/internal/domain/apikey"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
+	"github.com/shopspring/decimal"
 )
 
 func TestAPIKeyStoreRoundTripAndLastUsedAt(t *testing.T) {
@@ -308,4 +309,56 @@ func isAppErrorCode(err error, code string) bool {
 	}
 	var appErr *errs.Error
 	return errors.As(err, &appErr) && appErr.Code == code
+}
+
+func TestAPIKeyQuotaActualSettlementIsIdempotent(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:key-actual-settle?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	store := NewAPIKeyStore(client)
+	key, err := store.Create(ctx, domainapikey.APIKey{UserID: 42, AccessKey: "ak-settle", SecretHash: domainapikey.HashSecret("sk-settle"), Name: "settle", Status: "active", GroupCode: "basic", Scopes: []string{"videos:write"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := store.ReserveQuota(ctx, 42, key.ID, "video", "8.00000", now); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		tx, err := client.Tx(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := SettleAPIKeyQuotaTx(ctx, tx, key.ID, "video", decimal.NewFromInt(3), now); err != nil {
+			tx.Rollback()
+			t.Fatal(err)
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	current, err := store.GetByID(ctx, 42, key.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.TotalQuotaUsedPoints != "3.00000" || current.DailyQuotaUsedPoints != "3.00000" {
+		t.Fatalf("actual usage: %#v", current)
+	}
+	if len(current.Scopes) != 1 || current.Scopes[0] != "videos:write" {
+		t.Fatalf("scope persistence: %v", current.Scopes)
+	}
+	tx, err := client.Tx(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if err := SettleAPIKeyQuotaTx(ctx, tx, key.ID, "video", decimal.NewFromInt(2), now); err == nil {
+		t.Fatal("conflicting replay accepted")
+	}
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/provider/video/gasic"
 	"github.com/fatballfish/pic-gallery/internal/provider/video/minimax"
 	"github.com/fatballfish/pic-gallery/internal/provider/video/seedance"
+	worker "github.com/fatballfish/pic-gallery/internal/worker/video"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
@@ -68,23 +69,25 @@ type Test struct {
 }
 
 type Service struct {
-	loader       AccountLoader
-	mu           sync.Mutex
-	tests        map[string]*Test
-	newProvider  func(domainmodeladmin.ModelAccount, domainmodeladmin.ModelAccountModel) (videoprovider.Provider, error)
-	pollInterval time.Duration
-	timeout      time.Duration
-	now          func() time.Time
+	validateArtifact func(context.Context, videoprovider.Artifact, []string, *bool) error
+	loader           AccountLoader
+	mu               sync.Mutex
+	tests            map[string]*Test
+	newProvider      func(domainmodeladmin.ModelAccount, domainmodeladmin.ModelAccountModel) (videoprovider.Provider, error)
+	pollInterval     time.Duration
+	timeout          time.Duration
+	now              func() time.Time
 }
 
 func NewService(loader AccountLoader) *Service {
 	return &Service{
-		loader:       loader,
-		tests:        map[string]*Test{},
-		newProvider:  buildProvider,
-		pollInterval: 2 * time.Second,
-		timeout:      10 * time.Minute,
-		now:          func() time.Time { return time.Now().UTC() },
+		validateArtifact: worker.NewRunner(nil, nil, nil, worker.Options{}).ValidateArtifact,
+		loader:           loader,
+		tests:            map[string]*Test{},
+		newProvider:      buildProvider,
+		pollInterval:     2 * time.Second,
+		timeout:          10 * time.Minute,
+		now:              func() time.Time { return time.Now().UTC() },
 	}
 }
 
@@ -139,7 +142,8 @@ func (s *Service) Submit(ctx context.Context, req Request) (Test, error) {
 	test.ProviderJobID = job.ID
 	test.Status = stateLabel(job.State)
 	s.store(test)
-	go s.poll(test.ID, provider, videoprovider.JobRef{ID: job.ID})
+	hosts, enabled := worker.ArtifactHostPolicyFromExtra(account.Extra)
+	go s.poll(test.ID, provider, videoprovider.JobRef{ID: job.ID}, hosts, enabled)
 	return s.Get(test.ID)
 }
 
@@ -156,7 +160,7 @@ func (s *Service) Get(id string) (Test, error) {
 	return cloneTest(test), nil
 }
 
-func (s *Service) poll(id string, provider videoprovider.Provider, ref videoprovider.JobRef) {
+func (s *Service) poll(id string, provider videoprovider.Provider, ref videoprovider.JobRef, hosts []string, enabled *bool) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			s.finish(id, "failed", "", fmt.Sprintf("video model test panicked: %v", recovered), nil)
@@ -176,9 +180,17 @@ func (s *Service) poll(id string, provider videoprovider.Provider, ref videoprov
 			s.finish(id, "failed", "", err.Error(), nil)
 			return
 		}
-		artifacts := mapArtifacts(status.Artifacts)
+		// Only expose artifacts after the successful result passes the policy.
+		var artifacts []Artifact
 		switch status.State {
 		case videoprovider.StateSucceeded:
+			for _, artifact := range status.Artifacts {
+				if err := s.validateArtifact(ctx, artifact, hosts, enabled); err != nil {
+					s.finish(id, "failed", status.JobID, fmt.Sprintf("validate video artifact: %v", err), nil)
+					return
+				}
+			}
+			artifacts = mapArtifacts(status.Artifacts)
 			s.finish(id, "succeeded", status.JobID, "", artifacts)
 			return
 		case videoprovider.StateFailed:

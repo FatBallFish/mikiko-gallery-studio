@@ -26,7 +26,7 @@ func TestAgentAPIKeyLifecycleEndpoints(t *testing.T) {
 	}
 	handler := NewWithAPI(handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, nil, nil, nil))
 
-	createReq := httptest.NewRequest(http.MethodPost, "/api/agent/account/v1/api-keys", strings.NewReader(`{"name":"ci","rpm_limit":30}`))
+	createReq := httptest.NewRequest(http.MethodPost, "/api/agent/account/v1/api-keys", strings.NewReader(`{"name":"ci","rpm_limit":30,"scopes":["models:read","assets:delete"]}`))
 	createReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
 	createReq.Header.Set("Content-Type", "application/json")
 	createRec := httptest.NewRecorder()
@@ -36,9 +36,10 @@ func TestAgentAPIKeyLifecycleEndpoints(t *testing.T) {
 	}
 	var createResp struct {
 		Data struct {
-			ID        int64  `json:"id"`
-			Secret    string `json:"secret"`
-			AccessKey string `json:"access_key"`
+			ID        int64    `json:"id"`
+			Secret    string   `json:"secret"`
+			AccessKey string   `json:"access_key"`
+			Scopes    []string `json:"scopes"`
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(createRec.Body).Decode(&createResp); err != nil {
@@ -48,12 +49,24 @@ func TestAgentAPIKeyLifecycleEndpoints(t *testing.T) {
 		t.Fatalf("unexpected create response %#v", createResp)
 	}
 
+	if strings.Join(createResp.Data.Scopes, ",") != "models:read,assets:delete" {
+		t.Fatalf("scopes missing: %v", createResp.Data.Scopes)
+	}
+
 	listReq := httptest.NewRequest(http.MethodGet, "/api/agent/account/v1/api-keys", nil)
 	listReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
 	listRec := httptest.NewRecorder()
 	handler.ServeHTTP(listRec, listReq)
 	if listRec.Code != http.StatusOK || strings.Contains(listRec.Body.String(), "secret_hash") {
 		t.Fatalf("unexpected list response code=%d body=%s", listRec.Code, listRec.Body.String())
+	}
+
+	updateReq := httptest.NewRequest(http.MethodPut, "/api/agent/account/v1/api-keys/"+jsonInt(createResp.Data.ID), strings.NewReader(`{"scopes":[]}`))
+	updateReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	updateRec := httptest.NewRecorder()
+	handler.ServeHTTP(updateRec, updateReq)
+	if updateRec.Code != http.StatusOK || !strings.Contains(updateRec.Body.String(), `"scopes":[]`) {
+		t.Fatalf("empty scope update: %d %s", updateRec.Code, updateRec.Body.String())
 	}
 
 	resetReq := httptest.NewRequest(http.MethodPost, "/api/agent/account/v1/api-keys/"+jsonInt(createResp.Data.ID)+"/reset-secret", nil)

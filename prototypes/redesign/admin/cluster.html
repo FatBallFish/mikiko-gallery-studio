@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>集群节点 — Mikiko Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/admin.css">
+</head>
+<body data-site="admin" data-page="cluster" data-title="集群节点">
+<div class="a-shell"><div class="a-main">
+  <div class="a-status-strip">
+    <div class="a-status-cell"><span>当前页节点</span><strong>7</strong></div>
+    <div class="a-status-cell"><span>运行正常</span><strong>5</strong></div>
+    <div class="a-status-cell"><span>需要处理</span><strong>2</strong></div>
+    <div class="a-status-cell"><span>存在漂移</span><strong>1</strong></div>
+  </div>
+  <main class="a-content">
+    <header class="a-page-head">
+      <div class="a-page-head__copy">
+        <span class="a-kicker">Cluster</span>
+        <h1>集群节点</h1>
+        <p>心跳、版本与配置漂移。节点角色决定它承载的进程，异常节点直接给出处理建议。</p>
+      </div>
+      <div class="a-page-head__actions">
+        <button class="a-btn a-btn--sm" type="button" data-toast="已刷新节点状态">刷新</button>
+      </div>
+    </header>
+
+    <section class="a-panel a-panel--flush" data-reveal>
+      <div class="a-panel__head">
+        <div class="a-seg" style="display:inline-flex;gap:2px;padding:3px;border:1px solid var(--a-line);border-radius:8px">
+          <button class="a-btn a-btn--sm" style="border:0;background:var(--a-ink);color:var(--a-canvas);min-height:30px" type="button">全部角色</button>
+          <button class="a-btn a-btn--sm a-btn--quiet" style="border:0;min-height:30px" type="button">控制节点</button>
+          <button class="a-btn a-btn--sm a-btn--quiet" style="border:0;min-height:30px" type="button">API</button>
+          <button class="a-btn a-btn--sm a-btn--quiet" style="border:0;min-height:30px" type="button">Worker</button>
+          <button class="a-btn a-btn--sm a-btn--quiet" style="border:0;min-height:30px" type="button">Web</button>
+        </div>
+        <span class="a-hint">共 7 个节点 · 最后更新 3 秒前</span>
+      </div>
+      <div class="a-table-wrap">
+        <table class="a-table" style="min-width:1180px">
+          <thead><tr><th>节点</th><th>角色</th><th>来源</th><th>健康</th><th>最后联系</th><th>版本</th><th>漂移</th><th>处理建议</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><div class="a-cell-stack"><strong>ctl-01</strong><span>inst_7f2a91c4</span></div></td>
+              <td>控制节点</td><td>心跳注册</td>
+              <td><span class="a-badge a-badge--ok"><i></i>运行正常</span></td>
+              <td class="is-muted">4 秒前</td>
+              <td><div class="a-cell-stack"><span>app v0.0.36</span><span>schema r184</span></div></td>
+              <td><span class="a-badge a-badge--ok"><i></i>一致</span></td>
+              <td class="is-muted">—</td>
+            </tr>
+            <tr>
+              <td><div class="a-cell-stack"><strong>api-cn-east-1</strong><span>inst_b31d08e2</span></div></td>
+              <td>API 节点</td><td>心跳注册</td>
+              <td><span class="a-badge a-badge--ok"><i></i>运行正常</span></td>
+              <td class="is-muted">2 秒前</td>
+              <td><div class="a-cell-stack"><span>app v0.0.36</span><span>schema r184</span></div></td>
+              <td><span class="a-badge a-badge--ok"><i></i>一致</span></td>
+              <td class="is-muted">—</td>
+            </tr>
+            <tr>
+              <td><div class="a-cell-stack"><strong>api-cn-east-2</strong><span>inst_5c9e224a</span></div></td>
+              <td>API 节点</td><td>心跳注册</td>
+              <td><span class="a-badge a-badge--warn"><i></i>运行降级</span></td>
+              <td class="is-muted">18 秒前</td>
+              <td><div class="a-cell-stack"><span>app v0.0.35</span><span>schema r184</span></div></td>
+              <td><span class="a-badge a-badge--warn"><i></i>应用版本</span></td>
+              <td class="is-muted">滚动升级未完成，确认新版本后重启</td>
+            </tr>
+            <tr>
+              <td><div class="a-cell-stack"><strong>worker-image-01</strong><span>inst_9a0f63dd</span></div></td>
+              <td>Worker 节点</td><td>心跳注册</td>
+              <td><span class="a-badge a-badge--ok"><i></i>运行正常</span></td>
+              <td class="is-muted">1 秒前</td>
+              <td><div class="a-cell-stack"><span>app v0.0.36</span><span>schema r184</span></div></td>
+              <td><span class="a-badge a-badge--ok"><i></i>一致</span></td>
+              <td class="is-muted">—</td>
+            </tr>
+            <tr>
+              <td><div class="a-cell-stack"><strong>worker-video-01</strong><span>inst_2e7b44c8</span></div></td>
+              <td>Worker 节点</td><td>心跳注册</td>
+              <td><span class="a-badge a-badge--bad"><i></i>未就绪</span></td>
+              <td class="is-muted">6 分钟前</td>
+              <td><div class="a-cell-stack"><span>app v0.0.36</span><span>schema r181</span></div></td>
+              <td><span class="a-badge a-badge--bad"><i></i>Schema 落后</span></td>
+              <td class="is-muted">检查迁移任务；等待 schema 升级到 r184</td>
+            </tr>
+            <tr>
+              <td><div class="a-cell-stack"><strong>web-edge-01</strong><span>inst_c44a19f0</span></div></td>
+              <td>Web 节点</td><td>心跳注册</td>
+              <td><span class="a-badge a-badge--ok"><i></i>运行正常</span></td>
+              <td class="is-muted">3 秒前</td>
+              <td><div class="a-cell-stack"><span>app v0.0.36</span><span>schema r184</span></div></td>
+              <td><span class="a-badge a-badge--ok"><i></i>一致</span></td>
+              <td class="is-muted">—</td>
+            </tr>
+            <tr>
+              <td><div class="a-cell-stack"><strong>legacy-single-01</strong><span>inst_0d22ee71</span></div></td>
+              <td>单节点</td><td>单机逻辑节点</td>
+              <td><span class="a-badge"><i></i>等待心跳</span></td>
+              <td class="is-muted">42 秒前</td>
+              <td><div class="a-cell-stack"><span>app v0.0.34</span><span>schema r180</span></div></td>
+              <td><span class="a-badge a-badge--warn"><i></i>配置版本</span></td>
+              <td class="is-muted">该节点已停止接收新任务，可安全下线</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="a-pager">
+        <div class="a-pager__info">显示 <b>1–7</b>，共 <b>7</b> 个节点</div>
+        <div class="a-pager__controls"><button class="a-pager__btn" disabled>‹</button><button class="a-pager__btn is-active">1</button><button class="a-pager__btn" disabled>›</button></div>
+        <div class="a-pager__size"><span>每页</span><select><option>20</option><option>50</option></select></div>
+      </div>
+    </section>
+  </main>
+</div></div>
+<script src="../assets/shell.js"></script>
+</body>
+</html>

@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"bufio"
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 )
@@ -100,7 +103,9 @@ func TestNativeGatewayProxiesAPISetupAndHealthRoutes(t *testing.T) {
 	}
 	for _, path := range []string{
 		"/healthz", "/readyz", "/setup", "/api/system/v1/bootstrap-status?source=gateway",
-		"/api", "/metrics", "/docs", "/docs/openapi.yaml", "/v1", "/v1/images/generations", "/files", "/files/result.png",
+		"/api", "/api/open/v1/me", "/api/v1/oauth/consent", "/metrics", "/docs", "/docs/openapi.yaml", "/v1", "/v1/images/generations", "/files", "/files/result.png",
+		"/mcp", "/.well-known/oauth-authorization-server", "/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp",
+		"/oauth/authorize?client_id=test&state=a%2Bb", "/oauth/token", "/oauth/revoke", "/oauth/register",
 	} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
@@ -134,7 +139,7 @@ func TestNativeGatewayRebuildsForwardedHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	request := httptest.NewRequest(http.MethodGet, "/mcp", nil)
 	request.RemoteAddr = "192.0.2.10:4321"
 	request.Host = "gateway.example.test"
 	request.Header.Set("Forwarded", "for=attacker;host=evil.example")
@@ -176,7 +181,7 @@ func TestNativeGatewayRejectsTraversalAndUnsupportedMethods(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, rawURL := range []string{"/../secret.txt", "/%2e%2e/secret.txt", "/..%2fsecret.txt", "/%252e%252e/secret.txt", "/escape.txt", "/admin/%2e%2e/secret.txt", "/.env", "/config/runtime.env", "/data/private.txt", "/logs/api.log"} {
+	for _, rawURL := range []string{"/.well-known/private", "/.well-known/oauth-protected-resource/../private", "/.well-known/oauth-protected-resource/%2eprivate", "/../secret.txt", "/%2e%2e/secret.txt", "/..%2fsecret.txt", "/%252e%252e/secret.txt", "/escape.txt", "/admin/%2e%2e/secret.txt", "/.env", "/config/runtime.env", "/data/private.txt", "/logs/api.log"} {
 		request := httptest.NewRequest(http.MethodGet, rawURL, nil)
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)
@@ -330,4 +335,60 @@ func gatewayAssetsForTest(t *testing.T) gatewayTestAssets {
 		t.Fatal(err)
 	}
 	return assets
+}
+
+func TestNativeGatewayStreamsMCPAndPreservesTransportHeaders(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if r.Method != http.MethodPost || string(body) != `{"jsonrpc":"2.0"}` {
+			t.Error("MCP request method/body changed")
+		}
+		for name, want := range map[string]string{
+			"Authorization": "Bearer test-placeholder", "Origin": "https://studio.example.test",
+			"MCP-Protocol-Version": "2026-07-28", "Mcp-Session-Id": "test-session",
+			"Mcp-Method": "tools/call", "Mcp-Name": "get_current_user", "Idempotency-Key": "test-key",
+		} {
+			if r.Header.Get(name) != want {
+				t.Errorf("request header %s changed", name)
+			}
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="https://studio.example.test/.well-known/oauth-protected-resource/mcp"`)
+		w.Header().Set("Mcp-Session-Id", "response-session")
+		io.WriteString(w, "data: first\n\n")
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	defer upstream.Close()
+	target, _ := url.Parse(upstream.URL)
+	assets := gatewayAssetsForTest(t)
+	handler, err := NewHandler(Config{APIURL: target, UserDir: assets.user, AdminDir: assets.admin, DocsDir: assets.docs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := httptest.NewServer(handler)
+	defer proxy.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, proxy.URL+"/mcp", strings.NewReader(`{"jsonrpc":"2.0"}`))
+	for name, value := range map[string]string{
+		"Authorization": "Bearer test-placeholder", "Origin": "https://studio.example.test",
+		"MCP-Protocol-Version": "2026-07-28", "Mcp-Session-Id": "test-session",
+		"Mcp-Method": "tools/call", "Mcp-Name": "get_current_user", "Idempotency-Key": "test-key",
+	} {
+		req.Header.Set(name, value)
+	}
+	response, err := proxy.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.Header.Get("Mcp-Session-Id") != "response-session" || response.Header.Get("WWW-Authenticate") == "" {
+		t.Fatal("MCP response headers lost")
+	}
+	line, err := bufio.NewReader(response.Body).ReadString('\n')
+	if err != nil || line != "data: first\n" {
+		t.Fatalf("stream first event = %q, %v", line, err)
+	}
+	cancel()
 }

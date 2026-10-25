@@ -1,7 +1,11 @@
 import React, { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Maximize2 as FullscreenIcon } from 'lucide-react'
-import type { GalleryImage, ImageResult, ImageTaskStatus, ImageTaskType, PublishStatus } from '../../shared/api-types'
+import type { GalleryImage, ImageResult, ImageTaskStatus, ImageTaskType, PublishStatus, MediaAsset, Project } from '../../shared/api-types'
 import { cn } from '../../shared/classnames'
+import { userApi } from '../../shared/user-api'
+import { continueMediaCreation, mediaDisplayName, mediaDownloadFilename } from './features/media/mediaCreationNavigation'
+import { MediaGroupSelectionDialog } from './features/media/MediaGroupSelectionDialog'
+import { mediaCreationActions } from './features/media/mediaExperience'
 import { pointsExchangeRules, pointsText } from '../../shared/pointsDisplay'
 import { RefreshableMediaImage, useMediaRefreshOnce, type MediaRefreshHandler } from './ui/mediaRefresh'
 import { avatarMenuItems, type AvatarMenuIcon } from './avatarMenu'
@@ -248,8 +252,9 @@ export type ImageDetailAction = {
  * stage height and a 392px information column; "详情" expands the same
  * component to a full-width detail view and returns to the source.
  */
-export function ImageDetailModal({ title, image, imageUrl, referenceImages = [], showPublicStats = true, onLike, onFavorite, onDownload, onCopyPrompt, actions = [], previewSourceLabel = '历史资产', onMediaRefresh, onClose }: {
+export function ImageDetailModal({ context = 'owned', title, image, imageUrl, referenceImages = [], showPublicStats = true, onLike, onFavorite, onDownload, onCopyPrompt, actions = [], previewSourceLabel = '历史资产', onMediaRefresh, onClose }: {
   title: string
+  context?: 'public' | 'owned'
   image: ImageResult | GalleryImage | null
   imageUrl?: string
   referenceImages?: Array<{ id: string; url: string; alt: string; mediaExpiresAt?: string; onMediaRefresh?: () => string | undefined | void | Promise<string | undefined | void> }>
@@ -263,13 +268,52 @@ export function ImageDetailModal({ title, image, imageUrl, referenceImages = [],
   onMediaRefresh?: () => string | undefined | void | Promise<string | undefined | void>
   onClose: () => void
 }) {
+  const app = useContext(AppContext)
+  const [asset, setAsset] = useState<MediaAsset | null>(null)
+  const [ownedProjects, setOwnedProjects] = useState<Project[]>([])
+  const [sourceImage, setSourceImage] = useState<ImageResult | null>(null)
+  const [assetBusy, setAssetBusy] = useState(false)
+  const [groupOpen, setGroupOpen] = useState(false)
+  const [renameValue, setRenameValue] = useState<string | null>(null)
+  useEffect(() => {
+    let alive = true
+    setAsset(null)
+    setSourceImage(null)
+    if (context === 'owned' && image && app?.session) {
+      void userApi.getMediaAsset(image.id).then(async (next) => {
+        if (!alive) return
+        setAsset(next)
+        if (next.source_task_kind === 'image' && next.source_task_id) {
+          const task = await userApi.getTask(next.source_task_id)
+          if (alive) setSourceImage({ ...task, ...task.results.find((item) => item.id === image.id), id: image.id, url: image.url || '', width: image.width, height: image.height, publish_status: task.results.find((item) => item.id === image.id)?.publish_status ?? ('publish_status' in image ? image.publish_status : image.visibility_status) })
+        }
+      }).catch(() => undefined)
+      void userApi.listProjects().then((next) => { if (alive) setOwnedProjects(next) }).catch(() => undefined)
+    }
+    return () => { alive = false }
+  }, [image?.id, app?.session?.token, context])
+  const mutateAsset = async (patch: { name?: string; group_name?: string; project_id?: string }) => {
+    if (context !== 'owned' || !asset) return
+    setAssetBusy(true)
+    try { setAsset(await userApi.updateMediaAsset(asset, patch)); window.dispatchEvent(new Event('mgs:media-assets-changed')); return true }
+    catch (error) { app?.notify('error', error instanceof Error ? error.message : '更新资产失败'); return false }
+    finally { setAssetBusy(false) }
+  }
+  const ownedAsset = context === 'owned' ? asset : null
+  const ownedActions: ImageDetailAction[] = ownedAsset && asset ? [
+    ...mediaCreationActions(asset).map((action) => ({ key: action.options.taskId ? 'reuse' : action.options.media === 'video' ? 'first-frame' : 'edit-image', label: action.label, icon: <Edit size={14} />, onClick: () => { void continueMediaCreation(action.options).then(onClose).catch((error) => app?.notify('error', error instanceof Error ? error.message : '无法继续创作')) } })),
+    { key: 'rename', label: '重命名', icon: <Edit size={14} />, onClick: () => setRenameValue(asset!.name), disabled: assetBusy },
+    { key: 'group', label: '设置分组', icon: <FolderPlus size={14} />, onClick: () => setGroupOpen(true), disabled: assetBusy },
+    { key: 'delete', label: '删除', icon: <Trash2 size={14} />, tone: 'danger', onClick: () => { if (!window.confirm(`删除“${asset.name}”？`)) return; setAssetBusy(true); void userApi.deleteMediaAsset(asset).then(() => { window.dispatchEvent(new Event('mgs:media-assets-changed')); onClose() }).catch((error) => app?.notify('error', error instanceof Error ? error.message : '删除失败')).finally(() => setAssetBusy(false)) }, disabled: assetBusy },
+  ] : []
+  const resolvedActions = context === 'public' ? [] : asset ? [...actions.filter((action) => !ownedActions.some((owned) => owned.key === action.key || owned.label === action.label) && !['more', 'delete'].includes(action.key)), ...ownedActions] : actions
+  const detailImage = image ? { ...image, ...(context === 'owned' ? sourceImage : null), name: ownedAsset?.name ?? image.name, project: ownedAsset ? ownedProjects.find((project) => project.id === ownedAsset.project_id) ?? image.project : image.project } : null
   const [zoomImage, setZoomImage] = useState<ImagePreviewPayload | null>(null)
   const [expanded, setExpanded] = useState(false)
-  const [shareState, setShareState] = useState<'idle' | 'done'>('idle')
   const drawerRef = useRef<HTMLElement | null>(null)
   useDismissableLayer(Boolean(image), onClose, drawerRef)
   useEffect(() => setZoomImage(null), [image?.id])
-  useEffect(() => { setExpanded(false); setShareState('idle') }, [image?.id])
+  useEffect(() => { setExpanded(false); setGroupOpen(false); setRenameValue(null) }, [image?.id, context])
   if (!image) return null
   const zoomableReferences = referenceImages.map((item) => ({
     ...item,
@@ -282,16 +326,6 @@ export function ImageDetailModal({ title, image, imageUrl, referenceImages = [],
       onMediaRefresh: item.onMediaRefresh ?? onMediaRefresh,
     }),
   }))
-
-  async function share() {
-    try {
-      await navigator.clipboard.writeText(window.location.href)
-      setShareState('done')
-      window.setTimeout(() => setShareState('idle'), 2000)
-    } catch {
-      setShareState('done')
-    }
-  }
 
   return (
     <>
@@ -317,21 +351,30 @@ export function ImageDetailModal({ title, image, imageUrl, referenceImages = [],
               ) : (
                 <button className="u-btn u-btn--sm" type="button" onClick={() => setExpanded(true)}>详情</button>
               )}
-              <button className="u-btn u-btn--sm" type="button" onClick={() => void share()}>{shareState === 'done' ? '已复制链接' : '分享'}</button>
               <button className="u-icon-btn" type="button" aria-label="关闭" onClick={onClose}><X size={18} strokeWidth={1.6} aria-hidden="true" /></button>
             </header>
             <div className="u-drawer__body">
               <PublicImageDetail
-                image={image}
+                context={context}
+                image={detailImage!}
                 imageUrl={imageUrl}
                 referenceImages={zoomableReferences}
                 showPublicStats={showPublicStats}
                 onPreviewImage={setZoomImage}
                 onLike={onLike}
                 onFavorite={onFavorite}
-                onDownload={onDownload}
+                onDownload={ownedAsset && asset ? () => {
+                  void userApi.getMediaAssetAccess(asset.id, 'download').then((access) => {
+                    const link = document.createElement('a')
+                    link.href = userApi.mediaAssetUrl(access.url, app?.session?.token)
+                    link.download = mediaDownloadFilename(asset)
+                    link.rel = 'noopener'
+                    link.click()
+                  }).catch((error) => app?.notify('error', error instanceof Error ? error.message : '下载失败'))
+                } : onDownload}
                 onCopyPrompt={onCopyPrompt}
-                actions={actions}
+                actions={resolvedActions}
+                organization={ownedAsset && asset ? <label className="u-field"><span className="u-label">转移项目</span><select className="u-select" value={asset.project_id} disabled={assetBusy} onChange={(event) => void mutateAsset({ project_id: event.target.value })}>{ownedProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label> : undefined}
                 previewSourceLabel={previewSourceLabel}
                 onMediaRefresh={onMediaRefresh}
               />
@@ -339,12 +382,19 @@ export function ImageDetailModal({ title, image, imageUrl, referenceImages = [],
           </aside>
         </div>
       </OverlayPortal>
+      {groupOpen && ownedAsset ? <MediaGroupSelectionDialog value={ownedAsset.group_name} projectId={ownedAsset.project_id} onClose={() => setGroupOpen(false)} onSelect={async (group_name) => {
+        const updated = await userApi.updateMediaAsset(ownedAsset, { group_name })
+        setAsset(updated)
+        window.dispatchEvent(new Event('mgs:media-assets-changed'))
+      }} /> : null}
+      {renameValue !== null && ownedAsset ? <Modal title="重命名资产" onClose={() => setRenameValue(null)}><form onSubmit={(event) => { event.preventDefault(); if (renameValue.trim()) void mutateAsset({ name: renameValue.trim() }).then((saved) => { if (saved) setRenameValue(null) }) }}><label className="u-field"><span className="u-label">资产名称</span><input className="u-input" autoFocus value={renameValue} onChange={(event) => setRenameValue(event.target.value)} /></label><button type="submit" className="u-btn u-btn--primary" disabled={assetBusy || !renameValue.trim()}>保存</button></form></Modal> : null}
       {zoomImage ? <ImageZoomViewer image={zoomImage} onClose={() => setZoomImage(null)} /> : null}
     </>
   )
 }
 
-export function PublicImageDetail({ image, imageUrl, referenceImages = [], showPublicStats = true, onPreviewImage, onLike, onFavorite, onDownload, onCopyPrompt, actions = [], previewSourceLabel = '历史资产', onMediaRefresh }: {
+export function PublicImageDetail({ context = 'owned', image, imageUrl, referenceImages = [], showPublicStats = true, onPreviewImage, onLike, onFavorite, onDownload, onCopyPrompt, actions = [], organization, previewSourceLabel = '历史资产', onMediaRefresh }: {
+  context?: 'public' | 'owned'
   image: ImageResult | GalleryImage
   imageUrl?: string
   referenceImages?: Array<{ id: string; url: string; alt: string; mediaExpiresAt?: string; onPreview?: () => void; onMediaRefresh?: () => string | undefined | void | Promise<string | undefined | void> }>
@@ -355,6 +405,7 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
   onDownload?: (image: ImageResult | GalleryImage) => void
   onCopyPrompt: (prompt: string) => void
   actions?: ImageDetailAction[]
+  organization?: React.ReactNode
   previewSourceLabel?: string
   onMediaRefresh?: () => string | undefined | void | Promise<string | undefined | void>
 }) {
@@ -367,8 +418,9 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
   const outputCount = image.requested_output_image_count ?? image.image_count ?? '-'
   const visibility = image.visibility_status || ('publish_status' in image ? image.publish_status : undefined)
   const statusValue = ('task_status' in image && image.task_status) || visibility || 'succeeded'
-  const statusLabel = visibility === 'public' ? '已公开' : visibility === 'pending_review' ? '审核中' : '私有'
-  const title = prompt.trim().split('\n')[0] || `资产 ${image.id.slice(0, 8)}`
+  const statusLabel = visibility === 'public' || visibility === 'approved' ? '已公开' : visibility === 'pending_review' || visibility === 'reviewing' ? '审核中' : visibility === 'rejected' ? '已驳回' : visibility === 'private' ? '私有' : '未公开'
+  const publicContext = context === 'public'
+  const title = mediaDisplayName(image)
   const facts: Array<{ label: string; value: React.ReactNode }> = [
     { label: '实际分辨率', value: actualResolution },
     { label: '基础分辨率', value: image.base_resolution || '-' },
@@ -380,9 +432,9 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
     { label: '输出格式', value: image.output_format?.toUpperCase() || '-' },
     { label: '压缩质量', value: outputCompression },
     { label: '审核等级', value: image.moderation || '-' },
-    { label: '输出数量', value: outputCount },
+    ...(!publicContext ? [{ label: '输出数量', value: outputCount }] : []),
     { label: '作者', value: authorName },
-    { label: '归属', value: image.project?.name || '默认项目' },
+    ...(!publicContext ? [{ label: '归属', value: image.project?.name || '默认项目' }] : []),
   ]
 
   return (
@@ -407,14 +459,14 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
             <button className="u-icon-btn u-detail__zoom" type="button" aria-label="全屏查看" onClick={() => onPreviewImage({
               url: imageUrl,
               downloadUrl: imageUrl,
-              alt: prompt || image.id,
+              alt: title,
               prompt: image.prompt,
               width: image.width,
               height: image.height,
               ratio: image.aspect_ratio,
-              model: image.route_model_code || image.abstract_model,
+              model: publicContext ? undefined : image.route_model_code || image.abstract_model,
               source: previewSourceLabel,
-              creationDraft: workspaceCreationDraftFromSnapshot(image),
+              creationDraft: publicContext ? undefined : workspaceCreationDraftFromSnapshot(image),
               mediaExpiresAt: image.preview_expires_at,
               onMediaRefresh,
             })}><FullscreenIcon /></button>
@@ -423,7 +475,7 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
             <DetailImageMedia
               src={imageUrl}
               mediaExpiresAt={image.preview_expires_at}
-              alt={prompt || image.id}
+              alt={title}
               onMediaRefresh={onMediaRefresh}
             />
           ) : <div className="u-detail__placeholder">图片不可预览</div>}
@@ -431,13 +483,11 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
         <div className="u-actions" style={{ justifyContent: 'space-between' }}>
           <div className="u-actions">
             <span className="u-chip u-chip--accent">{statusLabel}</span>
-            <span className="u-chip u-chip--mono">{image.route_model_code || image.abstract_model || '-'}</span>
+            {!publicContext ? <span className="u-chip u-chip--mono">{image.route_model_code || image.abstract_model || '-'}</span> : null}
           </div>
           <div className="u-actions">
             {onLike ? publicDetailButton(`点赞 ${image.like_count ?? 0}`, <PublicDetailIcon name="heart" active={image.liked_by_viewer} />, () => onLike(image), image.liked_by_viewer ? 'liked' : '') : null}
             {onFavorite ? publicDetailButton(`收藏 ${image.favorite_count ?? 0}`, <PublicDetailIcon name="star" active={image.favorited_by_viewer} />, () => onFavorite(image), image.favorited_by_viewer ? 'favorited' : '') : null}
-            <button className="u-action" type="button" onClick={() => onCopyPrompt(prompt)} disabled={!image.prompt}><Copy size={14} strokeWidth={1.6} aria-hidden="true" />复制 Prompt</button>
-            {onDownload ? publicDetailButton('下载原图', <PublicDetailIcon name="download" />, () => onDownload(image), '', !image.url && !image.download_url) : null}
           </div>
         </div>
       </section>
@@ -447,11 +497,11 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
           <div style={{ display: 'grid', gap: 7 }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               <span className="u-chip u-chip--accent">图片</span>
-              <span className="u-chip u-chip--mono">{image.route_model_code || image.abstract_model || '未知模型'}</span>
+              {!publicContext ? <span className="u-chip u-chip--mono">{image.route_model_code || image.abstract_model || '未知模型'}</span> : null}
               <span className="u-chip u-chip--mono">{statusLabel}</span>
             </div>
             <h2 className="u-detail__title">{title}</h2>
-            <div className="u-meta">{formatDate(image.created_at || '')} · {image.project?.name || '默认项目'}</div>
+            <div className="u-meta">{formatDate(image.created_at || '')}{!publicContext ? ` · ${image.project?.name || '默认项目'}` : ''}</div>
           </div>
 
           <div className="u-detail__section">
@@ -480,17 +530,18 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
                 {publicEngagementStats(image).map((item) => (
                   <div className="u-fact" key={item.key}><dt>{item.label}</dt><dd>{item.value}</dd></div>
                 ))}
-                <div className="u-fact"><dt>任务 ID</dt><dd title={('task_id' in image ? image.task_id : undefined) || image.id}>{('task_id' in image ? image.task_id : undefined) || image.id}</dd></div>
+                {!publicContext ? <div className="u-fact"><dt>任务 ID</dt><dd>{('task_id' in image ? image.task_id : undefined) || image.id}</dd></div> : null}
                 <div className="u-fact"><dt>来源</dt><dd>{previewSourceLabel}</dd></div>
               </div>
             </div>
           ) : null}
 
-          {actions.length ? (
+          {!publicContext && organization ? <div className="u-detail__section"><h4>组织与归属</h4>{organization}</div> : null}
+          {!publicContext && actions.some((action) => action.key !== 'delete') ? (
             <div className="u-detail__section">
               <h4>更多操作</h4>
               <div className="u-actions">
-                {actions.map((action) => (
+                {actions.filter((action) => action.key !== 'delete').map((action) => (
                   <button key={action.key} type="button" className="u-action" onClick={action.onClick} disabled={action.disabled}>
                     {action.icon}
                     <span>{action.label}</span>
@@ -501,8 +552,8 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
           ) : null}
         </div>
         <div className="u-detail__foot">
-          <button className="u-btn u-btn--primary u-btn--sm" type="button" onClick={() => onCopyPrompt(prompt)} disabled={!image.prompt}>复用 Prompt</button>
-          {onDownload ? <button className="u-btn u-btn--sm" type="button" onClick={() => onDownload(image)} disabled={!image.url && !image.download_url}>下载原图</button> : null}
+          {onDownload ? <button className="u-btn u-btn--primary u-btn--sm" type="button" onClick={() => onDownload(image)} disabled={!image.url && !image.download_url}>下载原图</button> : null}
+          {(publicContext ? [] : actions).filter((action) => action.key === 'delete').map((action) => <button key={action.key} type="button" className="u-btn u-btn--sm u-btn--danger" disabled={action.disabled} onClick={action.onClick}>{action.icon}{action.label}</button>)}
         </div>
       </section>
     </div>
@@ -531,7 +582,7 @@ function DetailImageMedia({ src, mediaExpiresAt, alt, onMediaRefresh }: { src: s
   )
 }
 
-export const protectedRoutes: RouteId[] = ['home', 'genpic', 'creative-canvas', 'gallery', 'projects', 'checkout', 'api-keys', 'profile', 'settings']
+export const protectedRoutes: RouteId[] = ['home', 'genpic', 'creative-canvas', 'gallery', 'projects', 'checkout', 'api-keys', 'profile', 'settings', 'oauth-consent']
 
 function HomeIcon() { return <Home size={22} strokeWidth={1.5} /> }
 function SparklesIcon() { return <Sparkles size={22} strokeWidth={1.5} /> }

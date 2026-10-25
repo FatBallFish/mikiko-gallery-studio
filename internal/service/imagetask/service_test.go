@@ -175,7 +175,7 @@ func (f *fakeAssetLoader) GetManyWithContext(_ context.Context, userID int64, as
 
 func TestCreateTaskResolvesPromptTemplateWithoutExposingVariableValues(t *testing.T) {
 	store := imagetask.NewMemoryStore()
-	assets := &fakeAssetLoader{assets: map[string]domainassets.ReferenceAsset{
+	assets := &fakeAssetLoader{inputs: map[string]provider.ImageInput{"style-id": {Data: []byte("style")}, "subject-id": {Data: []byte("subject")}}, assets: map[string]domainassets.ReferenceAsset{
 		"style-id":   {ID: "style-id", Name: "风格"},
 		"subject-id": {ID: "subject-id", Name: "主体"},
 	}}
@@ -209,7 +209,7 @@ func TestCreateTaskResolvesPromptTemplateWithoutExposingVariableValues(t *testin
 }
 
 func TestCreateTaskRejectsStalePromptReferenceBinding(t *testing.T) {
-	assets := &fakeAssetLoader{assets: map[string]domainassets.ReferenceAsset{"asset-id": {ID: "asset-id", Name: "已改名"}}}
+	assets := &fakeAssetLoader{inputs: map[string]provider.ImageInput{"asset-id": {Data: []byte("reference")}}, assets: map[string]domainassets.ReferenceAsset{"asset-id": {ID: "asset-id", Name: "已改名"}}}
 	svc := imagetask.NewServiceWithProvidersStoreAssetsBillingAndRouter(taskTestConfig(), nil, imagetask.NewMemoryStore(), assets, nil, nil)
 	_, err := svc.CreateTask(t.Context(), domainimagetask.CreateRequest{
 		UserID: 506, AbstractModel: "plus", TaskType: "image_edit", Prompt: "使用 {{@主体}}", SizeMode: "auto", OutputImageCount: 1,
@@ -3267,7 +3267,8 @@ func TestCreateTaskRejectsUnsupportedTypeWithoutPersistingHistory(t *testing.T) 
 func TestRetryTaskCreatesQueuedCopyFromFailedTask(t *testing.T) {
 	cfg := taskTestConfig()
 	store := imagetask.NewMemoryStore()
-	svc := imagetask.NewServiceWithProvidersAndStore(cfg, nil, store)
+	loader := &fakeAssetLoader{inputs: map[string]provider.ImageInput{"asset-a": {Data: []byte("a")}, "asset-b": {Data: []byte("b")}}}
+	svc := imagetask.NewServiceWithProvidersStoreAndAssets(cfg, nil, store, loader)
 	projectSvc := projectservice.NewService(projectservice.NewMemoryStore())
 	project, err := projectSvc.Create(context.Background(), 33, domainproject.CreateRequest{Name: "Retry project"})
 	if err != nil {
@@ -4805,7 +4806,7 @@ func TestExecuteLeasedTaskLoadsReferenceAssetsForEdit(t *testing.T) {
 	if result.Task.ID != created.ID {
 		t.Fatalf("expected leased execution to keep task ID %s, got %s", created.ID, result.Task.ID)
 	}
-	if len(loader.calls) != 2 || loader.calls[0] != "asset-a" || loader.calls[1] != "asset-b" {
+	if !reflect.DeepEqual(loader.calls, []string{"asset-a", "asset-b", "asset-a", "asset-b"}) {
 		t.Fatalf("expected loader to read both assets in order, got %#v", loader.calls)
 	}
 }

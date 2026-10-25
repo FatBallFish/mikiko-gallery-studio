@@ -47,6 +47,25 @@ func TestCapabilityMatchesCompleteRequestCombination(t *testing.T) {
 		t.Fatalf("valid request did not match: %#v", result.FieldErrors)
 	}
 
+	for _, format := range []string{"image/png", "image/png; charset=binary", "png"} {
+		request := valid
+		request.Inputs = append([]Input(nil), valid.Inputs...)
+		request.Inputs[0].Format = format
+		if result := capability.Match(request); !result.Matches {
+			t.Fatalf("format %q should match short capability format: %#v", format, result.FieldErrors)
+		}
+	}
+	for _, format := range []string{"image/jpeg", "jpeg"} {
+		capability.TaskTypes[TaskTypeImageToVideo].Inputs[InputRoleFirstFrame] = InputCapability{Required: true, MaxCount: 1, MediaTypes: []string{"image"}, Formats: []string{"jpg"}}
+		request := valid
+		request.Inputs = append([]Input(nil), valid.Inputs...)
+		request.Inputs[0].Format = format
+		if result := capability.Match(request); !result.Matches {
+			t.Fatalf("format %q should match jpg capability format: %#v", format, result.FieldErrors)
+		}
+	}
+	capability.TaskTypes[TaskTypeImageToVideo].Inputs[InputRoleFirstFrame] = InputCapability{Required: true, MaxCount: 1, MaxBytes: 30 << 20, MediaTypes: []string{"image"}, Formats: []string{"png", "webp"}}
+
 	invalidAudio := valid
 	invalidAudio.AudioMode = AudioModeGenerated
 	if result := capability.Match(invalidAudio); result.Matches || result.FieldErrors[0].Field != "generate_audio" {
@@ -58,6 +77,74 @@ func TestCapabilityMatchesCompleteRequestCombination(t *testing.T) {
 	invalidFormat.Inputs[0].Format = "heic"
 	if result := capability.Match(invalidFormat); result.Matches || result.FieldErrors[0].Field != "inputs.first_frame.format" {
 		t.Fatalf("format mismatch result = %#v", result)
+	}
+}
+
+func TestCapabilityInputFormatAliasesPreserveMediaBoundaries(t *testing.T) {
+	cases := []struct {
+		name, mediaType, configured, supplied string
+		matches                               bool
+	}{
+		{"png MIME", "image", "png", "image/png", true},
+		{"png short", "image", "image/png", "png", true},
+		{"jpeg MIME", "image", "jpg", "image/jpeg", true},
+		{"jpeg short", "image", "image/jpeg", "jpeg", true},
+		{"jpg short", "image", "image/jpeg", "jpg", true},
+		{"webp MIME", "image", "webp", "image/webp", true},
+		{"webp short", "image", "image/webp", "webp", true},
+		{"case whitespace parameters", "image", " PNG ", " IMAGE/PNG; charset=binary ", true},
+		{"unsupported MIME", "image", "png", "image/heic", false},
+		{"unsupported short", "image", "image/png", "heic", false},
+		{"wrong MIME family", "image", "png", "video/png", false},
+		{"wrong configured family", "image", "video/png", "image/png", false},
+		{"same wrong MIME family", "image", "video/png", "video/png", false},
+		{"wrong media for known short", "video", "png", "png", false},
+		{"empty format", "image", "", "", false},
+		{"mp4 MIME", "video", "mp4", "video/mp4", true},
+		{"mp4 short", "video", "video/mp4", "mp4", true},
+		{"mov MIME", "video", "mov", "video/quicktime", true},
+		{"mov short", "video", "video/quicktime", "mov", true},
+		{"mp3 MIME", "audio", "mp3", "audio/mpeg", true},
+		{"mp3 short", "audio", "audio/mpeg", "mp3", true},
+		{"m4a MIME", "audio", "m4a", "audio/mp4", true},
+		{"m4a alias", "audio", "audio/x-m4a", "m4a", true},
+		{"wav MIME", "audio", "wav", "audio/x-wav", true},
+		{"wav short", "audio", "audio/wav", "wav", true},
+		{"audio mp4 is not video mp4", "audio", "mp4", "audio/mp4", false},
+		{"video mp4 is not audio mp4", "video", "audio/mp4", "video/mp4", false},
+		{"unknown MIME exact", "video", "video/custom", "video/custom", true},
+		{"unknown subtype is not alias", "video", "custom", "video/custom", false},
+	}
+	for _, role := range []InputRole{InputRoleFirstFrame, InputRoleReferenceImage} {
+		for _, tc := range cases {
+			t.Run(string(role)+"/"+tc.name, func(t *testing.T) {
+				taskType := TaskTypeImageToVideo
+				if role == InputRoleReferenceImage {
+					taskType = TaskTypeReferenceToVideo
+				}
+				capability := Capability{SchemaVersion: 1, ProviderNativeMaxN: 1, TaskTypes: map[TaskType]TaskCapability{
+					taskType: {
+						Durations: DiscreteIntValues(5), Resolutions: []Resolution{Resolution720P},
+						AspectRatios: []AspectRatio{AspectRatioAdaptive}, AudioModes: []AudioMode{AudioModeSilent},
+						Inputs: map[InputRole]InputCapability{role: {Required: true, MaxCount: 1, MediaTypes: []string{tc.mediaType}, Formats: []string{tc.configured}}},
+					},
+				}}
+				request := Request{TaskType: taskType, DurationSeconds: 5, Resolution: Resolution720P,
+					AspectRatio: AspectRatioAdaptive, AudioMode: AudioModeSilent, OutputCount: 1,
+					Inputs: []Input{{Role: role, MediaType: tc.mediaType, Format: tc.supplied}}}
+				result := capability.Match(request)
+				if result.Matches != tc.matches {
+					t.Fatalf("Match(%q, %q) = %#v, want matches=%v", tc.configured, tc.supplied, result, tc.matches)
+				}
+				if !tc.matches && (len(result.FieldErrors) != 1 || result.FieldErrors[0].Field != "inputs."+string(role)+".format" || result.FieldErrors[0].Code != "unsupported") {
+					t.Fatalf("format mismatch must retain field error: %#v", result)
+				}
+				request.Inputs[0].MediaType = "application"
+				if result := capability.Match(request); result.Matches || result.FieldErrors[0].Field != "inputs."+string(role)+".media_type" {
+					t.Fatalf("media type mismatch = %#v", result)
+				}
+			})
+		}
 	}
 }
 

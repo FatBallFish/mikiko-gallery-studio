@@ -38,10 +38,11 @@ type Store interface {
 }
 
 type MemoryStore struct {
-	mu           sync.Mutex
-	tasksByID    map[string]domainimagetask.Task
-	publicStats  map[string]*memoryPublicStats
-	interactions map[string]map[int64]*memoryPublicInteraction
+	mu            sync.Mutex
+	tasksByID     map[string]domainimagetask.Task
+	hiddenHistory map[string]bool
+	publicStats   map[string]*memoryPublicStats
+	interactions  map[string]map[int64]*memoryPublicInteraction
 }
 
 func (s *MemoryStore) RepairTerminalPromptTemplates(_ context.Context, limit int) (int, error) {
@@ -292,7 +293,7 @@ func (s *MemoryStore) listByUserProject(userID int64, projectID string) ([]domai
 
 	list := make([]domainimagetask.Task, 0, len(s.tasksByID))
 	for _, task := range s.tasksByID {
-		if task.UserID != userID || (projectID != "" && task.ProjectID != projectID) {
+		if task.UserID != userID || s.hiddenHistory[task.ID] || (projectID != "" && task.ProjectID != projectID) {
 			continue
 		}
 		list = append(list, cloneTask(task))
@@ -812,6 +813,10 @@ func (s *MemoryStore) AcquireNextQueuedTask(_ context.Context, owner string, now
 		task.Status = domainimagetask.StatusRunning
 		task.ProgressStage = domainimagetask.ProgressStageProvider
 		task.ProgressMessage = "正在调用模型生成图片"
+		if task.ArtifactRecovery.EncryptedPayload != "" {
+			task.ProgressStage = domainimagetask.ProgressStagePersisting
+			task.ProgressMessage = "正在恢复并保存生成结果"
+		}
 		task.LeaseOwner = owner
 		expiresAt := now.Add(leaseTTL)
 		task.LeaseExpiresAt = &expiresAt

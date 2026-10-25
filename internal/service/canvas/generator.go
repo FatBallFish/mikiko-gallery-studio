@@ -5,7 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"regexp"
 	"strings"
+	"time"
+
+	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
+	mediaassetservice "github.com/fatballfish/pic-gallery/internal/service/mediaasset"
+	"github.com/fatballfish/pic-gallery/pkg/errs"
 
 	"github.com/google/uuid"
 
@@ -66,7 +73,17 @@ type VideoTaskPort interface {
 	Cancel(context.Context, int64, uuid.UUID, string) (videotaskservice.Task, error)
 }
 
+type CanvasMediaAssets interface {
+	GetAsset(context.Context, int64, uuid.UUID) (mediaassetservice.Asset, error)
+}
+
+type ImageMetadataPreflight interface {
+	PreflightMetadata(context.Context, domainimagetask.CreateRequest) (domainbilling.EstimateResult, error)
+}
+
 type TaskGenerator struct {
+	references     *assetservice.Service
+	media          CanvasMediaAssets
 	images         ImageTaskPort
 	imageEstimator ImageEstimator
 	videos         VideoTaskPort
@@ -76,15 +93,77 @@ func NewTaskGenerator(images ImageTaskPort, imageEstimator ImageEstimator, video
 	return &TaskGenerator{images: images, imageEstimator: imageEstimator, videos: videos}
 }
 
+// SetReferenceAssets configures canonical media conversion before serving requests.
+func (g *TaskGenerator) SetReferenceAssets(refs *assetservice.Service, media ...CanvasMediaAssets) {
+	g.references = refs
+	if len(media) > 0 {
+		g.media = media[0]
+	}
+}
+
+// PrepareCanvasImageRequest maps canonical resources and named bindings to durable
+// reference aliases. Ownership and readiness are checked for both quote and create.
+func (g *TaskGenerator) PrepareCanvasImageRequest(ctx context.Context, submission GenerationSubmission) (domainimagetask.CreateRequest, error) {
+	request, err := imageRequest(submission)
+	if err != nil {
+		return request, err
+	}
+	aliases := make(map[string]string, len(request.ReferenceAssetIDs))
+	for i, id := range request.ReferenceAssetIDs {
+		if g.references == nil {
+			return request, errs.WithDetails(errs.New(503, "IMAGE_REFERENCE_UNAVAILABLE", "canvas reference assets are unavailable"), map[string]any{"field": "reference_asset_ids", "index": i})
+		}
+		alias, loadErr := g.references.GetMetadata(ctx, submission.UserID, id)
+		if loadErr != nil {
+			var serviceErr *errs.Error
+			if !errors.As(loadErr, &serviceErr) || serviceErr.StatusCode != 404 {
+				return request, canvasReferenceError(loadErr, i)
+			}
+			mediaID, parseErr := uuid.Parse(id)
+			if parseErr != nil || g.media == nil {
+				return request, canvasReferenceError(loadErr, i)
+			}
+			asset, mediaErr := g.media.GetAsset(ctx, submission.UserID, mediaID)
+			if mediaErr != nil {
+				return request, errs.WithDetails(errs.New(404, errs.CodeNotFound, "canvas reference media asset not found"), map[string]any{"field": "reference_asset_ids", "index": i})
+			}
+			alias, loadErr = g.references.ImportCanvasMediaAlias(ctx, submission.UserID, asset)
+			if loadErr != nil {
+				return request, canvasReferenceError(loadErr, i)
+			}
+		}
+		aliases[id] = alias.ID
+		request.ReferenceAssetIDs[i] = alias.ID
+	}
+	for i := range request.ReferenceBindings {
+		request.ReferenceBindings[i].AssetID = aliases[request.ReferenceBindings[i].AssetID]
+	}
+	return request, nil
+}
+
 func (g *TaskGenerator) Estimate(ctx context.Context, submission GenerationSubmission) (Estimate, error) {
+	start := time.Now()
+	defer func() {
+		slog.InfoContext(ctx, "canvas generation phase", "phase", "estimate", "kind", submission.Kind, "duration_ms", time.Since(start).Milliseconds())
+	}()
 	switch submission.Kind {
 	case TaskKindImage:
-		if g == nil || g.imageEstimator == nil {
+		if g == nil {
 			return Estimate{}, errors.New("canvas image estimates are unavailable")
 		}
-		request, err := imageRequest(submission)
+		request, err := g.PrepareCanvasImageRequest(ctx, submission)
 		if err != nil {
 			return Estimate{}, err
+		}
+		if preflight, ok := g.images.(ImageMetadataPreflight); ok {
+			result, err := preflight.PreflightMetadata(ctx, request)
+			if err != nil {
+				return Estimate{}, err
+			}
+			return Estimate{Points: result.EstimatedPoints, Detail: map[string]any{"charged_points": result.ChargedPoints, "base_resolution": result.BaseResolution, "resolved_size": result.ResolvedSize, "capability_version": result.CapabilityVersion}}, nil
+		}
+		if g.imageEstimator == nil {
+			return Estimate{}, errors.New("canvas image estimates are unavailable")
 		}
 		return g.imageEstimator.EstimateImage(ctx, request)
 	case TaskKindVideo:
@@ -111,7 +190,7 @@ func (g *TaskGenerator) Generate(ctx context.Context, submission GenerationSubmi
 		if g == nil || g.images == nil {
 			return GenerationTask{}, errors.New("canvas image generation is unavailable")
 		}
-		request, err := imageRequest(submission)
+		request, err := g.PrepareCanvasImageRequest(ctx, submission)
 		if err != nil {
 			return GenerationTask{}, err
 		}
@@ -158,7 +237,7 @@ func (g *TaskGenerator) Status(ctx context.Context, userID int64, kind TaskKind,
 				assets = append(assets, id)
 			}
 		}
-		return TaskStatus{Status: imageRunStatus(task.Status), ResultAssetIDs: assets, ErrorCode: task.ErrorCode, ErrorMessage: task.ErrorMessage}, nil
+		return TaskStatus{ProgressStage: task.ProgressStage, ProgressMessage: task.ProgressMessage, Status: imageRunStatus(task.Status), ResultAssetIDs: assets, ErrorCode: task.ErrorCode, ErrorMessage: task.ErrorMessage}, nil
 	case TaskKindVideo:
 		if g == nil || g.videos == nil {
 			return TaskStatus{}, errors.New("canvas video generation is unavailable")
@@ -173,7 +252,7 @@ func (g *TaskGenerator) Status(ctx context.Context, userID int64, kind TaskKind,
 				assets = append(assets, *item.ResultAssetID)
 			}
 		}
-		return TaskStatus{Status: videoRunStatus(task.Status), ResultAssetIDs: assets}, nil
+		return TaskStatus{ProgressStage: task.ProgressStage, ProgressMessage: task.ProgressMessage, Status: videoRunStatus(task.Status), ResultAssetIDs: assets}, nil
 	default:
 		return TaskStatus{}, fmt.Errorf("unsupported canvas task kind %q", kind)
 	}
@@ -356,6 +435,26 @@ type selectedPrompt struct {
 }
 
 func promptFromInputs(submission GenerationSubmission) (selectedPrompt, error) {
+	if domaincanvas.IsIntegrated(submission.Node.Type) {
+		var draft struct {
+			PromptTemplate string            `json:"prompt_template"`
+			Prompt         string            `json:"prompt"`
+			Variables      map[string]string `json:"variables"`
+		}
+		if err := json.Unmarshal(generationDraft(submission.Node.Payload), &draft); err != nil {
+			return selectedPrompt{}, fmt.Errorf("decode inline prompt: %w", err)
+		}
+		template := draft.PromptTemplate
+		if template == "" {
+			template = draft.Prompt
+		}
+		template = regexp.MustCompile(`\$\{([^{}]+)\}`).ReplaceAllStringFunc(template, func(value string) string { return "{{$" + value[2:len(value)-1] + "}}" })
+		parsed, err := prompttemplate.Parse(template, prompttemplate.DefaultLimits())
+		if err != nil {
+			return selectedPrompt{}, fmt.Errorf("parse inline prompt: %w", err)
+		}
+		return selectedPrompt{Template: parsed.Canonical, Variables: draft.Variables, VariableNames: parsed.VariableNames, ReferenceNames: parsed.ReferenceNames}, nil
+	}
 	var envelope struct {
 		ActivePromptNodeID string `json:"active_prompt_node_id"`
 	}
@@ -423,7 +522,7 @@ func promptReferenceBindings(names []string, inputs []GenerationInput) ([]prompt
 	assetsByName := make(map[string]string)
 	for _, input := range inputs {
 		switch input.Role {
-		case domaincanvas.InputRoleReference, domaincanvas.InputRoleFirstFrame, domaincanvas.InputRoleLastFrame, domaincanvas.InputRoleReferenceImage:
+		case domaincanvas.InputRoleReference, domaincanvas.InputRoleFirstFrame, domaincanvas.InputRoleLastFrame, domaincanvas.InputRoleReferenceImage, domaincanvas.InputRoleReferenceVideo, domaincanvas.InputRoleReferenceAudio:
 		default:
 			continue
 		}
@@ -489,3 +588,12 @@ func videoRunStatus(status domainvideo.TaskStatus) RunStatus {
 
 var _ ImageTaskPort = (*imagetaskservice.Service)(nil)
 var _ VideoTaskPort = (*videotaskservice.Service)(nil)
+
+func canvasReferenceError(err error, index int) error {
+	var typed *errs.Error
+	if errors.As(err, &typed) {
+		copy := *typed
+		return errs.WithDetails(&copy, map[string]any{"field": "reference_asset_ids", "index": index})
+	}
+	return fmt.Errorf("canvas reference_asset_ids[%d]: %w", index, err)
+}

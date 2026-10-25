@@ -1,3 +1,6 @@
+import { canCreateCanvasNode, canCopyCanvasNode, canEditCanvasNode, isCanvasGenerationNode, isCanvasV2MediaNode, canvasNodeMediaKind } from './canvasNodeKinds'
+import { canvasMediaSize, resizeCanvasMediaSize } from './canvasMediaSizing'
+import { parsePromptTemplate } from '../../../pages/promptTemplateParser'
 import type { CanvasClipboard, CanvasCommandState, CanvasDocument, CanvasEdge, CanvasGroup, CanvasNode, CanvasNodeType, CanvasPoint, CanvasResult } from './types'
 
 const HISTORY_LIMIT = 100
@@ -7,12 +10,13 @@ export function createCanvasState(document: CanvasDocument, revision: number): C
 }
 
 export function addCanvasNode(state: CanvasCommandState, node: CanvasNode) {
+  if (!canCreateCanvasNode(node.type)) return state
   if (state.present.nodes.some((item) => item.id === node.id)) throw new Error('duplicate_node')
   return commit(state, { ...state.present, nodes: [...state.present.nodes, cloneNode(node)] })
 }
 
 export function moveCanvasNodes(state: CanvasCommandState, nodeIDs: string[], delta: { x: number; y: number }) {
-  const selected = new Set(nodeIDs)
+  const selected = new Set(state.present.nodes.filter((node) => nodeIDs.includes(node.id) && canEditCanvasNode(node)).map((node) => node.id))
   if (!selected.size || (!delta.x && !delta.y)) return state
   return commit(state, {
     ...state.present,
@@ -25,9 +29,9 @@ export function moveCanvasNodes(state: CanvasCommandState, nodeIDs: string[], de
 
 export function resizeCanvasNode(state: CanvasCommandState, nodeID: string, size: { width: number; height: number }) {
   const current = state.present.nodes.find((node) => node.id === nodeID)
-  if (!current) return state
+  if (!current || !canEditCanvasNode(current)) return state
   const minimum = canvasNodeMinimumSize(current.type)
-  const nextSize = {
+  const nextSize = isCanvasV2MediaNode(current) && current.asset_id ? resizeCanvasMediaSize(current.size, size, canvasNodeAspectRatio(current)) : {
     width: Math.max(minimum.width, Number.isFinite(size.width) ? size.width : current.size.width),
     height: Math.max(minimum.height, Number.isFinite(size.height) ? size.height : current.size.height),
   }
@@ -39,7 +43,7 @@ export function resizeCanvasNode(state: CanvasCommandState, nodeID: string, size
 }
 
 export function canvasNodeMinimumSize(nodeType: CanvasNodeType) {
-  if (nodeType === 'image' || nodeType === 'video') return { width: 220, height: 160 }
+  if (nodeType === 'image_v2' || nodeType === 'video_v2' || nodeType === 'image' || nodeType === 'video') return { width: 220, height: 160 }
   if (nodeType === 'audio') return { width: 240, height: 120 }
   if (nodeType === 'image_generation' || nodeType === 'video_generation') return { width: 280, height: 200 }
   return { width: 220, height: 140 }
@@ -150,9 +154,11 @@ export function canvasImageParameterErrors(
 
 export function updateCanvasNode(state: CanvasCommandState, nodeID: string, update: (node: CanvasNode) => CanvasNode) {
   const current = state.present.nodes.find((node) => node.id === nodeID)
-  if (!current) return state
+  if (!current || !canEditCanvasNode(current)) return state
   const next = update(cloneNode(current))
   if (next.id !== nodeID) throw new Error('node_id_immutable')
+  if (next.type !== current.type) throw new Error('node_type_immutable')
+  if (current.payload?.name && next.payload?.name !== current.payload.name) next.payload = { ...next.payload, name: current.payload.name }
   return commit(state, { ...state.present, nodes: state.present.nodes.map((node) => node.id === nodeID ? cloneNode(next) : node) })
 }
 
@@ -172,6 +178,7 @@ export function removeCanvasNodes(state: CanvasCommandState, nodeIDs: string[]) 
 
 export function createCanvasGroup(state: CanvasCommandState, group: CanvasGroup) {
   if (state.present.groups?.some((item) => item.id === group.id)) throw new Error('duplicate_group')
+  if (group.node_ids.some((id) => state.present.nodes.some((node) => node.id === id && !canEditCanvasNode(node)))) return state
   const nodeIDs = new Set(state.present.nodes.map((node) => node.id))
   if (!group.node_ids.every((id) => nodeIDs.has(id))) throw new Error('node_not_found')
   return commit(state, { ...state.present, groups: [...(state.present.groups ?? []), { ...group, node_ids: [...group.node_ids] }] })
@@ -179,7 +186,7 @@ export function createCanvasGroup(state: CanvasCommandState, group: CanvasGroup)
 
 export function updateCanvasGroup(state: CanvasCommandState, groupID: string, patch: Partial<Pick<CanvasGroup, 'label' | 'background'>>) {
   const current = state.present.groups?.find((group) => group.id === groupID)
-  if (!current) return state
+  if (!current || current.node_ids.some((id) => state.present.nodes.some((node) => node.id === id && !canEditCanvasNode(node)))) return state
   return commit(state, {
     ...state.present,
     groups: (state.present.groups ?? []).map((group) => group.id === groupID ? { ...group, ...patch } : group),
@@ -188,7 +195,7 @@ export function updateCanvasGroup(state: CanvasCommandState, groupID: string, pa
 
 export function disbandCanvasGroups(state: CanvasCommandState, groupIDs: string[]) {
   const removed = new Set(groupIDs)
-  const groups = (state.present.groups ?? []).filter((group) => !removed.has(group.id))
+  const groups = (state.present.groups ?? []).filter((group) => !removed.has(group.id) || group.node_ids.some((id) => state.present.nodes.some((node) => node.id === id && !canEditCanvasNode(node))))
   if (groups.length === (state.present.groups ?? []).length) return state
   return commit(state, { ...state.present, groups })
 }
@@ -224,7 +231,7 @@ export function removeCanvasEdges(state: CanvasCommandState, edgeIDs: string[]) 
 }
 
 export function copyCanvasSelection(document: CanvasDocument, nodeIDs: string[]): CanvasClipboard {
-  const selected = new Set(nodeIDs)
+  const selected = new Set(document.nodes.filter((node) => nodeIDs.includes(node.id) && canCopyCanvasNode(node)).map((node) => node.id))
   return {
     nodes: document.nodes.filter((node) => selected.has(node.id)).map(cloneNode),
     edges: document.edges.filter((edge) => selected.has(edge.source) && selected.has(edge.target)).map((edge) => ({ ...edge })),
@@ -232,16 +239,26 @@ export function copyCanvasSelection(document: CanvasDocument, nodeIDs: string[])
 }
 
 export function pasteCanvasSelection(state: CanvasCommandState, clipboard: CanvasClipboard, offset: CanvasPoint, idFor: (sourceID: string) => string) {
+  clipboard = copyCanvasSelection({ ...state.present, nodes: clipboard.nodes, edges: clipboard.edges }, clipboard.nodes.map((node) => node.id))
   if (!clipboard.nodes.length) return state
   const nodeIDs = new Map(clipboard.nodes.map((node) => [node.id, idFor(node.id)]))
   const existing = new Set(state.present.nodes.map((node) => node.id))
   if (Array.from(nodeIDs.values()).some((id) => existing.has(id)) || new Set(nodeIDs.values()).size !== nodeIDs.size) throw new Error('duplicate_node')
   const nodes = clipboard.nodes.map((node) => ({
     ...cloneNode(node), id: nodeIDs.get(node.id)!, position: { x: node.position.x + offset.x, y: node.position.y + offset.y },
+    payload: isCanvasV2MediaNode(node) ? { ...structuredClone(node.payload ?? {}), name: `resource_${nodeIDs.get(node.id)!.replace(/[^a-zA-Z0-9_]/g, '_')}` } : structuredClone(node.payload),
   }))
   const edges = clipboard.edges.map((edge) => ({
     ...edge, id: idFor(edge.id), source: nodeIDs.get(edge.source)!, target: nodeIDs.get(edge.target)!,
   }))
+  const aliases = new Map(clipboard.nodes.filter((node) => isCanvasV2MediaNode(node) && node.payload?.name).map((node) => [String(node.payload!.name), String(nodes.find((item) => item.id === nodeIDs.get(node.id))?.payload?.name)]))
+  nodes.forEach((node) => {
+    if (!isCanvasV2MediaNode(node)) return
+    const draft = asCanvasObject(node.payload?.draft)
+    if (typeof draft.prompt_template !== 'string') return
+    const prompt_template = draft.prompt_template.replace(/\{\{@([^{}]+)\}\}/g, (match, name: string) => aliases.has(name) ? `{{@${aliases.get(name)}}}` : match)
+    node.payload = { ...node.payload, draft: { ...draft, prompt_template } }
+  })
   return commit(state, { ...state.present, nodes: [...state.present.nodes, ...nodes], edges: [...state.present.edges, ...edges] })
 }
 
@@ -259,7 +276,8 @@ export function inspectCanvasConnection(document: CanvasDocument, edge: CanvasEd
   const source = document.nodes.find((node) => node.id === edge.source)
   const target = document.nodes.find((node) => node.id === edge.target)
   if (!source || !target) return 'node_not_found'
-  if (!isLegalConnection(source.type, target.type, edge.input_role)) return 'illegal_connection'
+  if (!isLegalConnection(source, target, edge.input_role)) return 'illegal_connection'
+  if (document.edges.some((item) => item.target === edge.target && item.input_role === edge.input_role && (item.source === edge.source || document.nodes.find((node) => node.id === item.source)?.asset_id === source.asset_id))) return 'input_role_conflict'
   if (edge.input_role === 'result' && target.asset_id && !document.edges.some((item) => item.source === edge.source && item.target === edge.target && item.input_role === 'result')) {
     return 'output_slot_occupied'
   }
@@ -272,18 +290,15 @@ export function inspectCanvasConnection(document: CanvasDocument, edge: CanvasEd
 export function compatibleCanvasTargets(_document: CanvasDocument, sourceID: string): Array<{ type: CanvasNodeType; role: CanvasEdge['input_role'] }> {
   const source = _document.nodes.find((node) => node.id === sourceID)
   if (!source) return []
-  if (source.type === 'prompt') return [
-    { type: 'image_generation', role: 'prompt' },
-    { type: 'video_generation', role: 'prompt' },
+  if (!source.asset_id || !canEditCanvasNode(source)) return []
+  if (source.type === 'image_v2') return [
+    { type: 'image_v2', role: 'reference' },
+    { type: 'video_v2', role: 'first_frame' },
+    { type: 'video_v2', role: 'last_frame' },
+    { type: 'video_v2', role: 'reference_image' },
   ]
-  if (source.type === 'image') return [
-    { type: 'image_generation', role: 'reference' },
-    { type: 'video_generation', role: 'first_frame' },
-    { type: 'video_generation', role: 'reference_image' },
-  ]
-  if (source.type === 'video') return [{ type: 'video_generation', role: 'reference_video' }]
-  if (source.type === 'audio') return [{ type: 'video_generation', role: 'reference_audio' }]
-  if (source.type === 'image_generation') return [{ type: 'image', role: 'result' }]
+  if (source.type === 'video_v2') return [{ type: 'video_v2', role: 'reference_video' }]
+  if (source.type === 'audio') return [{ type: 'video_v2', role: 'reference_audio' }]
   return []
 }
 
@@ -300,7 +315,7 @@ export type CanvasEstimateState = {
 
 export function canvasGenerationEstimateSignature(document: CanvasDocument, nodeID: string) {
   const node = document.nodes.find((item) => item.id === nodeID)
-  if (!node || (node.type !== 'image_generation' && node.type !== 'video_generation')) return ''
+  if (!node || !isCanvasGenerationNode(node)) return ''
   const nodeByID = new Map(document.nodes.map((item) => [item.id, item]))
   const inputs = document.edges
     .filter((edge) => edge.target === nodeID && edge.input_role !== 'result')
@@ -310,12 +325,12 @@ export function canvasGenerationEstimateSignature(document: CanvasDocument, node
       edge: { id: edge.id, source: edge.source, role: edge.input_role, ordinal: edge.ordinal ?? 0 },
       source: source ? { id: source.id, type: source.type, assetID: source.asset_id ?? '', payload: source.payload ?? {} } : null,
     }))
-  return JSON.stringify({ node: { id: node.id, type: node.type, payload: node.payload ?? {} }, inputs })
+  return JSON.stringify({ node: { id: node.id, type: node.type, draft: estimateDraft(node) }, inputs })
 }
 
 export function canvasImageTaskType(document: CanvasDocument, nodeID: string): 'text_to_image' | 'image_edit' {
   const nodeByID = new Map(document.nodes.map((node) => [node.id, node]))
-  return document.edges.some((edge) => edge.target === nodeID && edge.input_role === 'reference' && Boolean(nodeByID.get(edge.source)?.asset_id)) ? 'image_edit' : 'text_to_image'
+  return document.edges.some((edge) => edge.target === nodeID && edge.input_role === 'reference' && nodeByID.get(edge.source)?.type === 'image_v2' && Boolean(nodeByID.get(edge.source)?.asset_id)) ? 'image_edit' : 'text_to_image'
 }
 
 export function prepareCanvasEstimate(current: CanvasEstimateState | undefined, signature: string, eligible: boolean, requestID: number) {
@@ -340,15 +355,16 @@ export function rejectCanvasEstimate(current: CanvasEstimateState | undefined, s
 }
 
 export function canvasPromptResourceCandidates(document: CanvasDocument, promptNodeID: string): CanvasPromptResourceCandidate[] {
-  const generationIDs = new Set(document.edges.filter((edge) => edge.source === promptNodeID && edge.input_role === 'prompt')
+  const direct = document.nodes.find((node) => node.id === promptNodeID && isCanvasV2MediaNode(node))
+  const generationIDs = direct ? new Set([direct.id]) : new Set(document.edges.filter((edge) => edge.source === promptNodeID && edge.input_role === 'prompt')
     .map((edge) => document.nodes.find((node) => node.id === edge.target))
     .filter((node): node is CanvasNode => node?.type === 'image_generation')
     .map((node) => node.id))
   const nodeByID = new Map(document.nodes.map((node) => [node.id, node]))
   const seen = new Set<string>()
-  const candidates = document.edges.filter((edge) => generationIDs.has(edge.target) && edge.input_role === 'reference')
+  const candidates = document.edges.filter((edge) => generationIDs.has(edge.target) && ['reference', 'first_frame', 'last_frame', 'reference_image', 'reference_video', 'reference_audio'].includes(edge.input_role))
     .map((edge, edgeIndex) => ({ edge, edgeIndex, node: nodeByID.get(edge.source) }))
-    .filter((item): item is { edge: CanvasEdge; edgeIndex: number; node: CanvasNode } => item.node?.type === 'image' && Boolean(item.node.asset_id))
+    .filter((item): item is { edge: CanvasEdge; edgeIndex: number; node: CanvasNode } => Boolean(item.node && (isCanvasV2MediaNode(item.node) || item.node.type === 'image' || item.node.type === 'audio') && item.node.asset_id))
     .sort((a, b) => (a.edge.ordinal ?? a.edgeIndex) - (b.edge.ordinal ?? b.edgeIndex))
     .flatMap(({ node }) => {
       if (seen.has(node.id)) return []
@@ -367,6 +383,11 @@ export type CanvasPromptOptimizationTarget = { mediaType?: 'image' | 'video'; ro
 // selects its route model's guide, an image node the image prompt, and a
 // prompt node with no generation downstream stays untyped.
 export function canvasPromptOptimizationTarget(document: CanvasDocument, promptNodeID: string): CanvasPromptOptimizationTarget {
+  const direct = document.nodes.find((node) => node.id === promptNodeID && isCanvasV2MediaNode(node))
+  if (direct) {
+    const draft = asCanvasObject(direct.payload?.draft)
+    return { mediaType: direct.type === 'video_v2' ? 'video' : 'image', routeModelCode: String(draft.route_model_code ?? '').trim() || undefined }
+  }
   const targets = document.edges.filter((edge) => edge.source === promptNodeID && edge.input_role === 'prompt')
     .map((edge) => document.nodes.find((node) => node.id === edge.target))
     .filter((node): node is CanvasNode => node?.type === 'image_generation' || node?.type === 'video_generation')
@@ -392,6 +413,25 @@ export function selectCanvasNodesInRect(nodes: CanvasNode[], rect: { x: number; 
 export function attachCanvasResults(state: CanvasCommandState, runID: string, sourceNodeID: string, results: CanvasResult[]) {
   const source = state.present.nodes.find((node) => node.id === sourceNodeID)
   if (!source) return state
+  if (isCanvasV2MediaNode(source)) {
+    const kind = canvasNodeMediaKind(source)
+    if (results.some((result) => result.media_type !== kind)) throw new Error('result_media_mismatch')
+    let nodes = state.present.nodes
+    results.forEach((result, index) => {
+      if (nodes.some((node) => node.asset_id === result.asset_id && (node.id === sourceNodeID || node.id === stableResultNodeID(runID, result.asset_id)))) return
+      const payload = { width: result.width, height: result.height, name: `resource_${stableResultNodeID(runID, result.asset_id).slice(7)}`, run_id: runID }
+      const size = canvasMediaSize(result.width ?? source.size.width, result.height ?? source.size.height)
+      if (index === 0 && source.asset_id) throw new Error('output_slot_occupied')
+      if (index === 0 && !source.asset_id) {
+        nodes = nodes.map((node) => node.id === sourceNodeID ? { ...node, asset_id: result.asset_id, payload: { ...node.payload, ...payload, name: node.payload?.name ?? payload.name }, size } : node)
+      } else {
+        const id = stableResultNodeID(runID, result.asset_id)
+        if (nodes.some((node) => node.id === id)) throw new Error('result_node_conflict')
+        nodes = [...nodes, { id, type: source.type, asset_id: result.asset_id, payload, size, position: { x: source.position.x + source.size.width + 80, y: source.position.y + index * 280 } }]
+      }
+    })
+    return nodes === state.present.nodes ? state : commit(state, { ...state.present, nodes })
+  }
   let nodes = state.present.nodes
   let edges = state.present.edges
   results.forEach((result, index) => {
@@ -446,17 +486,15 @@ function cloneDocument(document: CanvasDocument): CanvasDocument {
 }
 
 function cloneNode(node: CanvasNode): CanvasNode {
-  return { ...node, position: { ...node.position }, size: { ...node.size }, payload: node.payload ? { ...node.payload } : undefined }
+  return { ...node, position: { ...node.position }, size: { ...node.size }, payload: node.payload ? structuredClone(node.payload) : undefined }
 }
 
-function isLegalConnection(source: CanvasNodeType, target: CanvasNodeType, role: CanvasEdge['input_role']) {
-  if (source === 'prompt' && (target === 'image_generation' || target === 'video_generation')) return role === 'prompt'
-  if (source === 'image' && target === 'image_generation') return role === 'reference'
-  if (source === 'image' && target === 'video_generation') return role === 'first_frame' || role === 'last_frame' || role === 'reference_image'
-  if (source === 'video' && target === 'video_generation') return role === 'reference_video'
-  if (source === 'audio' && target === 'video_generation') return role === 'reference_audio'
-  if ((source === 'image_generation' && target === 'image') || (source === 'video_generation' && target === 'video')) return role === 'result'
-  return false
+function isLegalConnection(source: CanvasNode, target: CanvasNode, role: CanvasEdge['input_role']) {
+  if (!source.asset_id || !canEditCanvasNode(source) || !isCanvasGenerationNode(target)) return false
+  if (source.type === 'image_v2' && target.type === 'image_v2') return role === 'reference'
+  if (source.type === 'image_v2' && target.type === 'video_v2') return ['first_frame', 'last_frame', 'reference_image'].includes(role)
+  if (source.type === 'video_v2' && target.type === 'video_v2') return role === 'reference_video'
+  return source.type === 'audio' && target.type === 'video_v2' && role === 'reference_audio'
 }
 
 function hasDirectedCycle(document: CanvasDocument) {
@@ -484,4 +522,57 @@ function stableResultNodeID(runID: string, assetID: string) {
     hash = Math.imul(hash, 16777619)
   }
   return `result-${(hash >>> 0).toString(16).padStart(8, '0')}`
+}
+
+function asCanvasObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+export function canvasNodeAspectRatio(node: CanvasNode): number {
+  const width = Number(node.payload?.width)
+  const height = Number(node.payload?.height)
+  return width > 0 && height > 0 && Number.isFinite(width / height) ? width / height : node.size.width / node.size.height
+}
+
+export function canvasInlinePromptTemplate(value: string) {
+  return value.replace(/(^|[^\\])\$\{([^{}]+)\}/g, (_match, prefix: string, name: string) => `${prefix}{{$${name}}}`)
+}
+
+export function canvasVideoTaskType(document: CanvasDocument, nodeID: string): 'text_to_video' | 'image_to_video' | 'first_last_frame_to_video' | 'reference_to_video' | 'video_edit' | 'video_extend' {
+  const node = document.nodes.find((item) => item.id === nodeID)
+  const draft = asCanvasObject(node?.payload?.draft)
+  const roles = document.edges.filter((edge) => edge.target === nodeID && document.nodes.some((source) => source.id === edge.source && source.asset_id)).map((edge) => edge.input_role)
+  if (draft.task_type === 'video_edit' || draft.task_type === 'video_extend') return draft.task_type
+  if (roles.includes('reference_image') || roles.includes('reference_video') || roles.includes('reference_audio')) return 'reference_to_video'
+  if (roles.includes('last_frame')) return 'first_last_frame_to_video'
+  if (roles.includes('first_frame')) return 'image_to_video'
+  return 'text_to_video'
+}
+
+/** Structural eligibility; callers additionally validate model capabilities and active runs. */
+export function canvasGenerationEstimateEligible(document: CanvasDocument, nodeID: string): boolean {
+  const node = document.nodes.find((item) => item.id === nodeID)
+  if (!node || !isCanvasGenerationNode(node)) return false
+  const draft = asCanvasObject(node.payload?.draft)
+  const prompt = canvasInlinePromptTemplate(String(draft.prompt_template ?? ''))
+  const parsed = parsePromptTemplate(prompt)
+  if (!prompt.trim() || parsed.error || !String(draft.route_model_code ?? draft.abstract_model ?? '').trim()) return false
+  const variables = asCanvasObject(draft.variables)
+  if (parsed.variableNames.some((name) => !String(variables[name] ?? '').trim())) return false
+  const inputs = document.edges.filter((edge) => edge.target === nodeID)
+  if (inputs.some((edge) => inspectCanvasConnection({ ...document, edges: document.edges.filter((item) => item !== edge) }, edge))) return false
+  const resources = canvasPromptResourceCandidates(document, nodeID)
+  if (parsed.referenceNames.some((name) => resources.filter((resource) => resource.name === name).length !== 1)) return false
+  if (node.type === 'video_v2') {
+    const task = canvasVideoTaskType(document, nodeID)
+    if ((task === 'image_to_video' || task === 'first_last_frame_to_video') && !inputs.some((edge) => edge.input_role === 'first_frame')) return false
+    if (task === 'first_last_frame_to_video' && !inputs.some((edge) => edge.input_role === 'last_frame')) return false
+    if ((task === 'video_edit' || task === 'video_extend') && !inputs.some((edge) => edge.input_role === 'reference_video')) return false
+  }
+  return true
+}
+
+function estimateDraft(node: CanvasNode) {
+  const { quote_token: _quote, ...draft } = asCanvasObject(node.payload?.draft)
+  return draft
 }

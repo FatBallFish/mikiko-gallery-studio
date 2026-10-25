@@ -4,15 +4,16 @@ export function createCanvasRemoteSaveScheduler(save: () => Promise<unknown>, de
   let inFlight: Promise<void> | null = null
 
   function run(): Promise<void> {
-    if (timer) clearTimeout(timer)
+    if (timer !== null) clearTimeout(timer)
     timer = null
     if (!inFlight && pending) {
-      inFlight = (async () => {
+      // Install the shared promise before invoking save, including synchronous callbacks.
+      inFlight = Promise.resolve().then(async () => {
         while (pending) {
           pending = false
-          await save()
+          if (await save() === false) { pending = false; break }
         }
-      })().finally(() => { inFlight = null })
+      }).finally(() => { inFlight = null })
     }
     return inFlight ?? Promise.resolve()
   }
@@ -20,16 +21,15 @@ export function createCanvasRemoteSaveScheduler(save: () => Promise<unknown>, de
   return {
     schedule() {
       pending = true
-      if (timer) clearTimeout(timer)
-      timer = setTimeout(() => { void run() }, delay)
+      if (timer !== null) clearTimeout(timer)
+      timer = setTimeout(() => { void run().catch(() => undefined) }, delay)
     },
-    async flush() {
-      return run()
-    },
+    flush: run,
     cancel() {
-      if (timer) clearTimeout(timer)
+      if (timer !== null) clearTimeout(timer)
       timer = null
       pending = false
+      // The active request remains owned by this scheduler until it settles.
     },
   }
 }

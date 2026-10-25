@@ -8,6 +8,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/adminuser"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikey"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikeyquotareservation"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/assetgroup"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/auditlog"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/canvasgenerationrun"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clusterchallenge"
@@ -30,6 +31,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelroute"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/oauthrecord"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectdeletionjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectreconcilecheckpoint"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectstorageconfig"
@@ -136,8 +138,12 @@ func init() {
 	apikeyDescSecretCiphertext := apikeyFields[3].Descriptor()
 	// apikey.SecretCiphertextValidator is a validator for the "secret_ciphertext" field. It is called by the builders before save.
 	apikey.SecretCiphertextValidator = apikeyDescSecretCiphertext.Validators[0].(func(string) error)
+	// apikeyDescScopes is the schema descriptor for scopes field.
+	apikeyDescScopes := apikeyFields[4].Descriptor()
+	// apikey.DefaultScopes holds the default value on creation for the scopes field.
+	apikey.DefaultScopes = apikeyDescScopes.Default.([]string)
 	// apikeyDescName is the schema descriptor for name field.
-	apikeyDescName := apikeyFields[4].Descriptor()
+	apikeyDescName := apikeyFields[5].Descriptor()
 	// apikey.NameValidator is a validator for the "name" field. It is called by the builders before save.
 	apikey.NameValidator = func() func(string) error {
 		validators := apikeyDescName.Validators
@@ -155,31 +161,31 @@ func init() {
 		}
 	}()
 	// apikeyDescStatus is the schema descriptor for status field.
-	apikeyDescStatus := apikeyFields[5].Descriptor()
+	apikeyDescStatus := apikeyFields[6].Descriptor()
 	// apikey.DefaultStatus holds the default value on creation for the status field.
 	apikey.DefaultStatus = apikeyDescStatus.Default.(string)
 	// apikey.StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	apikey.StatusValidator = apikeyDescStatus.Validators[0].(func(string) error)
 	// apikeyDescGroupCode is the schema descriptor for group_code field.
-	apikeyDescGroupCode := apikeyFields[6].Descriptor()
+	apikeyDescGroupCode := apikeyFields[7].Descriptor()
 	// apikey.DefaultGroupCode holds the default value on creation for the group_code field.
 	apikey.DefaultGroupCode = apikeyDescGroupCode.Default.(string)
 	// apikey.GroupCodeValidator is a validator for the "group_code" field. It is called by the builders before save.
 	apikey.GroupCodeValidator = apikeyDescGroupCode.Validators[0].(func(string) error)
 	// apikeyDescTotalQuotaUsedPoints is the schema descriptor for total_quota_used_points field.
-	apikeyDescTotalQuotaUsedPoints := apikeyFields[9].Descriptor()
+	apikeyDescTotalQuotaUsedPoints := apikeyFields[10].Descriptor()
 	// apikey.DefaultTotalQuotaUsedPoints holds the default value on creation for the total_quota_used_points field.
 	apikey.DefaultTotalQuotaUsedPoints = apikeyDescTotalQuotaUsedPoints.Default.(string)
 	// apikeyDescDailyQuotaUsedPoints is the schema descriptor for daily_quota_used_points field.
-	apikeyDescDailyQuotaUsedPoints := apikeyFields[10].Descriptor()
+	apikeyDescDailyQuotaUsedPoints := apikeyFields[11].Descriptor()
 	// apikey.DefaultDailyQuotaUsedPoints holds the default value on creation for the daily_quota_used_points field.
 	apikey.DefaultDailyQuotaUsedPoints = apikeyDescDailyQuotaUsedPoints.Default.(string)
 	// apikeyDescQuotaUsageDay is the schema descriptor for quota_usage_day field.
-	apikeyDescQuotaUsageDay := apikeyFields[11].Descriptor()
+	apikeyDescQuotaUsageDay := apikeyFields[12].Descriptor()
 	// apikey.QuotaUsageDayValidator is a validator for the "quota_usage_day" field. It is called by the builders before save.
 	apikey.QuotaUsageDayValidator = apikeyDescQuotaUsageDay.Validators[0].(func(string) error)
 	// apikeyDescRpmWindowCount is the schema descriptor for rpm_window_count field.
-	apikeyDescRpmWindowCount := apikeyFields[14].Descriptor()
+	apikeyDescRpmWindowCount := apikeyFields[15].Descriptor()
 	// apikey.DefaultRpmWindowCount holds the default value on creation for the rpm_window_count field.
 	apikey.DefaultRpmWindowCount = apikeyDescRpmWindowCount.Default.(int)
 	apikeyquotareservationMixin := schema.APIKeyQuotaReservation{}.Mixin()
@@ -306,6 +312,65 @@ func init() {
 	adminuser.DefaultStatus = adminuserDescStatus.Default.(string)
 	// adminuser.StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	adminuser.StatusValidator = adminuserDescStatus.Validators[0].(func(string) error)
+	assetgroupMixin := schema.AssetGroup{}.Mixin()
+	assetgroupMixinFields0 := assetgroupMixin[0].Fields()
+	_ = assetgroupMixinFields0
+	assetgroupFields := schema.AssetGroup{}.Fields()
+	_ = assetgroupFields
+	// assetgroupDescCreatedAt is the schema descriptor for created_at field.
+	assetgroupDescCreatedAt := assetgroupMixinFields0[0].Descriptor()
+	// assetgroup.DefaultCreatedAt holds the default value on creation for the created_at field.
+	assetgroup.DefaultCreatedAt = assetgroupDescCreatedAt.Default.(func() time.Time)
+	// assetgroupDescUpdatedAt is the schema descriptor for updated_at field.
+	assetgroupDescUpdatedAt := assetgroupMixinFields0[1].Descriptor()
+	// assetgroup.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	assetgroup.DefaultUpdatedAt = assetgroupDescUpdatedAt.Default.(func() time.Time)
+	// assetgroup.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	assetgroup.UpdateDefaultUpdatedAt = assetgroupDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// assetgroupDescName is the schema descriptor for name field.
+	assetgroupDescName := assetgroupFields[3].Descriptor()
+	// assetgroup.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	assetgroup.NameValidator = func() func(string) error {
+		validators := assetgroupDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// assetgroupDescNameKey is the schema descriptor for name_key field.
+	assetgroupDescNameKey := assetgroupFields[4].Descriptor()
+	// assetgroup.NameKeyValidator is a validator for the "name_key" field. It is called by the builders before save.
+	assetgroup.NameKeyValidator = func() func(string) error {
+		validators := assetgroupDescNameKey.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name_key string) error {
+			for _, fn := range fns {
+				if err := fn(name_key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// assetgroupDescVersion is the schema descriptor for version field.
+	assetgroupDescVersion := assetgroupFields[5].Descriptor()
+	// assetgroup.DefaultVersion holds the default value on creation for the version field.
+	assetgroup.DefaultVersion = assetgroupDescVersion.Default.(int64)
+	// assetgroupDescID is the schema descriptor for id field.
+	assetgroupDescID := assetgroupFields[0].Descriptor()
+	// assetgroup.DefaultID holds the default value on creation for the id field.
+	assetgroup.DefaultID = assetgroupDescID.Default.(func() uuid.UUID)
 	auditlogMixin := schema.AuditLog{}.Mixin()
 	auditlogMixinFields0 := auditlogMixin[0].Fields()
 	_ = auditlogMixinFields0
@@ -1728,13 +1793,13 @@ func init() {
 		}
 	}()
 	// mediaassetDescGroupName is the schema descriptor for group_name field.
-	mediaassetDescGroupName := mediaassetFields[6].Descriptor()
+	mediaassetDescGroupName := mediaassetFields[7].Descriptor()
 	// mediaasset.DefaultGroupName holds the default value on creation for the group_name field.
 	mediaasset.DefaultGroupName = mediaassetDescGroupName.Default.(string)
 	// mediaasset.GroupNameValidator is a validator for the "group_name" field. It is called by the builders before save.
 	mediaasset.GroupNameValidator = mediaassetDescGroupName.Validators[0].(func(string) error)
 	// mediaassetDescMediaType is the schema descriptor for media_type field.
-	mediaassetDescMediaType := mediaassetFields[7].Descriptor()
+	mediaassetDescMediaType := mediaassetFields[8].Descriptor()
 	// mediaasset.MediaTypeValidator is a validator for the "media_type" field. It is called by the builders before save.
 	mediaasset.MediaTypeValidator = func() func(string) error {
 		validators := mediaassetDescMediaType.Validators
@@ -1752,7 +1817,7 @@ func init() {
 		}
 	}()
 	// mediaassetDescSourceType is the schema descriptor for source_type field.
-	mediaassetDescSourceType := mediaassetFields[8].Descriptor()
+	mediaassetDescSourceType := mediaassetFields[9].Descriptor()
 	// mediaasset.SourceTypeValidator is a validator for the "source_type" field. It is called by the builders before save.
 	mediaasset.SourceTypeValidator = func() func(string) error {
 		validators := mediaassetDescSourceType.Validators
@@ -1770,31 +1835,35 @@ func init() {
 		}
 	}()
 	// mediaassetDescStatus is the schema descriptor for status field.
-	mediaassetDescStatus := mediaassetFields[9].Descriptor()
+	mediaassetDescStatus := mediaassetFields[10].Descriptor()
 	// mediaasset.DefaultStatus holds the default value on creation for the status field.
 	mediaasset.DefaultStatus = mediaassetDescStatus.Default.(string)
 	// mediaasset.StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	mediaasset.StatusValidator = mediaassetDescStatus.Validators[0].(func(string) error)
 	// mediaassetDescVisibilityStatus is the schema descriptor for visibility_status field.
-	mediaassetDescVisibilityStatus := mediaassetFields[10].Descriptor()
+	mediaassetDescVisibilityStatus := mediaassetFields[11].Descriptor()
 	// mediaasset.DefaultVisibilityStatus holds the default value on creation for the visibility_status field.
 	mediaasset.DefaultVisibilityStatus = mediaassetDescVisibilityStatus.Default.(string)
 	// mediaasset.VisibilityStatusValidator is a validator for the "visibility_status" field. It is called by the builders before save.
 	mediaasset.VisibilityStatusValidator = mediaassetDescVisibilityStatus.Validators[0].(func(string) error)
+	// mediaassetDescPublicationReviewReason is the schema descriptor for publication_review_reason field.
+	mediaassetDescPublicationReviewReason := mediaassetFields[12].Descriptor()
+	// mediaasset.DefaultPublicationReviewReason holds the default value on creation for the publication_review_reason field.
+	mediaasset.DefaultPublicationReviewReason = mediaassetDescPublicationReviewReason.Default.(string)
 	// mediaassetDescStorageDriver is the schema descriptor for storage_driver field.
-	mediaassetDescStorageDriver := mediaassetFields[12].Descriptor()
+	mediaassetDescStorageDriver := mediaassetFields[15].Descriptor()
 	// mediaasset.DefaultStorageDriver holds the default value on creation for the storage_driver field.
 	mediaasset.DefaultStorageDriver = mediaassetDescStorageDriver.Default.(string)
 	// mediaasset.StorageDriverValidator is a validator for the "storage_driver" field. It is called by the builders before save.
 	mediaasset.StorageDriverValidator = mediaassetDescStorageDriver.Validators[0].(func(string) error)
 	// mediaassetDescBucket is the schema descriptor for bucket field.
-	mediaassetDescBucket := mediaassetFields[13].Descriptor()
+	mediaassetDescBucket := mediaassetFields[16].Descriptor()
 	// mediaasset.DefaultBucket holds the default value on creation for the bucket field.
 	mediaasset.DefaultBucket = mediaassetDescBucket.Default.(string)
 	// mediaasset.BucketValidator is a validator for the "bucket" field. It is called by the builders before save.
 	mediaasset.BucketValidator = mediaassetDescBucket.Validators[0].(func(string) error)
 	// mediaassetDescObjectKey is the schema descriptor for object_key field.
-	mediaassetDescObjectKey := mediaassetFields[14].Descriptor()
+	mediaassetDescObjectKey := mediaassetFields[17].Descriptor()
 	// mediaasset.ObjectKeyValidator is a validator for the "object_key" field. It is called by the builders before save.
 	mediaasset.ObjectKeyValidator = func() func(string) error {
 		validators := mediaassetDescObjectKey.Validators
@@ -1812,7 +1881,7 @@ func init() {
 		}
 	}()
 	// mediaassetDescMimeType is the schema descriptor for mime_type field.
-	mediaassetDescMimeType := mediaassetFields[15].Descriptor()
+	mediaassetDescMimeType := mediaassetFields[18].Descriptor()
 	// mediaasset.MimeTypeValidator is a validator for the "mime_type" field. It is called by the builders before save.
 	mediaasset.MimeTypeValidator = func() func(string) error {
 		validators := mediaassetDescMimeType.Validators
@@ -1830,43 +1899,43 @@ func init() {
 		}
 	}()
 	// mediaassetDescContainer is the schema descriptor for container field.
-	mediaassetDescContainer := mediaassetFields[16].Descriptor()
+	mediaassetDescContainer := mediaassetFields[19].Descriptor()
 	// mediaasset.DefaultContainer holds the default value on creation for the container field.
 	mediaasset.DefaultContainer = mediaassetDescContainer.Default.(string)
 	// mediaasset.ContainerValidator is a validator for the "container" field. It is called by the builders before save.
 	mediaasset.ContainerValidator = mediaassetDescContainer.Validators[0].(func(string) error)
 	// mediaassetDescCodec is the schema descriptor for codec field.
-	mediaassetDescCodec := mediaassetFields[17].Descriptor()
+	mediaassetDescCodec := mediaassetFields[20].Descriptor()
 	// mediaasset.DefaultCodec holds the default value on creation for the codec field.
 	mediaasset.DefaultCodec = mediaassetDescCodec.Default.(string)
 	// mediaasset.CodecValidator is a validator for the "codec" field. It is called by the builders before save.
 	mediaasset.CodecValidator = mediaassetDescCodec.Validators[0].(func(string) error)
 	// mediaassetDescFileSizeBytes is the schema descriptor for file_size_bytes field.
-	mediaassetDescFileSizeBytes := mediaassetFields[18].Descriptor()
+	mediaassetDescFileSizeBytes := mediaassetFields[21].Descriptor()
 	// mediaasset.FileSizeBytesValidator is a validator for the "file_size_bytes" field. It is called by the builders before save.
 	mediaasset.FileSizeBytesValidator = mediaassetDescFileSizeBytes.Validators[0].(func(int64) error)
 	// mediaassetDescSha256 is the schema descriptor for sha256 field.
-	mediaassetDescSha256 := mediaassetFields[19].Descriptor()
+	mediaassetDescSha256 := mediaassetFields[22].Descriptor()
 	// mediaasset.DefaultSha256 holds the default value on creation for the sha256 field.
 	mediaasset.DefaultSha256 = mediaassetDescSha256.Default.(string)
 	// mediaasset.Sha256Validator is a validator for the "sha256" field. It is called by the builders before save.
 	mediaasset.Sha256Validator = mediaassetDescSha256.Validators[0].(func(string) error)
 	// mediaassetDescAudioCodec is the schema descriptor for audio_codec field.
-	mediaassetDescAudioCodec := mediaassetFields[24].Descriptor()
+	mediaassetDescAudioCodec := mediaassetFields[27].Descriptor()
 	// mediaasset.DefaultAudioCodec holds the default value on creation for the audio_codec field.
 	mediaasset.DefaultAudioCodec = mediaassetDescAudioCodec.Default.(string)
 	// mediaasset.AudioCodecValidator is a validator for the "audio_codec" field. It is called by the builders before save.
 	mediaasset.AudioCodecValidator = mediaassetDescAudioCodec.Validators[0].(func(string) error)
 	// mediaassetDescSourceTaskKind is the schema descriptor for source_task_kind field.
-	mediaassetDescSourceTaskKind := mediaassetFields[28].Descriptor()
+	mediaassetDescSourceTaskKind := mediaassetFields[31].Descriptor()
 	// mediaasset.SourceTaskKindValidator is a validator for the "source_task_kind" field. It is called by the builders before save.
 	mediaasset.SourceTaskKindValidator = mediaassetDescSourceTaskKind.Validators[0].(func(string) error)
 	// mediaassetDescProcessingErrorCode is the schema descriptor for processing_error_code field.
-	mediaassetDescProcessingErrorCode := mediaassetFields[31].Descriptor()
+	mediaassetDescProcessingErrorCode := mediaassetFields[34].Descriptor()
 	// mediaasset.ProcessingErrorCodeValidator is a validator for the "processing_error_code" field. It is called by the builders before save.
 	mediaasset.ProcessingErrorCodeValidator = mediaassetDescProcessingErrorCode.Validators[0].(func(string) error)
 	// mediaassetDescVersion is the schema descriptor for version field.
-	mediaassetDescVersion := mediaassetFields[33].Descriptor()
+	mediaassetDescVersion := mediaassetFields[36].Descriptor()
 	// mediaasset.DefaultVersion holds the default value on creation for the version field.
 	mediaasset.DefaultVersion = mediaassetDescVersion.Default.(int64)
 	// mediaassetDescID is the schema descriptor for id field.
@@ -2688,6 +2757,24 @@ func init() {
 	modelrouteDescEnabled := modelrouteFields[6].Descriptor()
 	// modelroute.DefaultEnabled holds the default value on creation for the enabled field.
 	modelroute.DefaultEnabled = modelrouteDescEnabled.Default.(bool)
+	oauthrecordFields := schema.OAuthRecord{}.Fields()
+	_ = oauthrecordFields
+	// oauthrecordDescKind is the schema descriptor for kind field.
+	oauthrecordDescKind := oauthrecordFields[1].Descriptor()
+	// oauthrecord.KindValidator is a validator for the "kind" field. It is called by the builders before save.
+	oauthrecord.KindValidator = oauthrecordDescKind.Validators[0].(func(string) error)
+	// oauthrecordDescUserID is the schema descriptor for user_id field.
+	oauthrecordDescUserID := oauthrecordFields[2].Descriptor()
+	// oauthrecord.DefaultUserID holds the default value on creation for the user_id field.
+	oauthrecord.DefaultUserID = oauthrecordDescUserID.Default.(int64)
+	// oauthrecordDescVersion is the schema descriptor for version field.
+	oauthrecordDescVersion := oauthrecordFields[4].Descriptor()
+	// oauthrecord.DefaultVersion holds the default value on creation for the version field.
+	oauthrecord.DefaultVersion = oauthrecordDescVersion.Default.(int64)
+	// oauthrecordDescID is the schema descriptor for id field.
+	oauthrecordDescID := oauthrecordFields[0].Descriptor()
+	// oauthrecord.IDValidator is a validator for the "id" field. It is called by the builders before save.
+	oauthrecord.IDValidator = oauthrecordDescID.Validators[0].(func(string) error)
 	objectdeletionjobMixin := schema.ObjectDeletionJob{}.Mixin()
 	objectdeletionjobMixinFields0 := objectdeletionjobMixin[0].Fields()
 	_ = objectdeletionjobMixinFields0

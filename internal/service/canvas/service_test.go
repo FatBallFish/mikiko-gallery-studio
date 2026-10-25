@@ -22,7 +22,7 @@ func TestCanvasCRUDRevisionAndOwnerIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
-	if created.Revision != 1 || created.MetadataVersion != 1 || len(created.Document.Nodes) != 2 {
+	if created.Revision != 1 || created.MetadataVersion != 1 || len(created.Document.Nodes) != 4 {
 		t.Fatalf("Create() = %#v", created)
 	}
 	if _, err := service.Get(t.Context(), 8, created.ID); !errors.Is(err, ErrNotFound) {
@@ -32,7 +32,7 @@ func TestCanvasCRUDRevisionAndOwnerIsolation(t *testing.T) {
 		t.Fatalf("foreign ListRuns() error = %v, want not found", err)
 	}
 
-	saved, err := service.SaveDocument(t.Context(), SaveDocumentRequest{UserID: 7, CanvasID: created.ID, ExpectedRevision: 1, Document: domaincanvas.DocumentV1{SchemaVersion: 1, Nodes: []domaincanvas.Node{{ID: "asset", Type: domaincanvas.NodeTypeImage, AssetID: "  " + uuid.NewString() + "  ", Size: domaincanvas.Size{Width: 220, Height: 160}}}}})
+	saved, err := service.SaveDocument(t.Context(), SaveDocumentRequest{UserID: 7, CanvasID: created.ID, ExpectedRevision: 1, Document: domaincanvas.DocumentV1{SchemaVersion: 1, Nodes: []domaincanvas.Node{{ID: "asset", Type: domaincanvas.NodeTypeImageV2, AssetID: "  " + uuid.NewString() + "  ", Size: domaincanvas.Size{Width: 220, Height: 160}}}}})
 	if err != nil {
 		t.Fatalf("SaveDocument() error = %v", err)
 	}
@@ -79,7 +79,7 @@ func TestListRunsDoesNotInjectErrorsIntoHealthyRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	document := domaincanvas.DocumentV1{SchemaVersion: 1, Nodes: []domaincanvas.Node{{ID: "video-generation-1", Type: domaincanvas.NodeTypeVideoGeneration, Position: domaincanvas.Point{X: 10, Y: 10}, Size: domaincanvas.Size{Width: 320, Height: 240}}}}
+	document := domaincanvas.DocumentV1{SchemaVersion: 1, Nodes: []domaincanvas.Node{{ID: "video-generation-1", Type: domaincanvas.NodeTypeVideoV2, Position: domaincanvas.Point{X: 10, Y: 10}, Size: domaincanvas.Size{Width: 320, Height: 240}}}}
 	if _, err := service.SaveDocument(t.Context(), SaveDocumentRequest{UserID: 9, CanvasID: created.ID, ExpectedRevision: created.Revision, Document: document}); err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestImageToVideoTemplateDoesNotCreateDanglingAssetReference(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
-	if len(created.AssetReferences) != 0 || len(created.Document.Nodes) != 2 || created.Document.Nodes[1].Type != domaincanvas.NodeTypeVideoGeneration {
+	if len(created.AssetReferences) != 0 || len(created.Document.Nodes) != 2 || created.Document.Nodes[0].Type != domaincanvas.NodeTypeVideoV2 {
 		t.Fatalf("image-to-video template = %#v", created.Document)
 	}
 }
@@ -186,7 +186,7 @@ func mustJSON(t *testing.T, value any) []byte {
 func TestCanvasDocumentAllowsURLInPromptButRejectsPersistedURLField(t *testing.T) {
 	service := NewService(NewMemoryStore(), nil, nil)
 	projectID := uuid.New()
-	allowed := domaincanvas.DocumentV1{SchemaVersion: 1, Nodes: []domaincanvas.Node{{ID: "prompt", Type: domaincanvas.NodeTypePrompt, Size: domaincanvas.Size{Width: 220, Height: 140}, Payload: []byte(`{"text":"describe https://example.com"}`)}}}
+	allowed := domaincanvas.DocumentV1{SchemaVersion: 1, Nodes: []domaincanvas.Node{{ID: "prompt", Type: domaincanvas.NodeTypeImageV2, Size: domaincanvas.Size{Width: 220, Height: 140}, Payload: []byte(`{"draft":{"prompt_template":"describe https://example.com"}}`)}}}
 	if _, err := service.Create(t.Context(), CreateRequest{UserID: 3, ProjectID: projectID, Name: "Allowed", Document: &allowed}); err != nil {
 		t.Fatalf("prompt URL rejected: %v", err)
 	}
@@ -211,22 +211,22 @@ func TestCanvasAttachResultsIsStableIdempotentAndCanBecomeUnplaced(t *testing.T)
 		t.Fatalf("AttachResults() = (%#v, %v)", attached, err)
 	}
 	canvasAfter, _ := service.Get(t.Context(), 9, created.ID)
-	if len(canvasAfter.Document.Nodes) != 4 || len(canvasAfter.Document.Edges) != 3 {
+	if len(canvasAfter.Document.Nodes) != 5 || len(canvasAfter.Document.Edges) != 0 {
 		t.Fatalf("attached document = %#v", canvasAfter.Document)
 	}
-	firstIDs := []string{canvasAfter.Document.Nodes[2].ID, canvasAfter.Document.Nodes[3].ID}
+	firstIDs := []string{canvasAfter.Document.Nodes[0].ID, canvasAfter.Document.Nodes[4].ID}
 	if _, err := service.AttachResults(t.Context(), AttachResultsRequest{UserID: 9, CanvasID: created.ID, RunID: run.ID}); err != nil {
 		t.Fatalf("repeated AttachResults() error = %v", err)
 	}
 	reloaded, _ := service.Get(t.Context(), 9, created.ID)
-	if len(reloaded.Document.Nodes) != 4 || reloaded.Document.Nodes[2].ID != firstIDs[0] || reloaded.Document.Nodes[3].ID != firstIDs[1] {
+	if len(reloaded.Document.Nodes) != 5 || reloaded.Document.Nodes[0].ID != firstIDs[0] || reloaded.Document.Nodes[4].ID != firstIDs[1] {
 		t.Fatalf("repeated attach changed document = %#v", reloaded.Document)
 	}
 
 	second, _ := service.Create(t.Context(), CreateRequest{UserID: 9, ProjectID: uuid.New(), Name: "Unplaced", Template: TemplateImageExploration})
 	unplacedRun, _ := service.Generate(t.Context(), GenerateRequest{UserID: 9, CanvasID: second.ID, NodeID: "image-generation", IdempotencyKey: "unplaced"})
 	current, _ := service.Get(t.Context(), 9, second.ID)
-	current.Document.Nodes = current.Document.Nodes[:1]
+	current.Document.Nodes = nil
 	current.Document.Edges = nil
 	_, _ = service.SaveDocument(t.Context(), SaveDocumentRequest{UserID: 9, CanvasID: second.ID, ExpectedRevision: current.Revision, Document: current.Document})
 	unplaced, err := service.AttachResults(t.Context(), AttachResultsRequest{UserID: 9, CanvasID: second.ID, RunID: unplacedRun.ID})
@@ -244,89 +244,25 @@ func TestCanvasAttachResultsIsStableIdempotentAndCanBecomeUnplaced(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(recoveredCanvas.Document.Nodes) != 3 || len(recoveredCanvas.Document.Edges) != 0 {
+	if len(recoveredCanvas.Document.Nodes) != 2 || len(recoveredCanvas.Document.Edges) != 0 {
 		t.Fatalf("recovered unplaced document = %#v", recoveredCanvas.Document)
 	}
-	if recoveredCanvas.Document.Nodes[1].Position.X != 640 || recoveredCanvas.Document.Nodes[1].Position.Y != 480 {
-		t.Fatalf("first recovered node position = %#v", recoveredCanvas.Document.Nodes[1].Position)
+	if recoveredCanvas.Document.Nodes[0].Position.X != 640 || recoveredCanvas.Document.Nodes[0].Position.Y != 480 {
+		t.Fatalf("first recovered node position = %#v", recoveredCanvas.Document.Nodes[0].Position)
 	}
 	if again, err := service.AttachResults(t.Context(), AttachResultsRequest{UserID: 9, CanvasID: second.ID, RunID: unplacedRun.ID, RecoveryPosition: &domaincanvas.Point{X: 1, Y: 1}}); err != nil || again.Status != RunStatusAttached || *again.AttachedRevision != *recovered.AttachedRevision {
 		t.Fatalf("idempotent unplaced recovery = (%#v, %v)", again, err)
 	}
 }
 
-func TestCanvasResultPlacementFillsFirstRunSlotsAndAppendsLaterRuns(t *testing.T) {
-	store := NewMemoryStore()
-	firstAssets := []uuid.UUID{uuid.New(), uuid.New(), uuid.New()}
-	generator := &fakeGenerator{status: TaskStatus{Status: RunStatusSucceeded, ResultAssetIDs: firstAssets}}
-	service := NewService(store, generator, nil)
-	created, err := service.Create(t.Context(), CreateRequest{UserID: 9, ProjectID: uuid.New(), Name: "Slots", Template: TemplateImageExploration})
-	if err != nil {
-		t.Fatal(err)
-	}
-	document := created.Document
-	document.Nodes = append(document.Nodes,
-		domaincanvas.Node{ID: "slot-later", Type: domaincanvas.NodeTypeImage, Position: domaincanvas.Point{X: 820, Y: 520}, Size: domaincanvas.Size{Width: 220, Height: 160}},
-		domaincanvas.Node{ID: "slot-first", Type: domaincanvas.NodeTypeImage, Position: domaincanvas.Point{X: 820, Y: 80}, Size: domaincanvas.Size{Width: 220, Height: 160}, Payload: json.RawMessage(`{"name":"主输出"}`)},
-	)
-	document.Edges = append(document.Edges,
-		domaincanvas.Edge{ID: "slot-later-edge", Source: "image-generation", Target: "slot-later", InputRole: domaincanvas.InputRoleResult, Ordinal: 2},
-		domaincanvas.Edge{ID: "slot-first-edge", Source: "image-generation", Target: "slot-first", InputRole: domaincanvas.InputRoleResult, Ordinal: 0},
-	)
-	_, err = service.SaveDocument(t.Context(), SaveDocumentRequest{UserID: 9, CanvasID: created.ID, ExpectedRevision: created.Revision, Document: document})
-	if err != nil {
-		t.Fatalf("save empty result slots: %v", err)
-	}
-	firstRun, err := service.Generate(t.Context(), GenerateRequest{UserID: 9, CanvasID: created.ID, NodeID: "image-generation", IdempotencyKey: "slots-first"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if attached, err := service.AttachResults(t.Context(), AttachResultsRequest{UserID: 9, CanvasID: created.ID, RunID: firstRun.ID}); err != nil || attached.Status != RunStatusAttached {
-		t.Fatalf("attach first slot run = (%#v, %v)", attached, err)
-	}
-	afterFirst, _ := service.Get(t.Context(), 9, created.ID)
-	if got := findAssetID(afterFirst.Document, "slot-first"); got != firstAssets[0].String() {
-		t.Fatalf("first ordered slot asset = %q, want %q", got, firstAssets[0])
-	}
-	if got := findAssetID(afterFirst.Document, "slot-later"); got != firstAssets[1].String() {
-		t.Fatalf("second ordered slot asset = %q, want %q", got, firstAssets[1])
-	}
-	if got := findNodeName(afterFirst.Document, "slot-first"); got != "主输出" {
-		t.Fatalf("named output slot alias = %q, want preserved alias", got)
-	}
-	if got := findNodeName(afterFirst.Document, "slot-later"); got == "" {
-		t.Fatal("filled output slot must receive a default resource name")
-	}
-	firstOverflowID := domaincanvas.StableResultNodeID(firstRun.ID.String(), firstAssets[2].String())
-	firstOverflow, ok := findNode(afterFirst.Document, firstOverflowID)
-	if !ok || firstOverflow.AssetID != firstAssets[2].String() {
-		t.Fatalf("first overflow node = %#v", firstOverflow)
-	}
-	if got := findNodeName(afterFirst.Document, firstOverflowID); got == "" {
-		t.Fatal("created result node must receive a default resource name")
-	}
-
-	afterFirst.Document.Nodes = append(afterFirst.Document.Nodes, domaincanvas.Node{ID: "late-empty-slot", Type: domaincanvas.NodeTypeImage, Position: domaincanvas.Point{X: 820, Y: 760}, Size: domaincanvas.Size{Width: 220, Height: 160}})
-	afterFirst.Document.Edges = append(afterFirst.Document.Edges, domaincanvas.Edge{ID: "late-empty-edge", Source: "image-generation", Target: "late-empty-slot", InputRole: domaincanvas.InputRoleResult, Ordinal: 9})
-	if _, err := service.SaveDocument(t.Context(), SaveDocumentRequest{UserID: 9, CanvasID: created.ID, ExpectedRevision: afterFirst.Revision, Document: afterFirst.Document}); err != nil {
-		t.Fatalf("save later empty slot: %v", err)
-	}
-	secondAsset := uuid.New()
-	generator.status = TaskStatus{Status: RunStatusSucceeded, ResultAssetIDs: []uuid.UUID{secondAsset}}
-	secondRun, err := service.Generate(t.Context(), GenerateRequest{UserID: 9, CanvasID: created.ID, NodeID: "image-generation", IdempotencyKey: "slots-second"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if attached, err := service.AttachResults(t.Context(), AttachResultsRequest{UserID: 9, CanvasID: created.ID, RunID: secondRun.ID}); err != nil || attached.Status != RunStatusAttached {
-		t.Fatalf("attach second slot run = (%#v, %v)", attached, err)
-	}
-	afterSecond, _ := service.Get(t.Context(), 9, created.ID)
-	if got := findAssetID(afterSecond.Document, "late-empty-slot"); got != "" {
-		t.Fatalf("later run consumed an empty first-run slot: %q", got)
-	}
-	secondNode, ok := findNode(afterSecond.Document, domaincanvas.StableResultNodeID(secondRun.ID.String(), secondAsset.String()))
-	if !ok || secondNode.Position.X <= firstOverflow.Position.X {
-		t.Fatalf("second run result must append in a later batch column: first=%#v second=%#v", firstOverflow.Position, secondNode.Position)
+func TestCanvasLegacyResultPlacementRetainsSlotsForRecoveringRuns(t *testing.T) {
+	source := domaincanvas.Node{ID: "legacy", Type: domaincanvas.NodeTypeImageGeneration, Size: domaincanvas.Size{Width: 320, Height: 240}}
+	slot := domaincanvas.Node{ID: "slot", Type: domaincanvas.NodeTypeImage, Size: domaincanvas.Size{Width: 220, Height: 160}, Payload: json.RawMessage(`{"name":"original"}`)}
+	document := domaincanvas.DocumentV1{SchemaVersion: 1, Nodes: []domaincanvas.Node{source, slot}, Edges: []domaincanvas.Edge{{ID: "edge", Source: source.ID, Target: slot.ID, InputRole: domaincanvas.InputRoleResult}}}
+	run := Run{ID: uuid.New(), TaskKind: TaskKindImage, ResultAssetIDs: []uuid.UUID{uuid.New(), uuid.New()}}
+	updated, siblings, edges := resultPlacement(run, source, document, true, 0)
+	if len(updated) != 1 || updated[0].ID != slot.ID || updated[0].AssetID != run.ResultAssetIDs[0].String() || len(siblings) != 1 || siblings[0].Type != domaincanvas.NodeTypeImage || len(edges) != 1 {
+		t.Fatalf("legacy placement: %#v %#v %#v", updated, siblings, edges)
 	}
 }
 
@@ -410,7 +346,7 @@ func TestCanvasRefreshRunAutomaticallyAttachesSucceededResults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(after.Document.Nodes) != 3 || after.Document.Nodes[2].AssetID != assetID.String() || len(after.Document.Edges) != 2 {
+	if len(after.Document.Nodes) != 4 || after.Document.Nodes[0].AssetID != assetID.String() || len(after.Document.Edges) != 0 {
 		t.Fatalf("automatic result attachment = %#v", after.Document)
 	}
 }
@@ -495,3 +431,114 @@ func (f *fakeGenerator) Status(context.Context, int64, TaskKind, uuid.UUID) (Tas
 }
 
 func (f *fakeGenerator) Cancel(context.Context, int64, TaskKind, uuid.UUID) error { return nil }
+
+func TestCanvasLegacyNodesRemainReadableRetainableAndDeletable(t *testing.T) {
+	store := NewMemoryStore()
+	service := NewService(store, &fakeGenerator{}, nil)
+	node := domaincanvas.Node{ID: "old", Type: domaincanvas.NodeTypeImageGeneration, Size: domaincanvas.Size{Width: 320, Height: 240}, Payload: json.RawMessage(`{"draft":{"prompt":"old"}}`)}
+	document := domaincanvas.DocumentV1{SchemaVersion: 1, Nodes: []domaincanvas.Node{node}}
+	if _, err := service.Create(t.Context(), CreateRequest{UserID: 1, ProjectID: uuid.New(), Document: &document}); err == nil {
+		t.Fatal("created deprecated node")
+	}
+	legacy := Canvas{ID: uuid.New(), UserID: 1, ProjectID: uuid.New(), Status: CanvasStatusActive, Revision: 1, Document: document}
+	store.canvases[legacy.ID] = legacy
+	if _, err := service.Get(t.Context(), 1, legacy.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Duplicate(t.Context(), DuplicateRequest{UserID: 1, CanvasID: legacy.ID}); err == nil {
+		t.Fatal("duplicated legacy canvas")
+	}
+	if _, err := service.Generate(t.Context(), GenerateRequest{UserID: 1, CanvasID: legacy.ID, NodeID: "old", IdempotencyKey: "new"}); err == nil {
+		t.Fatal("executed legacy node")
+	}
+	saved, err := service.SaveDocument(t.Context(), SaveDocumentRequest{UserID: 1, CanvasID: legacy.ID, ExpectedRevision: 1, Document: document})
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := cloneDocument(document)
+	edited.Nodes[0].Position.X = 99
+	if _, err := service.SaveDocument(t.Context(), SaveDocumentRequest{UserID: 1, CanvasID: legacy.ID, ExpectedRevision: saved.Revision, Document: edited}); err == nil {
+		t.Fatal("edited legacy node")
+	}
+	if _, err := service.SaveDocument(t.Context(), SaveDocumentRequest{UserID: 1, CanvasID: legacy.ID, ExpectedRevision: saved.Revision, Document: domaincanvas.DocumentV1{SchemaVersion: 1}}); err != nil {
+		t.Fatal(err)
+	}
+	// An already-running historical task still recovers using historical result nodes.
+	store.canvases[legacy.ID] = legacy
+	run := Run{ID: uuid.New(), CanvasID: legacy.ID, UserID: 1, NodeID: "old", TaskKind: TaskKindImage, Status: RunStatusSucceeded, ResultAssetIDs: []uuid.UUID{uuid.New()}, NodeSnapshot: mustJSON(t, map[string]any{"node": node})}
+	store.runs[run.ID] = run
+	attached, err := service.RefreshRun(t.Context(), 1, legacy.ID, run.ID)
+	if err != nil || attached.Status != RunStatusAttached {
+		t.Fatalf("legacy recovery %#v %v", attached, err)
+	}
+}
+
+func TestCanvasIntegratedResultDoesNotOverwriteChangedDraftOrSelectedMedia(t *testing.T) {
+	for _, mutation := range []string{"draft", "asset", "reference"} {
+		t.Run(mutation, func(t *testing.T) {
+			store := NewMemoryStore()
+			asset := uuid.New()
+			service := NewService(store, &fakeGenerator{status: TaskStatus{Status: RunStatusSucceeded, ResultAssetIDs: []uuid.UUID{asset}}}, nil)
+			item, err := service.Create(t.Context(), CreateRequest{UserID: 1, ProjectID: uuid.New(), Template: TemplateImageExploration})
+			if err != nil {
+				t.Fatal(err)
+			}
+			run, err := service.Generate(t.Context(), GenerateRequest{UserID: 1, CanvasID: item.ID, NodeID: "image-generation", IdempotencyKey: "first"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch mutation {
+			case "draft":
+				item.Document.Nodes[0].Payload = json.RawMessage(`{"name":"image_1","draft":{"prompt_template":"new"}}`)
+			case "asset":
+				item.Document.Nodes[0].AssetID = uuid.NewString()
+			case "reference":
+				item.Document.Nodes[1].AssetID = uuid.NewString()
+				item.Document.Edges = append(item.Document.Edges, domaincanvas.Edge{ID: "new-ref", Source: item.Document.Nodes[1].ID, Target: item.Document.Nodes[0].ID, InputRole: domaincanvas.InputRoleReference})
+			}
+			saved, err := service.SaveDocument(t.Context(), SaveDocumentRequest{UserID: 1, CanvasID: item.ID, ExpectedRevision: item.Revision, Document: item.Document})
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := service.RefreshRun(t.Context(), 1, item.ID, run.ID)
+			if err != nil || result.Status != RunStatusUnplaced {
+				t.Fatalf("stale result %#v %v", result, err)
+			}
+			current, _ := service.Get(t.Context(), 1, item.ID)
+			if current.Revision != saved.Revision || current.Document.Nodes[0].AssetID == asset.String() {
+				t.Fatal("stale task changed document")
+			}
+		})
+	}
+}
+
+func TestCanvasIntegratedFilledNodeRejectsNewRunButReplaysOriginal(t *testing.T) {
+	store := NewMemoryStore()
+	gen := &fakeGenerator{status: TaskStatus{Status: RunStatusSucceeded, ResultAssetIDs: []uuid.UUID{uuid.New()}, ProgressStage: "completed", ProgressMessage: "saved"}}
+	service := NewService(store, gen, nil)
+	item, _ := service.Create(t.Context(), CreateRequest{UserID: 1, ProjectID: uuid.New(), Template: TemplateImageExploration})
+	req := GenerateRequest{UserID: 1, CanvasID: item.ID, NodeID: "image-generation", IdempotencyKey: "first"}
+	run, err := service.Generate(t.Context(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attached, err := service.RefreshRun(t.Context(), 1, item.ID, run.ID)
+	if err != nil || attached.ProgressStage != "completed" {
+		t.Fatalf("actual progress %#v %v", attached, err)
+	}
+	stale, err := store.UpdateRun(t.Context(), RunUpdate{UserID: 1, CanvasID: item.ID, RunID: run.ID, Status: RunStatusSucceeded})
+	if err != nil || stale.Status != RunStatusAttached {
+		t.Fatalf("concurrent refresh regressed attachment %#v %v", stale, err)
+	}
+	replay, err := service.Generate(t.Context(), req)
+	if err != nil || replay.ID != run.ID || gen.generateCalls != 1 {
+		t.Fatalf("replay %#v %v", replay, err)
+	}
+	req.IdempotencyKey = "second"
+	if _, err := service.Generate(t.Context(), req); err == nil {
+		t.Fatal("filled node executed")
+	}
+	if _, err := service.Estimate(t.Context(), req); err == nil {
+		t.Fatal("filled node estimated")
+	}
+}

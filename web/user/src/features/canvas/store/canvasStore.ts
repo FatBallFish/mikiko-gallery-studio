@@ -19,6 +19,7 @@ import {
   updateCanvasGroup,
   updateCanvasNode,
 } from '../core/canvasState'
+import { canEditCanvasNode } from '../core/canvasNodeKinds'
 import { autoLayoutCanvasNodes } from '../core/canvasLayout'
 import type { CanvasClipboard, CanvasCommandState, CanvasDocument, CanvasEdge, CanvasGroup, CanvasNode, CanvasResult, CanvasViewport } from '../core/types'
 
@@ -76,7 +77,9 @@ export function createCanvasStore(document: CanvasDocument, revision: number, op
       if (!state.clipboard?.nodes.length) return state
       const pasteID = crypto.randomUUID().slice(0, 8)
       const command = pasteCanvasSelection(state.command, state.clipboard, { x: 32 * (state.pasteCount + 1), y: 32 * (state.pasteCount + 1) }, (sourceID) => `${sourceID}-copy-${pasteID}`)
-      return { command, selectedIDs: command.present.nodes.slice(-state.clipboard.nodes.length).map((node) => node.id), selectedEdgeIDs: [], pasteCount: state.pasteCount + 1 }
+      const added = command.present.nodes.filter((node) => !state.command.present.nodes.some((existing) => existing.id === node.id))
+      if (!added.length) return state
+      return { command, selectedIDs: added.map((node) => node.id), selectedEdgeIDs: [], pasteCount: state.pasteCount + 1 }
     }),
     deleteSelected: () => set((state) => ({
       command: state.selectedEdgeIDs.length ? removeCanvasEdges(state.command, state.selectedEdgeIDs) : removeCanvasNodes(state.command, state.selectedIDs),
@@ -84,7 +87,7 @@ export function createCanvasStore(document: CanvasDocument, revision: number, op
       selectedEdgeIDs: [],
     })),
     groupSelected: (label) => set((state) => {
-      const nodeIDs = Array.from(new Set(state.selectedIDs))
+      const nodeIDs = Array.from(new Set(state.selectedIDs)).filter((id) => state.command.present.nodes.some((node) => node.id === id && canEditCanvasNode(node)))
       if (nodeIDs.length < 2) return state
       try {
         const group: CanvasGroup = { id: `group-${crypto.randomUUID().slice(0, 8)}`, label: label?.trim() || `分组 ${(state.command.present.groups?.length ?? 0) + 1}`, node_ids: nodeIDs }
@@ -101,15 +104,11 @@ export function createCanvasStore(document: CanvasDocument, revision: number, op
     }),
     updateGroup: (groupID, patch) => set((state) => ({ command: updateCanvasGroup(state.command, groupID, patch) })),
     attachResults: (runID, sourceNodeID, results) => set((state) => ({ command: attachCanvasResults(state.command, runID, sourceNodeID, results) })),
-    autoLayoutSelected: () => set((state) => ({
-      command: state.selectedIDs.length < 2 ? state.command : {
-        ...state.command,
-        present: autoLayoutCanvasNodes(state.command.present, state.selectedIDs),
-        past: [...state.command.past, state.command.present].slice(-100),
-        future: [],
-        dirty: true,
-      },
-    })),
+    autoLayoutSelected: () => set((state) => {
+      const present = autoLayoutCanvasNodes(state.command.present, state.selectedIDs)
+      if (present === state.command.present) return state
+      return { command: { ...state.command, present, past: [...state.command.past, state.command.present].slice(-100), future: [], dirty: true } }
+    }),
     undo: () => set((state) => ({ command: undoCanvasCommand(state.command) })),
     redo: () => set((state) => ({ command: redoCanvasCommand(state.command) })),
     replaceRemote: (nextDocument, nextRevision) => set({ command: createCanvasState(nextDocument, nextRevision), selectedIDs: [], selectedEdgeIDs: [], pasteCount: 0 }),

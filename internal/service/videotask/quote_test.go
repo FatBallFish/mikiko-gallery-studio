@@ -203,3 +203,53 @@ func nativeSimulation(routeID int64, configVersion string, accountModelID int64,
 		Candidates: []adminvideo.QuoteSimulationCandidate{{AccountModelID: accountModelID, CapabilityVersion: "cap-v1", PricingSchema: "seedance_token_v1", RateVersion: 1, Eligible: true, EstimatedCNY: "0.10000"}},
 	}
 }
+
+func TestVideoDiscoveryCombinationsResolveAndQuoteThroughForwardMappings(t *testing.T) {
+	capability := func(resolutions []domainvideo.Resolution, duration int, ratio domainvideo.AspectRatio, audio domainvideo.AudioMode) domainvideo.Capability {
+		return domainvideo.Capability{SchemaVersion: 1, ProviderNativeMaxN: 1, TaskTypes: map[domainvideo.TaskType]domainvideo.TaskCapability{domainvideo.TaskTypeTextToVideo: {Durations: domainvideo.DiscreteIntValues(duration), Resolutions: resolutions, AspectRatios: []domainvideo.AspectRatio{ratio}, AudioModes: []domainvideo.AudioMode{audio}}}}
+	}
+	for _, tc := range []struct {
+		name     string
+		mappings map[domainvideo.Resolution]domainvideo.Resolution
+		want720  bool
+	}{
+		{"mapped target unsupported", map[domainvideo.Resolution]domainvideo.Resolution{domainvideo.Resolution720P: domainvideo.Resolution768P}, false},
+		{"identity overrides reverse", map[domainvideo.Resolution]domainvideo.Resolution{domainvideo.Resolution720P: domainvideo.Resolution480P, domainvideo.Resolution480P: domainvideo.Resolution768P}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			candidates := []videoroutingservice.Candidate{
+				{AccountModelID: 2, CapabilityVersion: "a", Capability: capability([]domainvideo.Resolution{domainvideo.Resolution480P, domainvideo.Resolution720P}, 5, domainvideo.AspectRatio16x9, domainvideo.AudioModeSilent), ResolutionMappings: tc.mappings},
+				{AccountModelID: 3, CapabilityVersion: "b", Capability: capability([]domainvideo.Resolution{domainvideo.Resolution1080P}, 10, domainvideo.AspectRatio9x16, domainvideo.AudioModeGenerated)},
+			}
+			routing := videoroutingservice.NewService(&quoteRoutingStore{group: videoroutingservice.Group{RouteModelID: 9, Code: "cinema", ConfigVersion: "route-v2", MaxOutputCount: 1, TaskTypes: []domainvideo.TaskType{domainvideo.TaskTypeTextToVideo}, Candidates: candidates}})
+			pricing := &quotePricingStore{result: nativeSimulation(9, "route-v2", 2, "2.00000")}
+			pricing.result.Candidates = append(pricing.result.Candidates, adminvideo.QuoteSimulationCandidate{AccountModelID: 3, Eligible: true, EstimatedCNY: "0.02000", RateVersion: 1})
+			clock := func() time.Time { return time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC) }
+			quotes := NewQuoteService(routing, videopricingservice.NewService(pricing, clock), []byte("quote-test-signing-key-at-least-32-bytes"), clock)
+			list, err := routing.ListCapabilities(t.Context(), nil)
+			if err != nil || len(list.Groups) != 1 {
+				t.Fatalf("list=%#v err=%v", list, err)
+			}
+			seen720 := false
+			for _, combo := range list.Groups[0].Combinations {
+				if combo.Resolution == domainvideo.Resolution720P {
+					seen720 = true
+				}
+				request := domainvideo.Request{TaskType: combo.TaskType, DurationSeconds: combo.DurationSeconds, Resolution: combo.Resolution, AspectRatio: combo.AspectRatio, AudioMode: combo.AudioMode, OutputCount: 1, Prompt: "lake"}
+				if _, err := routing.Resolve(t.Context(), "cinema", nil, request); err != nil {
+					t.Fatalf("advertised combination=%#v err=%v", combo, err)
+				}
+				if _, err := quotes.Estimate(t.Context(), 7, EstimateRequest{RouteModelCode: "cinema", Video: request}); err != nil {
+					t.Fatalf("quote advertised combination=%#v err=%v", combo, err)
+				}
+			}
+			if seen720 != tc.want720 {
+				t.Fatalf("720p visible=%v want %v: %#v", seen720, tc.want720, list)
+			}
+			// Different candidates must never manufacture a cross-product combination.
+			if _, err := routing.Resolve(t.Context(), "cinema", nil, domainvideo.Request{TaskType: domainvideo.TaskTypeTextToVideo, DurationSeconds: 10, Resolution: domainvideo.Resolution480P, AspectRatio: domainvideo.AspectRatio9x16, AudioMode: domainvideo.AudioModeGenerated, OutputCount: 1}); err == nil {
+				t.Fatal("accepted unsupported cross-candidate combination")
+			}
+		})
+	}
+}

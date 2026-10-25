@@ -5,9 +5,9 @@ const document: CanvasDocument = {
   schema_version: 1,
   viewport: { x: 0, y: 0, zoom: 1 },
   nodes: [
-    { id: 'prompt', type: 'prompt', position: { x: 100, y: 100 }, size: { width: 240, height: 160 } },
-    { id: 'generator', type: 'video_generation', position: { x: 100, y: 100 }, size: { width: 320, height: 220 } },
-    { id: 'result', type: 'video', asset_id: 'asset-video', position: { x: 100, y: 100 }, size: { width: 320, height: 200 } },
+    { id: 'prompt', type: 'note', position: { x: 100, y: 100 }, size: { width: 240, height: 160 } },
+    { id: 'generator', type: 'video_v2', position: { x: 100, y: 100 }, size: { width: 320, height: 220 } },
+    { id: 'result', type: 'video_v2', asset_id: 'asset-video', position: { x: 100, y: 100 }, size: { width: 320, height: 200 } },
     { id: 'outside', type: 'note', position: { x: -800, y: 700 }, size: { width: 200, height: 140 } },
   ],
   edges: [

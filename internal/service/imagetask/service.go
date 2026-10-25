@@ -12,7 +12,6 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -59,6 +58,7 @@ type Service struct {
 	now             func() time.Time
 	concurrencyGate ConcurrencyGate
 	projects        ProjectResolver
+	titles          TitleGenerator
 }
 
 type ProjectResolver interface {
@@ -282,9 +282,11 @@ func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequ
 			return domainimagetask.Task{}, errs.Internal("failed to load existing image task")
 		}
 	}
-	if err := s.resolvePromptTemplate(ctx, &req); err != nil {
-		return domainimagetask.Task{}, err
+	preparedReq, prepareErr := s.prepareCreate(ctx, req)
+	if prepareErr != nil {
+		return domainimagetask.Task{}, prepareErr
 	}
+	req = preparedReq
 
 	var prefetchedEstimate *domainbilling.EstimateResult
 	var resolved modelhub.ResolvedRequest
@@ -372,7 +374,7 @@ func (s *Service) resolvePromptTemplate(ctx context.Context, req *domainimagetas
 	req.PromptTemplate = resolved.CanonicalTemplate
 	req.PromptTemplateVersion = 1
 	req.Prompt = resolved.Expanded
-	req.PromptBindingSnapshot = domainimagetask.PromptBindingSnapshot{VariableNames: append([]string(nil), resolved.Snapshot.VariableNames...)}
+	req.PromptBindingSnapshot = domainimagetask.PromptBindingSnapshot{Variables: append([]domainimagetask.PromptVariableInput(nil), req.PromptVariables...), VariableNames: append([]string(nil), resolved.Snapshot.VariableNames...)}
 	for _, binding := range resolved.Snapshot.References {
 		req.PromptBindingSnapshot.References = append(req.PromptBindingSnapshot.References, domainimagetask.PromptReferenceBinding{Name: binding.Name, AssetID: binding.AssetID, Index: binding.Index})
 	}
@@ -572,7 +574,7 @@ func (s *Service) ExecuteLeasedTask(ctx context.Context, task domainimagetask.Ta
 		return recovered, err
 	}
 
-	referenceImages, err := s.loadReferenceImages(task)
+	referenceImages, mask, err := s.resolveReferenceInputs(task)
 	if err != nil {
 		return s.failOwnedTask(ctx, task, owner, err)
 	}
@@ -590,7 +592,7 @@ func (s *Service) ExecuteLeasedTask(ctx context.Context, task domainimagetask.Ta
 		SizeMode: task.SizeMode, AspectRatio: requestedAspectRatio, BaseResolution: requestedBaseResolution,
 		Quality: task.Quality, OutputFormat: task.OutputFormat, Background: task.Background,
 		OutputCompression: task.OutputCompression, Moderation: task.Moderation, RequestedSize: requestedSize,
-		RequestedOutputImageCount: task.OutputImageCount, ReferenceImageCount: len(referenceImages),
+		RequestedOutputImageCount: task.OutputImageCount, ReferenceImageCount: len(referenceImages), MaskPresent: mask != nil,
 		RouteKey: task.ID, TrustedResolvedSize: trustedResolvedSize,
 	})
 	if err != nil {
@@ -606,6 +608,7 @@ func (s *Service) ExecuteLeasedTask(ctx context.Context, task domainimagetask.Ta
 		responseFormat:     string(provider.ResponseFormatURL),
 		sendResponseFormat: true,
 		referenceImages:    referenceImages,
+		mask:               mask,
 		preferredProviders: preferredProviders,
 	})
 }
@@ -1514,9 +1517,7 @@ func (s *Service) artifactHTTPClient() *http.Client {
 		base = http.DefaultClient
 	}
 	clone := *base
-	if clone.Timeout < 5*time.Minute {
-		clone.Timeout = 5 * time.Minute
-	}
+	clone.Timeout = artifactRequestTimeout
 	return &clone
 }
 
@@ -2043,8 +2044,17 @@ func (s *Service) RetryTask(ctx context.Context, userID int64, taskID string, re
 	default:
 		return domainimagetask.Task{}, errs.New(409, errs.CodeConflict, "only failed image tasks can be retried")
 	}
+	retryReq := imageRetryRequest(original)
+	retryReq.UserID = userID
+	retryReq.UserGroupCode = req.UserGroupCode
+	retryReq.UserGroupCodes = append([]string(nil), req.UserGroupCodes...)
+	retryReq.UserGroupMultiplier = req.UserGroupMultiplier
+	return s.CreateTask(ctx, retryReq)
+}
+
+func imageRetryRequest(original domainimagetask.Task) domainimagetask.CreateRequest {
 	retryReq := domainimagetask.CreateRequest{
-		UserID:              userID,
+		UserID:              original.UserID,
 		ProjectID:           original.ProjectID,
 		APIKeyID:            original.APIKeyID,
 		SourceChannel:       defaultString(original.SourceChannel, "web"),
@@ -2060,15 +2070,30 @@ func (s *Service) RetryTask(ctx context.Context, userID int64, taskID string, re
 		OutputImageCount:    original.OutputImageCount,
 		ReferenceImageCount: original.ReferenceImageCount,
 		ReferenceAssetIDs:   append([]string(nil), original.ReferenceAssetIDs...),
+		MaskAssetID:         original.MaskAssetID,
+		MaskPresent:         strings.TrimSpace(original.MaskAssetID) != "",
 		ReferenceStrength:   original.ReferenceStrength,
 		Seed:                original.Seed,
-		UserGroupCode:       req.UserGroupCode,
-		UserGroupCodes:      append([]string(nil), req.UserGroupCodes...),
-		UserGroupMultiplier: req.UserGroupMultiplier,
-		ResponseMode:        defaultString(original.ResponseMode, "async"),
-		SavePolicy:          defaultString(original.SavePolicy, "private"),
+
+		ResponseMode: defaultString(original.ResponseMode, "async"),
+		SavePolicy:   defaultString(original.SavePolicy, "private"),
 	}
-	return s.CreateTask(ctx, retryReq)
+	if modelhub.PublicSizeMode(original.SizeMode) != modelhub.SizeModePixel {
+		retryReq.RequestedSize = ""
+	}
+	retryReq.Quality = original.Quality
+	retryReq.OutputFormat = original.OutputFormat
+	retryReq.Background = original.Background
+	retryReq.OutputCompression = original.OutputCompression
+	retryReq.Moderation = original.Moderation
+	retryReq.PromptVariables = append([]domainimagetask.PromptVariableInput(nil), original.PromptBindingSnapshot.Variables...)
+	if original.PromptTemplate != "" {
+		retryReq.Prompt = original.PromptTemplate
+	}
+	for _, ref := range original.PromptBindingSnapshot.References {
+		retryReq.ReferenceBindings = append(retryReq.ReferenceBindings, domainimagetask.PromptReferenceInput{Name: ref.Name, AssetID: ref.AssetID})
+	}
+	return retryReq
 }
 
 func (s *Service) DeleteImageResult(ctx context.Context, userID int64, imageID string) error {
@@ -2295,7 +2320,7 @@ func (s *Service) saveOwnedTask(ctx context.Context, task domainimagetask.Task, 
 }
 
 func (s *Service) updateOwnedProgress(ctx context.Context, task domainimagetask.Task, owner string) error {
-	if err := s.store.UpdateProgressIfOwned(ctx, task.ID, owner, task.ProgressStage, task.ProgressMessage, time.Now().UTC()); err != nil {
+	if err := s.store.UpdateProgressIfOwned(ctx, task.ID, owner, task.ProgressStage, task.ProgressMessage, s.nowUTC()); err != nil {
 		switch {
 		case errors.Is(err, repoerr.ErrNotFound):
 			return errs.New(404, errs.CodeNotFound, "image task not found")
@@ -2389,40 +2414,54 @@ func completedStatusForResults(task domainimagetask.Task) string {
 }
 
 func (s *Service) persistImageResults(ctx context.Context, task domainimagetask.Task, results []provider.ImageResult) ([]provider.ImageResult, error) {
-	persisted := make([]provider.ImageResult, 0, len(results))
+	s.nameImageResults(ctx, task, results)
+	persisted := make([]provider.ImageResult, len(results))
+	ctx = withArtifactProgress(ctx, s, task, len(results))
+	group, ctx := errgroup.WithContext(ctx)
+	group.SetLimit(2)
 	for index, result := range results {
-		item := result
-		item.VisibilityStatus = defaultString(item.VisibilityStatus, "private")
-		if isDataURL(item.URL) {
-			item.B64JSON = item.URL
-			item.URL = ""
-		}
-		var stored provider.ImageResult
-		switch {
-		case strings.TrimSpace(item.URL) != "":
-			mirrored, err := s.persistRemoteImageResult(ctx, task, index, item)
-			if err != nil {
-				return nil, err
+		group.Go(func() error {
+			if err := ctx.Err(); err != nil {
+				return err
 			}
-			stored = mirrored
-		case strings.TrimSpace(item.B64JSON) == "":
-			stored = item
-		default:
-			local, err := s.persistBase64ImageResult(task, index, item)
-			if err != nil {
-				return nil, err
+			item := result
+			item.VisibilityStatus = defaultString(item.VisibilityStatus, "private")
+			if isDataURL(item.URL) {
+				item.B64JSON = item.URL
+				item.URL = ""
 			}
-			stored = local
-		}
-		slog.InfoContext(ctx, "image generation result persisted",
-			"task_id", task.ID, "result_index", index, "image_id", stored.ID,
-			"mime_type", stored.MimeType, "size_bytes", stored.FileSizeBytes,
-			"width", stored.Width, "height", stored.Height,
-			"storage_driver", stored.StorageDriver, "object_key", stored.ObjectKey,
-			"source_url", applogging.SanitizeURL(item.URL), "source_b64_bytes", len(item.B64JSON),
-			"revised_prompt", applogging.TruncateText(item.RevisedPrompt, 1000),
-		)
-		persisted = append(persisted, stored)
+			var stored provider.ImageResult
+			switch {
+			case strings.TrimSpace(item.URL) != "":
+				mirrored, err := s.persistRemoteImageResult(ctx, task, index, item)
+				if err != nil {
+					return err
+				}
+				stored = mirrored
+			case strings.TrimSpace(item.B64JSON) == "":
+				stored = item
+			default:
+				local, err := s.persistBase64ImageResult(task, index, item)
+				if err != nil {
+					return err
+				}
+				stored = local
+			}
+			stored.MediaAssetID = stored.ID
+			slog.InfoContext(ctx, "image generation result persisted",
+				"task_id", task.ID, "result_index", index, "image_id", stored.ID,
+				"mime_type", stored.MimeType, "size_bytes", stored.FileSizeBytes,
+				"width", stored.Width, "height", stored.Height,
+				"storage_driver", stored.StorageDriver, "object_key", stored.ObjectKey,
+				"source_url", applogging.SanitizeURL(item.URL), "source_b64_bytes", len(item.B64JSON),
+				"revised_prompt", applogging.TruncateText(item.RevisedPrompt, 1000),
+			)
+			persisted[index] = stored
+			return nil
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return nil, err
 	}
 	return persisted, nil
 }
@@ -2433,32 +2472,9 @@ func isDataURL(value string) bool {
 
 func (s *Service) persistRemoteImageResult(ctx context.Context, task domainimagetask.Task, index int, result provider.ImageResult) (provider.ImageResult, error) {
 	startedAt := s.nowUTC()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, result.URL, nil)
+	content, req, resp, err := s.downloadArtifact(ctx, task, index, result.URL)
 	if err != nil {
-		return provider.ImageResult{}, newArtifactFailure(s, errs.CodeArtifactSourceURLInvalid, "fetch", false, err)
-	}
-	resp, err := s.artifactHTTPClient().Do(req)
-	if err != nil {
-		failure := classifyFetchError(s, err)
-		decorateArtifactHTTPDiagnostic(s, &failure.diagnostic, req, nil, 0, startedAt)
-		return provider.ImageResult{}, failure
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		failure := newArtifactFailure(s, errs.CodeArtifactFetchHTTPStatus, "fetch", resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500, fmt.Errorf("upstream artifact returned status %d", resp.StatusCode))
-		decorateArtifactHTTPDiagnostic(s, &failure.diagnostic, req, resp, 0, startedAt)
-		return provider.ImageResult{}, failure
-	}
-	content, err := io.ReadAll(io.LimitReader(resp.Body, maxGeneratedArtifactBytes+1))
-	if err != nil {
-		failure := newArtifactFailure(s, errs.CodeArtifactFetchReadFailed, "read", true, err)
-		decorateArtifactHTTPDiagnostic(s, &failure.diagnostic, req, resp, int64(len(content)), startedAt)
-		return provider.ImageResult{}, failure
-	}
-	if int64(len(content)) > maxGeneratedArtifactBytes {
-		failure := newArtifactFailure(s, errs.CodeArtifactSizeLimitExceeded, "read", false, fmt.Errorf("generated artifact exceeds %d bytes", maxGeneratedArtifactBytes))
-		decorateArtifactHTTPDiagnostic(s, &failure.diagnostic, req, resp, int64(len(content)), startedAt)
-		return provider.ImageResult{}, failure
+		return provider.ImageResult{}, err
 	}
 	if len(content) == 0 {
 		failure := newArtifactFailure(s, errs.CodeArtifactEmptyBody, "read", true, errors.New("generated artifact body is empty"))
@@ -2876,6 +2892,8 @@ func buildTask(req domainimagetask.CreateRequest, resolved modelhub.ResolvedRequ
 		OutputImageCount:      normalizedCount(req.OutputImageCount),
 		ReferenceImageCount:   req.ReferenceImageCount,
 		ReferenceAssetIDs:     append([]string(nil), req.ReferenceAssetIDs...),
+		MaskAssetID:           strings.TrimSpace(req.MaskAssetID),
+		RequestFingerprint:    req.RequestFingerprint,
 		ReferenceStrength:     req.ReferenceStrength,
 		Seed:                  req.Seed,
 	}
@@ -3048,6 +3066,11 @@ func setTaskProgress(task *domainimagetask.Task, stage, message string) {
 }
 
 func normalizeCreateRequest(req domainimagetask.CreateRequest) (domainimagetask.CreateRequest, error) {
+	req.MaskAssetID = strings.TrimSpace(req.MaskAssetID)
+	if req.MaskPresent && req.MaskAssetID == "" {
+		return req, errs.New(400, errs.CodeImageCapabilityMismatch, "mask_asset_id is required when a mask is requested")
+	}
+	req.MaskPresent = req.MaskAssetID != ""
 	if !provider.IsSupportedTaskType(req.TaskType) {
 		return req, errs.BadRequest("unsupported task_type")
 	}
@@ -3434,6 +3457,7 @@ func cloneTask(task domainimagetask.Task) domainimagetask.Task {
 	task.ArtifactRecovery.Diagnostics = append([]domainimagetask.ArtifactDiagnostic(nil), task.ArtifactRecovery.Diagnostics...)
 	task.ReferenceAssetIDs = append([]string(nil), task.ReferenceAssetIDs...)
 	task.PromptBindingSnapshot.References = append([]domainimagetask.PromptReferenceBinding(nil), task.PromptBindingSnapshot.References...)
+	task.PromptBindingSnapshot.Variables = append([]domainimagetask.PromptVariableInput(nil), task.PromptBindingSnapshot.Variables...)
 	task.PromptBindingSnapshot.VariableNames = append([]string(nil), task.PromptBindingSnapshot.VariableNames...)
 	if task.Project != nil {
 		snapshot := *task.Project

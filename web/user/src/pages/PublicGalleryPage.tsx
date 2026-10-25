@@ -4,6 +4,7 @@ import { openApi } from '../../../shared/open-api'
 import { userApi } from '../../../shared/user-api'
 import { cn } from '../../../shared/classnames'
 import { EmptyState, ErrorState, GalleryFilterToolbar, GalleryImageFrame, ImageDetailModal, PublicDetailIcon, SegmentedControl, copyText, useApp } from '../components'
+import { PublicVideoGallery } from '../features/media/PublicVideoGallery'
 import { errorMessage } from '../useApiResource'
 import { mediaAccess } from '../mediaAccess'
 import { Download, Heart, Image as ImageIcon, RefreshCw, Star } from '../ui/icons'
@@ -379,7 +380,9 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
         {loadingMore ? <span className="u-meta">正在加载更多作品</span> : loadError && rows.length ? <button className="u-btn u-btn--sm" type="button" onClick={() => void loadPage(page + 1, 'append')}>重试加载</button> : loadError ? null : hasMore ? <button className="u-btn u-btn--sm" type="button" onClick={() => void loadPage(page + 1, 'append')}>加载更多</button> : rows.length ? <span className="u-meta">已显示全部作品</span> : null}
       </div>
 
+      <PublicVideoGallery />
       <ImageDetailModal
+        context="public"
         title="公开图片详情"
         image={selected}
         imageUrl={selected?.url || selected?.download_url ? assetUrl(selected?.url || selected?.download_url || '') : undefined}

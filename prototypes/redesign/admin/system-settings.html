@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>系统设置 — Mikiko Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/admin.css">
+<style>
+  .ss-layout { display: grid; grid-template-columns: 220px minmax(0,1fr) 260px; gap: 18px; align-items: start; }
+  .ss-nav { position: sticky; top: calc(var(--a-top-h) + 18px); display: grid; gap: 2px; }
+  .ss-nav button { display: flex; align-items: center; gap: 9px; min-height: 38px; padding: 0 11px; border: 0; border-radius: 7px; background: transparent; color: var(--a-ink-2); font-size: 13px; text-align: left; }
+  .ss-nav button:hover { background: var(--a-surface-2); color: var(--a-ink); }
+  .ss-nav button.is-active { background: var(--a-accent-soft); color: var(--a-accent); font-weight: 650; }
+  .ss-nav button span { margin-left: auto; color: var(--a-ink-3); font-family: var(--font-admin-mono); font-size: 10.5px; }
+  .ss-savebar { position: sticky; bottom: 0; z-index: 4; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding: 13px 18px; border: 1px solid var(--a-line-2); border-radius: 10px; background: color-mix(in srgb, var(--a-surface) 94%, transparent); backdrop-filter: blur(12px); box-shadow: var(--a-shadow-md); }
+  .ss-inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .ss-note { padding: 13px; border: 1px dashed var(--a-line-2); border-radius: 8px; color: var(--a-ink-3); font-size: 12.5px; }
+  .ss-store { display: grid; gap: 8px; }
+  .ss-store__row { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border: 1px solid var(--a-line); border-radius: 8px; background: var(--a-surface); }
+  .ss-store__row.is-active { border-color: var(--a-accent-line); background: var(--a-accent-soft); }
+  .ss-store__row div { flex: 1; min-width: 0; }
+  .ss-store__row strong { display: block; font-size: 12.5px; }
+  .ss-store__row span { color: var(--a-ink-3); font-family: var(--font-admin-mono); font-size: 10.5px; }
+  .ss-store__actions { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
+  @media (max-width: 760px) { .ss-store__row { flex-wrap: wrap; } .ss-store__actions { width: 100%; justify-content: flex-start; } }
+  @media (max-width: 1280px) { .ss-layout { grid-template-columns: 190px minmax(0,1fr); } .ss-layout > aside:last-child { display: none; } }
+  @media (max-width: 900px) { .ss-layout { grid-template-columns: 1fr; } .ss-nav { position: static; display: flex; overflow-x: auto; } .ss-nav button { white-space: nowrap; } }
+</style>
+</head>
+<body data-site="admin" data-page="system-settings" data-title="系统设置">
+<div class="a-shell"><div class="a-main">
+  <main class="a-content">
+    <header class="a-page-head">
+      <div class="a-page-head__copy">
+        <span class="a-kicker">System Settings</span>
+        <h1>系统设置</h1>
+        <p>配置字段改为单列“账本式”布局：左侧说明、右侧全宽控件，不再因为双栏高度不一致导致错位。</p>
+      </div>
+      <div class="a-page-head__actions">
+        <span class="a-badge a-badge--warn"><i></i>3 项未保存</span>
+        <button class="a-btn a-btn--sm" type="button" data-toast="已刷新当前分区">刷新</button>
+      </div>
+    </header>
+
+    <div class="a-tabs" data-tabs="settings">
+      <button class="a-tab is-active" data-tab="ss-general">通用配置</button>
+      <button class="a-tab" data-tab="ss-points">积分换算</button>
+      <button class="a-tab" data-tab="ss-attachment">附件策略</button>
+      <button class="a-tab" data-tab="ss-media">媒体策略</button>
+      <button class="a-tab" data-tab="ss-security">安全配置</button>
+      <button class="a-tab" data-tab="ss-storage">存储配置</button>
+    </div>
+
+    <div data-tab-panels="settings">
+      <div data-panel="ss-general">
+        <div class="ss-layout">
+          <nav class="ss-nav" aria-label="配置分类">
+            <button class="is-active" type="button">基础与访问 <span>8</span></button>
+            <button type="button" data-toast="已切换到登录与会话">登录与会话 <span>6</span></button>
+            <button type="button" data-toast="已切换到生成限制">生成限制 <span>9</span></button>
+            <button type="button" data-toast="已切换到支付与收银台">支付与收银台 <span>7</span></button>
+            <button type="button" data-toast="已切换到公开广场">公开广场 <span>4</span></button>
+          </nav>
+
+          <div>
+            <section class="a-panel a-panel--flush">
+              <div class="a-panel__head"><div><h2>基础与访问</h2><p>站点名称、访问地址与注册开关。所有字段按单列排列。</p></div><span class="a-badge a-badge--ok"><i></i>校验通过</span></div>
+              <form class="a-form">
+                <section class="a-form__section">
+                  <div class="a-form__head"><h3><span class="a-form__num">1</span>站点标识</h3><p>用于页面标题、邮件模板与 Open API 文档。</p></div>
+                  <label class="a-field"><span>站点名称</span><input class="a-input" value="Mikiko Studio"><span class="a-hint">显示在浏览器标题与邮件页脚。</span></label>
+                  <label class="a-field"><span>站点描述</span><textarea class="a-textarea">面向创作者与开发者的图片与视频生成平台。</textarea></label>
+                  <div class="a-form__pair">
+                    <label class="a-field"><span>默认语言</span><select class="a-select"><option>简体中文</option><option>English</option></select></label>
+                    <label class="a-field"><span>默认时区</span><select class="a-select"><option>Asia/Shanghai</option><option>UTC</option></select></label>
+                  </div>
+                </section>
+                <section class="a-form__section">
+                  <div class="a-form__head"><h3><span class="a-form__num">2</span>访问地址</h3></div>
+                  <label class="a-field"><span>用户端地址</span><input class="a-input" value="https://studio.mikiko.ai" style="font-family:var(--font-admin-mono);font-size:12.5px"></label>
+                  <label class="a-field"><span>API 地址</span><input class="a-input" value="https://api.mikiko.studio" style="font-family:var(--font-admin-mono);font-size:12.5px"><span class="a-hint">对象存储签名与回调地址会基于该域名生成。</span></label>
+                  <label class="a-field"><span>允许的来源</span><input class="a-input" value="https://studio.mikiko.ai, https://mikiko.ai" style="font-family:var(--font-admin-mono);font-size:12.5px"><span class="a-hint">逗号分隔；修改后 CORS 立即生效。</span></label>
+                </section>
+                <section class="a-form__section">
+                  <div class="a-form__head"><h3><span class="a-form__num">3</span>注册与登录</h3></div>
+                  <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>开放邮箱注册</label>
+                  <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>允许 OIDC 统一身份登录</label>
+                  <label class="a-field"><span>访问令牌有效期（分钟）</span><input class="a-input" value="60" inputmode="numeric"><span class="a-hint">过短会增加刷新频率，过长会增加吊销延迟。</span></label>
+                  <label class="a-field"><span>刷新令牌有效期（天）</span><input class="a-input" value="30" inputmode="numeric"></label>
+                </section>
+                <section class="a-form__section">
+                  <div class="a-form__head"><h3><span class="a-form__num">4</span>生成限制</h3></div>
+                  <div class="a-form__pair">
+                    <label class="a-field"><span>单次最大出图数</span><input class="a-input" value="1000" inputmode="numeric"></label>
+                    <label class="a-field"><span>参考图大小上限（MB）</span><input class="a-input" value="10" inputmode="numeric"></label>
+                  </div>
+                  <label class="a-field"><span>允许申请公开</span><select class="a-select"><option>开启</option><option>关闭</option></select></label>
+                  <label class="a-field"><span>启用图片广场</span><select class="a-select"><option>开启</option><option>关闭</option></select></label>
+                </section>
+              </form>
+              <div class="ss-savebar">
+                <div class="ss-inline"><span class="a-badge a-badge--warn"><i></i>3 项未保存</span><span class="a-hint">离开前需要保存或放弃修改。</span></div>
+                <div class="a-row-actions"><button class="a-btn a-btn--sm a-btn--quiet" type="button" data-toast="已恢复本类配置">恢复</button><button class="a-btn a-btn--sm a-btn--primary" type="button" data-toast="配置已保存并写入审计日志" data-tone="ok">保存本类</button></div>
+              </div>
+            </section>
+          </div>
+
+          <aside style="display:grid;gap:12px;position:sticky;top:calc(var(--a-top-h) + 18px)">
+            <div class="a-rail-card"><h4>当前分区</h4><div style="display:flex;justify-content:space-between;font-size:12.5px"><span class="a-hint">基础与访问</span><b class="a-num">8 字段</b></div><div style="display:flex;justify-content:space-between;font-size:12.5px"><span class="a-hint">未保存</span><b style="color:var(--a-warn)">3</b></div><div style="display:flex;justify-content:space-between;font-size:12.5px"><span class="a-hint">校验</span><b style="color:var(--a-success)">通过</b></div></div>
+            <div class="a-rail-card"><h4>变更影响</h4><ul><li><i style="width:5px;height:5px;border-radius:50%;background:var(--a-warn)"></i>修改 API 地址需重启网关</li><li><i style="width:5px;height:5px;border-radius:50%;background:var(--a-info)"></i>CORS 修改即时生效</li><li><i style="width:5px;height:5px;border-radius:50%;background:var(--a-success)"></i>站点名称无需重启</li></ul></div>
+            <div class="a-rail-card"><h4>最近发布</h4><div class="a-hint">林知远 · 10-22 16:08</div><div class="a-hint">super_admin · 4 项变更</div><a class="a-btn a-btn--sm" href="audit.html">查看审计日志</a></div>
+          </aside>
+        </div>
+      </div>
+
+      <div data-panel="ss-points" hidden>
+        <div class="a-form-page">
+          <section class="a-panel a-panel--flush">
+            <div class="a-panel__head"><div><h2>积分换算</h2><p>人民币与积分的全局汇率，影响所有价格试算。</p></div></div>
+            <form class="a-form">
+              <section class="a-form__section">
+                <div class="a-form__head"><h3>人民币积分汇率</h3><p>1 元对应多少积分；修改后仅影响新任务报价。</p></div>
+                <label class="a-field"><span>CNY / 积分</span><input class="a-input" value="0.01" inputmode="decimal" style="max-width:320px"><span class="a-hint">当前：1 积分 = ¥0.010，10,000 积分 = ¥100.00。</span></label>
+                <div class="a-panel" style="box-shadow:none;padding:14px;background:var(--a-surface-2)"><div class="a-hint" style="margin-bottom:6px">影响面</div><div class="a-hint">收银台自定义金额 · 视频报价试算 · 成本毛利报表 · 积分兑换提示</div></div>
+              </section>
+            </form>
+            <div class="ss-savebar"><span class="a-hint">本次修改尚未保存</span><div class="a-row-actions"><button class="a-btn a-btn--sm a-btn--quiet" type="button">恢复</button><button class="a-btn a-btn--sm a-btn--primary" type="button" data-toast="汇率已保存" data-tone="ok">保存汇率</button></div></div>
+          </section>
+          <aside class="a-form-page__rail"><div class="a-rail-card"><h4>校验规则</h4><ul><li>· 必须大于 0</li><li>· 最多 6 位小数</li><li>· 不能为负数</li></ul></div></aside>
+        </div>
+      </div>
+
+      <div data-panel="ss-attachment" hidden>
+        <section class="a-panel a-panel--flush">
+          <div class="a-panel__head"><div><h2>附件策略</h2><p>图片已生效，视频 / 音频 / 文档为预留配置。</p></div><span class="a-badge a-badge--ok"><i></i>校验通过</span></div>
+          <form class="a-form">
+            <section class="a-form__section">
+              <div class="a-form__head"><h3>图片</h3><span class="a-badge a-badge--ok"><i></i>已生效</span></div>
+              <label class="a-field"><span>最大附件大小（MB）</span><input class="a-input" value="10" inputmode="numeric" style="max-width:200px"></label>
+              <label class="a-field"><span>支持格式</span><input class="a-input" value="png, jpeg, webp, gif" style="font-family:var(--font-admin-mono);font-size:12.5px"><span class="a-hint">SVG 禁止上传，避免脚本注入。</span></label>
+            </section>
+            <section class="a-form__section">
+              <div class="a-form__head"><h3>视频 / 音频 / 文档</h3><span class="a-badge"><i></i>预留配置</span></div>
+              <label class="a-field"><span>视频大小上限（MB）</span><input class="a-input" value="200" inputmode="numeric" style="max-width:200px"></label>
+              <label class="a-field"><span>视频格式</span><input class="a-input" value="mp4, webm" style="font-family:var(--font-admin-mono);font-size:12.5px"></label>
+              <div class="a-form__pair">
+                <label class="a-field"><span>音频格式</span><input class="a-input" value="mp3, wav" style="font-family:var(--font-admin-mono);font-size:12.5px"></label>
+                <label class="a-field"><span>文档格式</span><input class="a-input" value="pdf, txt, md" style="font-family:var(--font-admin-mono);font-size:12.5px"></label>
+              </div>
+            </section>
+          </form>
+          <div class="ss-savebar"><span class="a-hint">2 项未保存</span><div class="a-row-actions"><button class="a-btn a-btn--sm a-btn--quiet" type="button">恢复</button><button class="a-btn a-btn--sm a-btn--primary" type="button" data-toast="附件策略已保存" data-tone="ok">保存策略</button></div></div>
+        </section>
+      </div>
+
+      <div data-panel="ss-media" hidden>
+        <section class="a-panel a-panel--flush">
+          <div class="a-panel__head"><div><h2>媒体策略</h2><p>派生资源、会话与保留期限。</p></div></div>
+          <form class="a-form">
+            <section class="a-form__section">
+              <div class="a-form__head"><h3>派生资源</h3></div>
+              <label class="a-field"><span>缩略图档位</span><input class="a-input" value="256, 512, 1024" style="font-family:var(--font-admin-mono)"><span class="a-hint">原图仍保留，缩略图按需生成。</span></label>
+              <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>生成视频 Poster</label>
+              <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>生成视频 Proxy（720p）</label>
+              <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>生成音频波形</label>
+            </section>
+            <section class="a-form__section">
+              <div class="a-form__head"><h3>会话与保留</h3></div>
+              <div class="a-form__pair">
+                <label class="a-field"><span>上传会话有效期（小时）</span><input class="a-input" value="24" inputmode="numeric"></label>
+                <label class="a-field"><span>失败处理保留（天）</span><input class="a-input" value="7" inputmode="numeric"></label>
+              </div>
+              <label class="a-field"><span>软删除保留（天）</span><input class="a-input" value="30" inputmode="numeric" style="max-width:200px"></label>
+            </section>
+          </form>
+          <div class="ss-savebar"><span class="a-hint">修改媒体策略只影响新上传与后续派生</span><button class="a-btn a-btn--sm a-btn--primary" type="button" data-toast="媒体策略已保存" data-tone="ok">保存媒体策略</button></div>
+        </section>
+      </div>
+
+      <div data-panel="ss-security" hidden>
+        <div class="a-form-page">
+          <div style="display:grid;gap:16px">
+            <section class="a-panel a-panel--flush">
+              <div class="a-panel__head"><div><h2>SMTP 邮件</h2><p>验证码、密码重置与告警邮件共用此配置。</p></div><span class="a-badge a-badge--ok"><i></i>已启用</span></div>
+              <form class="a-form">
+                <section class="a-form__section">
+                  <div class="a-form__head"><h3><span class="a-form__num">1</span>连接</h3></div>
+                  <label class="a-field"><span>SMTP 主机</span><input class="a-input" value="smtp.mikiko.studio" style="font-family:var(--font-admin-mono);font-size:12.5px"></label>
+                  <div class="a-form__pair"><label class="a-field"><span>端口</span><input class="a-input" value="465" inputmode="numeric"></label><label class="a-field"><span>传输安全</span><select class="a-select"><option>SSL/TLS</option><option>STARTTLS</option></select></label></div>
+                  <label class="a-field"><span>SMTP 密码</span><input class="a-input" type="password" placeholder="已配置 · 留空保持不变"><span class="a-hint">密码只写不读，保存后显示掩码。</span></label>
+                </section>
+                <section class="a-form__section">
+                  <div class="a-form__head"><h3><span class="a-form__num">2</span>发件身份</h3></div>
+                  <label class="a-field"><span>发件人名称</span><input class="a-input" value="Mikiko Studio"></label>
+                  <label class="a-field"><span>发件邮箱</span><input class="a-input" value="no-reply@mikiko.studio"></label>
+                  <button class="a-btn a-btn--sm" type="button" data-toast="测试邮件已发送至 lin.zhiyuan@mikiko.studio">发送测试邮件</button>
+                </section>
+              </form>
+              <div class="ss-savebar"><span class="a-hint">SMTP 密码已配置 · 版本 r184</span><div class="a-row-actions"><button class="a-btn a-btn--sm" type="button" data-toast="已连接 SMTP：握手成功">测试连接</button><button class="a-btn a-btn--sm a-btn--primary" type="button" data-toast="SMTP 配置已保存" data-tone="ok">保存 SMTP</button></div></div>
+            </section>
+
+            <section class="a-panel a-panel--flush">
+              <div class="a-panel__head"><div><h2>OIDC 统一身份</h2><p>Mikiko ID 单点登录。</p></div><span class="a-badge a-badge--ok"><i></i>启用</span></div>
+              <form class="a-form">
+                <section class="a-form__section">
+                  <label class="a-field"><span>Issuer</span><input class="a-input" value="https://id.mikiko.ai" style="font-family:var(--font-admin-mono);font-size:12.5px"></label>
+                  <label class="a-field"><span>Client ID</span><input class="a-input" value="mikiko-studio-prod" style="font-family:var(--font-admin-mono);font-size:12.5px"></label>
+                  <label class="a-field"><span>Client Secret</span><input class="a-input" type="password" placeholder="已配置 · 留空保持不变"></label>
+                  <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>开放本地密码登录</label>
+                  <div class="a-row-actions"><button class="a-btn a-btn--sm" type="button" data-toast="Discovery 连通正常（218ms）">测试 Discovery</button></div>
+                </section>
+              </form>
+              <div class="ss-savebar"><span class="a-hint">回调地址：https://studio.mikiko.ai/auth/oidc/callback</span><button class="a-btn a-btn--sm a-btn--primary" type="button" data-toast="OIDC 配置已保存" data-tone="ok">保存 OIDC</button></div>
+            </section>
+          </div>
+          <aside class="a-form-page__rail">
+            <div class="a-rail-card"><h4>敏感操作</h4><div class="a-hint">修改 SMTP 或 OIDC 后需要重新验证管理员会话。</div></div>
+            <div class="a-rail-card"><h4>状态</h4><div style="display:flex;justify-content:space-between;font-size:12.5px"><span class="a-hint">SMTP</span><b style="color:var(--a-success)">已启用</b></div><div style="display:flex;justify-content:space-between;font-size:12.5px"><span class="a-hint">密码</span><b>已配置</b></div><div style="display:flex;justify-content:space-between;font-size:12.5px"><span class="a-hint">版本</span><b class="a-mono">r184</b></div></div>
+          </aside>
+        </div>
+      </div>
+
+      <div data-panel="ss-storage" hidden>
+        <div class="a-form-page">
+          <div style="display:grid;gap:16px">
+            <section class="a-panel a-panel--pad">
+              <div class="a-section-title" style="margin-bottom:12px"><div><h2>存储实例</h2><p>编辑在抽屉完成；“设置默认”与“探测连接”直接放在操作列。</p></div><button class="a-btn a-btn--sm" type="button" data-open="#storage-edit" data-storage-mode="create">新增实例</button></div>
+              <div class="ss-store">
+                <div class="ss-store__row is-active">
+                  <span class="a-cell-entity__avatar" style="border-radius:7px">S3</span>
+                  <div><strong>RustFS 主存储</strong><span>s3 · rustfs · mikiko-media</span></div>
+                  <span class="a-badge a-badge--accent">默认写入</span>
+                  <span class="a-badge a-badge--ok"><i></i>探测通过</span>
+                  <div class="ss-store__actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#storage-edit" data-storage-mode="edit" data-storage-name="RustFS 主存储" data-storage-endpoint="https://s3.mikiko.studio" data-storage-bucket="mikiko-media">编辑</button><button class="a-row-btn" type="button" data-toast="探测通过：写入 21ms，读取 18ms">探测连接</button><button class="a-row-btn" type="button" data-toast="已是默认写入实例" data-tone="ok">设置默认</button></div>
+                </div>
+                <div class="ss-store__row">
+                  <span class="a-cell-entity__avatar" style="border-radius:7px">R2</span>
+                  <div><strong>Cloudflare R2 归档</strong><span>s3 · r2 · mikiko-archive</span></div>
+                  <span class="a-badge"><i></i>只读</span>
+                  <span class="a-badge a-badge--ok"><i></i>探测通过</span>
+                  <div class="ss-store__actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#storage-edit" data-storage-mode="edit" data-storage-name="Cloudflare R2 归档" data-storage-endpoint="https://r2.cloudflarestorage.com" data-storage-bucket="mikiko-archive">编辑</button><button class="a-row-btn" type="button" data-toast="探测通过：写入 32ms，读取 28ms">探测连接</button><button class="a-row-btn" type="button" data-toast="已设为默认写入实例" data-tone="ok">设置默认</button></div>
+                </div>
+              </div>
+              <div class="a-banner a-banner--info" style="margin-top:12px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg><div><strong style="font-size:13px">切换默认实例不会迁移历史对象</strong><div class="a-hint">旧对象仍按原实例读取；新上传才会写入新的默认实例。</div></div></div>
+            </section>
+          </div>
+          <aside class="a-form-page__rail"><div class="a-rail-card"><h4>连接状态</h4><div class="a-hint">RustFS · 探测通过</div><div class="a-hint">写入 21ms · 读取 18ms</div></div><div class="a-rail-card"><h4>注意</h4><div class="a-hint">凭据只写不读；保存前建议先在抽屉或列表操作列探测连接。</div></div></aside>
+        </div>
+      </div>
+    </div>
+  </main>
+</div></div>
+<aside class="a-drawer" id="storage-edit" role="dialog" aria-modal="true" aria-label="编辑存储实例">
+  <header class="a-drawer__head">
+    <div><h2 id="storage-edit-title">编辑存储实例</h2><p id="storage-edit-subtitle">RustFS 主存储 · s3 · mikiko-media</p></div>
+    <div class="a-drawer__spacer"></div>
+    <span class="a-badge a-badge--ok"><i></i>探测通过</span>
+    <button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </header>
+  <div class="a-drawer__body">
+    <form class="a-form">
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">1</span>基本信息</h3></div>
+        <label class="a-field"><span>实例名称 <span class="a-required">*</span></span><input class="a-input" id="storage-name" value="RustFS 主存储"></label>
+        <div class="a-form__pair">
+          <label class="a-field"><span>驱动</span><select class="a-select"><option>S3</option><option>Local</option></select></label>
+          <label class="a-field"><span>提供方</span><select class="a-select"><option>RustFS</option><option>Cloudflare R2</option><option>AWS S3</option><option>MinIO</option></select></label>
+        </div>
+        <label class="a-field"><span>用途</span><select class="a-select"><option>主写入</option><option>归档 / 只读</option><option>备份</option></select></label>
+      </section>
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">2</span>对象定位</h3></div>
+        <label class="a-field"><span>Endpoint <span class="a-required">*</span></span><input class="a-input" id="storage-endpoint" value="https://s3.mikiko.studio" style="font-family:var(--font-admin-mono);font-size:12.5px"></label>
+        <label class="a-field"><span>Bucket <span class="a-required">*</span></span><input class="a-input" id="storage-bucket" value="mikiko-media" style="font-family:var(--font-admin-mono);font-size:12.5px"></label>
+        <label class="a-field"><span>Region</span><input class="a-input" value="cn-east-1"></label>
+      </section>
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">3</span>访问与凭据</h3><p>凭据只写不读；留空表示保持现有值。</p></div>
+        <label class="a-field"><span>Access Key</span><input class="a-input" type="password" placeholder="已配置 · 留空保持不变"></label>
+        <label class="a-field"><span>Secret Key</span><input class="a-input" type="password" placeholder="已配置 · 留空保持不变"></label>
+        <div class="a-banner a-banner--info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg><div><strong style="font-size:13px">保存前先探测连接</strong><div class="a-hint">探测会验证写入与读取路径；失败时不会保存新的默认实例。</div></div></div>
+      </section>
+    </form>
+  </div>
+  <footer class="a-drawer__foot">
+    <button class="a-btn a-btn--sm" type="button" data-toast="探测通过：写入 21ms，读取 18ms">探测连接</button>
+    <div style="flex:1"></div>
+    <button class="a-btn a-btn--sm" type="button" data-close>取消</button>
+    <button class="a-btn a-btn--sm a-btn--primary" type="button" data-close data-toast="存储配置已保存" data-tone="ok">保存修改</button>
+  </footer>
+</aside>
+
+<script src="../assets/shell.js"></script>
+<script>
+  document.addEventListener('click', function (event) {
+    const trigger = event.target.closest('[data-open="#storage-edit"]');
+    if (!trigger) return;
+    const creating = trigger.dataset.storageMode === 'create';
+    setTimeout(function () {
+      document.getElementById('storage-edit-title').textContent = creating ? '新增存储实例' : '编辑存储实例';
+      document.getElementById('storage-edit-subtitle').textContent = creating ? '填写 Endpoint、Bucket 与凭据后先探测连接' : (trigger.dataset.storageName || '存储实例') + ' · 凭据只写不读';
+      document.getElementById('storage-name').value = creating ? '' : (trigger.dataset.storageName || '');
+      document.getElementById('storage-endpoint').value = creating ? '' : (trigger.dataset.storageEndpoint || '');
+      document.getElementById('storage-bucket').value = creating ? '' : (trigger.dataset.storageBucket || '');
+    }, 0);
+  }, true);
+</script>
+</body>
+</html>

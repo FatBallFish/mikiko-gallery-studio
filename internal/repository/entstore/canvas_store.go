@@ -71,6 +71,9 @@ func (s *CanvasStore) Create(ctx context.Context, item canvasservice.Canvas) (ca
 		if !owned {
 			return canvasservice.Canvas{}, canvasservice.ErrNotFound
 		}
+		if err := validateIntegratedMedia(ctx, tx.Client(), item.UserID, item.Document); err != nil {
+			return canvasservice.Canvas{}, err
+		}
 		entity, err := tx.CreativeCanvas.Create().SetID(item.ID).SetUserID(item.UserID).SetProjectID(item.ProjectID).SetName(item.Name).SetNameKey(strings.ToLower(item.Name)).SetSchemaVersion(item.SchemaVersion).SetRevision(item.Revision).SetMetadataVersion(item.MetadataVersion).SetDocumentJSON(document).SetDocumentBytes(item.DocumentBytes).SetNodeCount(item.NodeCount).SetEdgeCount(item.EdgeCount).SetRunningTaskCount(item.RunningTaskCount).SetFailedTaskCount(item.FailedTaskCount).SetStatus(string(item.Status)).SetLastSavedAt(item.LastSavedAt).SetCreatedAt(item.CreatedAt).SetUpdatedAt(item.UpdatedAt).Save(ctx)
 		if err != nil {
 			return canvasservice.Canvas{}, fmt.Errorf("create canvas: %w", err)
@@ -120,13 +123,27 @@ func (s *CanvasStore) SaveDocument(ctx context.Context, req canvasservice.SaveDo
 		if current.Revision != req.ExpectedRevision {
 			return result{}, canvasservice.ErrRevisionChanged
 		}
+		previous, err := decodeDocument(current.DocumentJSON)
+		if err != nil {
+			return result{}, err
+		}
+		if validation := domaincanvas.ValidateMutation(previous, req.Document); validation != nil {
+			return result{}, validation
+		}
 		document, err := documentMap(req.Document)
 		if err != nil {
 			return result{}, err
 		}
+		if err := validateIntegratedMedia(ctx, tx.Client(), req.UserID, req.Document); err != nil {
+			return result{}, err
+		}
 		nextRevision := current.Revision + 1
-		if _, err := tx.CreativeCanvas.Update().Where(creativecanvas.IDEQ(req.CanvasID), creativecanvas.UserIDEQ(req.UserID), creativecanvas.RevisionEQ(req.ExpectedRevision), creativecanvas.StatusEQ("active"), creativecanvas.DeletedAtIsNil()).SetSchemaVersion(req.Document.SchemaVersion).SetDocumentJSON(document).SetDocumentBytes(len(req.CanonicalJSON)).SetNodeCount(len(req.Document.Nodes)).SetEdgeCount(len(req.Document.Edges)).SetRevision(nextRevision).SetLastSavedAt(time.Now().UTC()).Save(ctx); err != nil {
+		affected, err := tx.CreativeCanvas.Update().Where(creativecanvas.IDEQ(req.CanvasID), creativecanvas.UserIDEQ(req.UserID), creativecanvas.RevisionEQ(req.ExpectedRevision), creativecanvas.StatusEQ("active"), creativecanvas.DeletedAtIsNil()).SetSchemaVersion(req.Document.SchemaVersion).SetDocumentJSON(document).SetDocumentBytes(len(req.CanonicalJSON)).SetNodeCount(len(req.Document.Nodes)).SetEdgeCount(len(req.Document.Edges)).SetRevision(nextRevision).SetLastSavedAt(time.Now().UTC()).Save(ctx)
+		if err != nil {
 			return result{}, fmt.Errorf("save canvas document: %w", err)
+		}
+		if affected != 1 {
+			return result{}, canvasservice.ErrRevisionChanged
 		}
 		if _, err := tx.CreativeCanvasRevision.Create().SetCanvasID(req.CanvasID).SetRevision(nextRevision).SetSchemaVersion(req.Document.SchemaVersion).SetDocumentJSON(document).SetReason(canvasDefaultString(req.Reason, "periodic")).SetCreatedBy("user").SetDocumentBytes(len(req.CanonicalJSON)).Save(ctx); err != nil {
 			return result{}, fmt.Errorf("snapshot canvas revision: %w", err)
@@ -219,19 +236,36 @@ func (s *CanvasStore) CreateRun(ctx context.Context, run canvasservice.Run) (can
 		replay bool
 	}
 	value, err := withSerializableTx(ctx, s.client, func(tx *repoent.Tx) (result, error) {
-		existing, queryErr := tx.CanvasGenerationRun.Query().Where(canvasgenerationrun.CanvasIDEQ(run.CanvasID), canvasgenerationrun.NodeIDEQ(run.NodeID), canvasgenerationrun.IdempotencyKeyEQ(run.IdempotencyKey)).Only(ctx)
+		existing, queryErr := tx.CanvasGenerationRun.Query().Where(canvasgenerationrun.UserIDEQ(run.UserID), canvasgenerationrun.CanvasIDEQ(run.CanvasID), canvasgenerationrun.NodeIDEQ(run.NodeID), canvasgenerationrun.IdempotencyKeyEQ(run.IdempotencyKey)).Only(ctx)
 		if queryErr == nil {
 			return result{run: mapRunEntity(existing), replay: true}, nil
 		}
 		if !repoent.IsNotFound(queryErr) {
 			return result{}, queryErr
 		}
-		owned, err := ownedCanvasQuery(tx.Client(), run.UserID, run.CanvasID).Exist(ctx)
+		canvas, err := ownedCanvasQuery(tx.Client(), run.UserID, run.CanvasID).Only(ctx)
+		if repoent.IsNotFound(err) {
+			return result{}, canvasservice.ErrNotFound
+		}
 		if err != nil {
 			return result{}, err
 		}
-		if !owned {
+		if canvas == nil {
 			return result{}, canvasservice.ErrNotFound
+		}
+		document, err := decodeDocument(canvas.DocumentJSON)
+		if err != nil {
+			return result{}, err
+		}
+		if run.SubmittedRevision != canvas.Revision || !canvasservice.CanAttachToSource(run, document) {
+			return result{}, canvasservice.ErrRevisionChanged
+		}
+		active, err := activeRunQuery(tx.Client(), run.CanvasID).Where(canvasgenerationrun.NodeIDEQ(run.NodeID)).Exist(ctx)
+		if err != nil {
+			return result{}, err
+		}
+		if active {
+			return result{}, canvasservice.ErrCanvasBusy
 		}
 		snapshot := map[string]any{}
 		if err := json.Unmarshal(run.NodeSnapshot, &snapshot); err != nil {
@@ -289,6 +323,9 @@ func (s *CanvasStore) UpdateRun(ctx context.Context, req canvasservice.RunUpdate
 		if err != nil {
 			return canvasservice.Run{}, err
 		}
+		if entity.Status == string(canvasservice.RunStatusAttached) || entity.Status == string(canvasservice.RunStatusUnplaced) {
+			return mapRunEntity(entity), nil
+		}
 		builder := tx.CanvasGenerationRun.UpdateOneID(req.RunID).SetStatus(string(req.Status)).SetResultAssetIds(req.ResultAssetIDs)
 		if req.TaskID != nil {
 			builder.SetTaskID(*req.TaskID)
@@ -343,21 +380,15 @@ func (s *CanvasStore) AttachResults(ctx context.Context, req canvasservice.Attac
 		if err != nil {
 			return canvasservice.Run{}, err
 		}
-		if !req.RecoverUnplaced {
-			found := false
-			for _, node := range document.Nodes {
-				if node.ID == run.NodeID {
-					found = true
-					break
-				}
+		if run.Status != string(canvasservice.RunStatusSucceeded) && run.Status != string(canvasservice.RunStatusUnplaced) {
+			return canvasservice.Run{}, fmt.Errorf("run is not ready to attach")
+		}
+		if !req.RecoverUnplaced && !canvasservice.CanAttachToSource(mapRunEntity(run), document) {
+			updated, err := tx.CanvasGenerationRun.UpdateOneID(run.ID).SetStatus(string(canvasservice.RunStatusUnplaced)).Save(ctx)
+			if err != nil {
+				return canvasservice.Run{}, err
 			}
-			if !found {
-				updated, err := tx.CanvasGenerationRun.UpdateOneID(run.ID).SetStatus(string(canvasservice.RunStatusUnplaced)).Save(ctx)
-				if err != nil {
-					return canvasservice.Run{}, err
-				}
-				return mapRunEntity(updated), nil
-			}
+			return mapRunEntity(updated), nil
 		}
 		if req.RecoverUnplaced && run.Status != string(canvasservice.RunStatusUnplaced) {
 			return canvasservice.Run{}, fmt.Errorf("canvas run is not unplaced")
@@ -395,6 +426,12 @@ func (s *CanvasStore) AttachResults(ctx context.Context, req canvasservice.Attac
 			if _, ok := edges[edge.ID]; !ok {
 				document.Edges = append(document.Edges, edge)
 			}
+		}
+		if validation := domaincanvas.ValidateDocument(document, domaincanvas.DefaultLimits()); validation != nil {
+			return canvasservice.Run{}, validation
+		}
+		if err := validateIntegratedMedia(ctx, tx.Client(), req.UserID, document); err != nil {
+			return canvasservice.Run{}, err
 		}
 		raw, _ := json.Marshal(document)
 		documentJSON, _ := documentMap(document)
@@ -523,4 +560,31 @@ func canvasDefaultString(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func validateIntegratedMedia(ctx context.Context, client *repoent.Client, userID int64, document domaincanvas.DocumentV1) error {
+	for _, node := range document.Nodes {
+		if !domaincanvas.IsIntegrated(node.Type) || strings.TrimSpace(node.AssetID) == "" {
+			continue
+		}
+		id, err := uuid.Parse(strings.TrimSpace(node.AssetID))
+		if err != nil {
+			return fmt.Errorf("invalid integrated asset id: %w", err)
+		}
+		mediaType := "image"
+		if node.Type == domaincanvas.NodeTypeVideoV2 {
+			mediaType = "video"
+		}
+		// Generated originals are durable before derivative processing completes.
+		// Attaching their identity must not depend on proxy readiness; media access
+		// continues to enforce the separate derivative requirement for previews.
+		owned, err := client.MediaAsset.Query().Where(mediaasset.IDEQ(id), mediaasset.UserIDEQ(userID), mediaasset.MediaTypeEQ(mediaType), mediaasset.StatusIn("ready", "ready_original"), mediaasset.DeletedAtIsNil()).Exist(ctx)
+		if err != nil {
+			return fmt.Errorf("validate integrated media: %w", err)
+		}
+		if !owned {
+			return canvasservice.ErrNotFound
+		}
+	}
+	return nil
 }

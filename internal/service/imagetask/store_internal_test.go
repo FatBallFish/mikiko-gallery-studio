@@ -9,6 +9,53 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/provider"
 )
 
+func TestMemoryStoreClaimRecoveryProgressAndHeartbeatPreservation(t *testing.T) {
+	for _, status := range []string{domainimagetask.StatusQueued, domainimagetask.StatusRunning} {
+		t.Run(status, func(t *testing.T) {
+			ctx := context.Background()
+			store := NewMemoryStore()
+			now := time.Now().UTC()
+			expired := now.Add(-time.Minute)
+			task := domainimagetask.Task{
+				ID: "recovery-progress", UserID: 91, Status: status,
+				LeaseOwner: "old-worker", LeaseExpiresAt: &expired,
+				ArtifactRecovery: domainimagetask.ArtifactRecovery{Status: "pending", EncryptedPayload: "encrypted"},
+			}
+			if err := store.Save(ctx, task); err != nil {
+				t.Fatal(err)
+			}
+			claimed, err := store.AcquireNextQueuedTask(ctx, "worker", now, time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if claimed.ProgressStage != domainimagetask.ProgressStagePersisting || claimed.ProgressMessage != "正在恢复并保存生成结果" {
+				t.Fatalf("claimed recovery progress = %q %q", claimed.ProgressStage, claimed.ProgressMessage)
+			}
+			for _, stage := range []string{domainimagetask.ProgressStagePersisting, domainimagetask.ProgressStageSettling} {
+				if err := store.UpdateProgressIfOwned(ctx, task.ID, "worker", stage, "detailed progress", now); err != nil {
+					t.Fatal(err)
+				}
+				renewed, err := store.RenewTaskLease(ctx, task.ID, "worker", now.Add(time.Second), 2*time.Minute)
+				if err != nil {
+					t.Fatal(err)
+				}
+				loaded, err := store.GetByID(ctx, task.UserID, task.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, snapshot := range []domainimagetask.Task{renewed, loaded} {
+					if snapshot.ProgressStage != stage || snapshot.ProgressMessage != "detailed progress" || snapshot.ArtifactRecovery.EncryptedPayload != "encrypted" {
+						t.Fatalf("heartbeat changed progress or recovery: %#v", snapshot)
+					}
+					if snapshot.LeaseOwner != "worker" || snapshot.LeaseExpiresAt == nil || !snapshot.LeaseExpiresAt.Equal(now.Add(time.Second+2*time.Minute)) {
+						t.Fatalf("heartbeat lease = %q %v", snapshot.LeaseOwner, snapshot.LeaseExpiresAt)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestMemoryStoreUpdateProgressIfOwnedPreservesTaskState(t *testing.T) {
 	store := NewMemoryStore()
 	ctx := context.Background()

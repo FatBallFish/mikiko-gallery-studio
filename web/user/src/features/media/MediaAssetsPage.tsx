@@ -1,3 +1,4 @@
+import { continueMediaCreation, mediaDownloadFilename } from './mediaCreationNavigation'
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import {
   ExternalLink,
@@ -17,6 +18,9 @@ import { useProjects } from '../../ProjectContext'
 import { EmptyState, ErrorState, GalleryFilterToolbar, ImageDetailModal, copyText, imageRatioLabel, useApp, type ImageDetailAction } from '../../components'
 import { userHashForRoute } from '../../routeState'
 import { MediaAssetCard, formatBytes } from './MediaAssetCard'
+import { MediaGroupSelectionDialog } from './MediaGroupSelectionDialog'
+import { VideoPublicationControls } from './VideoPublicationControls'
+import { videoPublicationApi } from './videoPublicationApi'
 import { MediaPreviewDialog } from './MediaPreviewDialog'
 import {
   buildMediaAssetQuery,
@@ -55,6 +59,7 @@ function publishStatusForAsset(value: string): PublishStatus {
 function mediaAssetAsImageResult(asset: MediaAsset, imageURL: string, project?: Project | null): ImageResult {
   return {
     id: asset.id,
+    name: asset.name,
     project_id: asset.project_id,
     project: project ? { id: project.id, name: project.name, is_default: project.is_default } : undefined,
     url: imageURL,
@@ -87,6 +92,7 @@ export function MediaAssetsPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
+  const [groupTarget, setGroupTarget] = useState<MediaAsset | 'batch' | null>(null)
   const [targetProjectID, setTargetProjectID] = useState('')
   const requestVersion = useRef(0)
   const selectionSurfaceRef = useRef<HTMLDivElement | null>(null)
@@ -106,6 +112,7 @@ export function MediaAssetsPage() {
     setSelected(new Set())
     setPreview(null)
     setMediaPreview(null)
+    setGroupTarget(null)
     setTargetProjectID('')
   }, [projects.selectedProjectID])
 
@@ -310,23 +317,30 @@ export function MediaAssetsPage() {
     } finally { setBusy(false) }
   }
 
-  const groupSelected = () => {
-    const groupName = window.prompt('设置分组名称')
-    if (groupName !== null) void batch('group', { group_name: groupName.trim() })
-  }
+  const groupSelected = () => setGroupTarget('batch')
   const publishSelected = async () => {
     const images = selectedItems.filter((item) => item.media_type === 'image' && item.legacy_image_id)
-    if (!images.length) { app.notify('error', '所选资产中没有可公开的历史图片'); return }
+    const videos = selectedItems.filter((item) => item.media_type === 'video' && item.status === 'ready')
+    if (!images.length && !videos.length) { app.notify('error', '请选择可公开的图片或就绪视频'); return }
     setBusy(true)
     try {
-      const result = await userApi.batchPublishGalleryImages(images.map((item) => item.legacy_image_id!), projects.selectedProjectID, true)
-      const succeededMediaIDs = new Set(images.filter((item) => result.succeeded.some((entry) => entry.id === item.legacy_image_id)).map((item) => item.id))
+      const succeededMediaIDs = new Set<string>()
+      let failed = 0
+      if (images.length) {
+        const result = await userApi.batchPublishGalleryImages(images.map((item) => item.legacy_image_id!), projects.selectedProjectID, true)
+        images.filter((item) => result.succeeded.some((entry) => entry.id === item.legacy_image_id)).forEach((item) => succeededMediaIDs.add(item.id))
+        failed += result.failed.length
+      }
+      for (const video of videos) {
+        try { await videoPublicationApi.submit(video.id); succeededMediaIDs.add(video.id) } catch { failed += 1 }
+      }
       setSelected((current) => new Set(Array.from(current).filter((id) => !succeededMediaIDs.has(id))))
-      app.notify(result.failed.length ? 'error' : 'success', result.failed.length ? `${result.failed.length} 张图片公开失败` : '已提交图片公开审核')
+      setRefreshKey((value) => value + 1)
+      app.notify(failed ? 'error' : 'success', failed ? `${failed} 项资产公开申请失败，已保留选择以便重试` : '已提交公开审核')
     } catch (caught) { app.notify('error', caught instanceof Error ? caught.message : '公开失败') } finally { setBusy(false) }
   }
   const continueCreation = (options: Parameters<typeof userHashForRoute>[1]) => {
-    window.location.hash = userHashForRoute('genpic', options)
+    void continueMediaCreation(options ?? {}).catch((error) => app.notify('error', error instanceof Error ? error.message : '无法继续创作'))
   }
 
   const removeAssetLocally = (asset: MediaAsset) => {
@@ -366,14 +380,7 @@ export function MediaAssetsPage() {
     catch (caught) { app.notify('error', caught instanceof Error ? caught.message : '重命名失败') }
     finally { setDetailBusy(false) }
   }
-  const groupAsset = async (asset: MediaAsset) => {
-    const groupName = window.prompt('分组名称', asset.group_name)?.trim()
-    if (groupName === undefined) return
-    setDetailBusy(true)
-    try { patchAsset(await userApi.updateMediaAsset(asset, { group_name: groupName })) }
-    catch (caught) { app.notify('error', caught instanceof Error ? caught.message : '设置分组失败') }
-    finally { setDetailBusy(false) }
-  }
+  const groupAsset = (asset: MediaAsset) => setGroupTarget(asset)
   const removeAsset = async (asset: MediaAsset) => {
     if (!window.confirm(`删除“${asset.name}”？对象文件将由后台异步清理。`)) return
     setDetailBusy(true)
@@ -390,7 +397,7 @@ export function MediaAssetsPage() {
       const projection = await userApi.getMediaAssetAccess(asset.id, 'download')
       const link = document.createElement('a')
       link.href = userApi.mediaAssetUrl(projection.url, app.session?.token)
-      link.download = asset.name
+      link.download = mediaDownloadFilename(asset)
       link.rel = 'noopener'
       link.click()
     } catch (caught) { app.notify('error', caught instanceof Error ? caught.message : '下载失败') }
@@ -532,8 +539,8 @@ export function MediaAssetsPage() {
       >
         <section className="u-grid u-grid--gallery" aria-busy={loading} aria-label="资产列表">
           {items.map((asset) => (
+            <div key={asset.id}>
             <MediaAssetCard
-              key={asset.id}
               asset={asset}
               selected={selected.has(asset.id)}
               selectionMode={selected.size > 0}
@@ -541,6 +548,8 @@ export function MediaAssetsPage() {
               onOpen={openCard}
               onRetry={(item) => void userApi.retryMediaAssetProcessing(item.id).then(patchAsset).catch((caught) => app.notify('error', caught instanceof Error ? caught.message : '重试处理失败'))}
             />
+            {asset.media_type === 'video' && asset.status === 'ready' ? <div data-media-selection-control><VideoPublicationControls key={`${asset.id}:${asset.visibility_status}`} assetID={asset.id} onChanged={() => setRefreshKey((value) => value + 1)} /></div> : null}
+            </div>
           ))}
         </section>
       </div>
@@ -565,7 +574,7 @@ export function MediaAssetsPage() {
               {projects.projects.filter((project) => project.id !== projects.selectedProjectID).map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
             </select>
             <button className="u-btn u-btn--sm" type="button" disabled={busy || !targetProjectID} onClick={() => void batch('transfer-project', { target_project_id: targetProjectID })}>转移</button>
-            <button className="u-btn u-btn--sm" type="button" disabled={busy || !selectedItems.some((item) => item.media_type === 'image')} onClick={() => void publishSelected()}>公开</button>
+            <button className="u-btn u-btn--sm" type="button" disabled={busy || !selectedItems.some((item) => item.media_type === 'image' || item.media_type === 'video' && item.status === 'ready')} onClick={() => void publishSelected()}>公开</button>
             <button className="u-btn u-btn--sm u-btn--danger" type="button" disabled={busy} onClick={() => void batch('delete')}>删除</button>
             <button className="u-icon-btn u-icon-btn--plain" type="button" aria-label="取消选择" onClick={() => setSelected(new Set())}><X size={16} strokeWidth={1.6} aria-hidden="true" /></button>
           </aside>
@@ -593,6 +602,11 @@ export function MediaAssetsPage() {
           onClose={() => setPreview(null)}
         />
       ) : null}
+
+      {groupTarget ? <MediaGroupSelectionDialog existingGroups={groups} projectId={projects.selectedProjectID} value={groupTarget === 'batch' ? '' : groupTarget.group_name} onClose={() => setGroupTarget(null)} onSelect={async (groupName) => {
+        if (groupTarget === 'batch') await batch('group', { group_name: groupName })
+        else patchAsset(await userApi.updateMediaAsset(groupTarget, { group_name: groupName }))
+      }} /> : null}
 
       {mediaPreview ? (
         <MediaPreviewDialog

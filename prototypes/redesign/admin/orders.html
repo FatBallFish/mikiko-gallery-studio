@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>订单管理 — Mikiko Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/admin.css">
+<style>
+  .or-timeline { display: grid; gap: 0; }
+  .or-event { display: grid; grid-template-columns: 130px minmax(0,1fr); gap: 14px; padding: 10px 0; border-bottom: 1px dashed var(--a-line); font-size: 12.5px; }
+  .or-event:last-child { border-bottom: 0; }
+  .or-event time { color: var(--a-ink-3); font-family: var(--font-admin-mono); font-size: 11px; }
+  .or-event strong { display: block; font-size: 12.5px; }
+  .or-event span { color: var(--a-ink-3); font-size: 11.5px; }
+</style>
+</head>
+<body data-site="admin" data-page="orders" data-title="订单管理">
+<div class="a-shell"><div class="a-main">
+  <main class="a-content">
+    <header class="a-page-head">
+      <div class="a-page-head__copy">
+        <span class="a-kicker">Orders</span>
+        <h1>订单管理</h1>
+        <p>订单、支付状态与积分明细。用户列已映射为昵称与邮箱，支付异常可直接打开订单抽屉处理。</p>
+      </div>
+      <div class="a-page-head__actions">
+        <button class="a-btn a-btn--sm" type="button" data-toast="已刷新订单">刷新</button>
+        <button class="a-btn a-btn--sm" type="button" data-toast="已导出订单 CSV">导出</button>
+      </div>
+    </header>
+
+    <div class="a-metrics" style="margin-bottom:16px">
+      <div class="a-metric"><div class="a-metric__label">今日订单</div><div class="a-metric__value">642</div><div class="a-metric__foot">较昨日 +8.4%</div></div>
+      <div class="a-metric"><div class="a-metric__label">今日到账</div><div class="a-metric__value">¥ 18,420</div><div class="a-metric__foot">成功 618 笔</div></div>
+      <div class="a-metric"><div class="a-metric__label">待支付</div><div class="a-metric__value">14</div><div class="a-metric__foot">金额 ¥ 1,286</div></div>
+      <div class="a-metric"><div class="a-metric__label">支付异常</div><div class="a-metric__value" style="color:var(--a-danger)">2</div><div class="a-metric__foot">回调金额不一致</div></div>
+    </div>
+
+    <section class="a-filters">
+      <div class="a-filters__row">
+        <label class="a-field"><span>关键词</span><div class="a-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="a-input" placeholder="订单号 / 用户 / 渠道流水号"></div></label>
+        <label class="a-field"><span>订单状态</span><select class="a-select"><option>全部状态</option><option>待支付</option><option>已支付</option><option>已完成</option><option>部分退款</option><option>已退款</option><option>支付失败</option><option>已关闭</option><option>支付超时</option></select></label>
+        <label class="a-field"><span>购买类型</span><select class="a-select"><option>全部类型</option><option>积分包</option><option>自定义金额</option><option>订阅套餐</option></select></label>
+        <label class="a-field"><span>支付方式</span><select class="a-select"><option>全部方式</option><option>支付宝</option><option>微信支付</option><option>Stripe</option><option>JeePay</option></select></label>
+      </div>
+      <div class="a-filters__foot">
+        <span class="a-filters__result">共 <b>4,218</b> 条 · 第 1 / 211 页</span>
+        <div class="a-filters__actions">
+          <button class="a-btn a-btn--sm a-btn--quiet" type="button" data-filter-more>更多筛选</button>
+          <button class="a-btn a-btn--sm" type="button" data-toast="已重置筛选">重置</button>
+          <button class="a-btn a-btn--sm a-btn--primary" type="button" data-toast="已应用筛选">查询</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="a-panel a-panel--flush" style="margin-top:16px">
+      <div class="a-panel__head"><div><h2>订单列表</h2><p>点击任意行查看支付时间线、积分明细与操作。</p></div><span class="a-hint">按创建时间倒序</span></div>
+      <div class="a-table-wrap">
+        <table class="a-table" style="min-width:1180px">
+          <thead><tr><th>订单</th><th>用户</th><th>状态</th><th>类型</th><th class="is-num">金额</th><th>积分明细</th><th>支付方式</th><th>创建时间</th><th class="is-actions">操作</th></tr></thead>
+          <tbody>
+            <tr data-row-open="#order-detail" style="cursor:pointer">
+              <td><div class="a-cell-stack"><strong style="font-family:var(--font-admin-mono);font-size:12px">MK202610220918</strong><span>创作者包 · points_5200</span></div></td>
+              <td><button class="a-cell-entity" type="button" data-open="#user-peek" data-row-ignore><span class="a-cell-entity__avatar">沈</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">沈砚白</span><span class="a-cell-entity__meta">shen.yanbai@studio.moe</span></span></button></td>
+              <td><span class="a-badge a-badge--ok"><i></i>已支付</span></td>
+              <td>积分包购买</td><td class="is-num">¥ 50.00</td>
+              <td><div class="a-cell-stack"><strong style="font-size:12.5px">5,200 积分</strong><span>基础 5,000 + 赠送 200</span></div></td>
+              <td>支付宝</td><td class="is-muted">10-22 09:18</td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#order-detail" data-row-ignore>详情</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-copy="MK202610220918" data-toast="复制订单号" data-row-ignore>⧉</button></div></td>
+            </tr>
+            <tr data-row-open="#order-detail" style="cursor:pointer">
+              <td><div class="a-cell-stack"><strong style="font-family:var(--font-admin-mono);font-size:12px">MK202610220917</strong><span>自定义金额 · custom_200</span></div></td>
+              <td><button class="a-cell-entity" type="button" data-open="#user-peek" data-row-ignore><span class="a-cell-entity__avatar">岑</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">岑屿</span><span class="a-cell-entity__meta">cenyu@atelier.moe</span></span></button></td>
+              <td><span class="a-badge a-badge--warn"><i></i>待支付</span></td>
+              <td>自定义金额</td><td class="is-num">¥ 200.00</td>
+              <td><div class="a-cell-stack"><strong style="font-size:12.5px">20,000 积分</strong><span>基础 20,000</span></div></td>
+              <td>微信支付</td><td class="is-muted">10-22 09:14</td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#order-detail" data-row-ignore>详情</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-copy="MK202610220917" data-toast="复制订单号" data-row-ignore>⧉</button></div></td>
+            </tr>
+            <tr data-row-open="#order-detail" style="cursor:pointer">
+              <td><div class="a-cell-stack"><strong style="font-family:var(--font-admin-mono);font-size:12px">MK202610220903</strong><span>工作室包 · points_11000</span></div></td>
+              <td><button class="a-cell-entity" type="button" data-open="#user-peek" data-row-ignore><span class="a-cell-entity__avatar">林</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">林知远</span><span class="a-cell-entity__meta">lin.zhiyuan@studio.moe</span></span></button></td>
+              <td><span class="a-badge a-badge--bad"><i></i>支付失败</span></td>
+              <td>积分包购买</td><td class="is-num">¥ 100.00</td>
+              <td><div class="a-cell-stack"><strong style="font-size:12.5px">11,000 积分</strong><span>基础 10,000 + 赠送 1,000</span></div></td>
+              <td>JeePay · 支付宝</td><td class="is-muted">10-22 08:56</td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#order-detail" data-row-ignore>详情</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-copy="MK202610220903" data-toast="复制订单号" data-row-ignore>⧉</button></div></td>
+            </tr>
+            <tr data-row-open="#order-detail" style="cursor:pointer">
+              <td><div class="a-cell-stack"><strong style="font-family:var(--font-admin-mono);font-size:12px">MK202610210642</strong><span>创作订阅 · sub_monthly_pro</span></div></td>
+              <td><button class="a-cell-entity" type="button" data-open="#user-peek" data-row-ignore><span class="a-cell-entity__avatar">何</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">何弦</span><span class="a-cell-entity__meta">hexian@studio.moe</span></span></button></td>
+              <td><span class="a-badge a-badge--ok"><i></i>已完成</span></td>
+              <td>订阅套餐</td><td class="is-num">¥ 99.00</td>
+              <td><div class="a-cell-stack"><strong style="font-size:12.5px">8,000 积分</strong><span>订阅额度 · 30 天</span></div></td>
+              <td>Stripe</td><td class="is-muted">10-21 22:31</td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#order-detail" data-row-ignore>详情</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-copy="MK202610210642" data-toast="复制订单号" data-row-ignore>⧉</button></div></td>
+            </tr>
+            <tr data-row-open="#order-detail" style="cursor:pointer">
+              <td><div class="a-cell-stack"><strong style="font-family:var(--font-admin-mono);font-size:12px">MK202610210588</strong><span>灵感包 · points_1000</span></div></td>
+              <td><button class="a-cell-entity" type="button" data-open="#user-peek" data-row-ignore><span class="a-cell-entity__avatar">苏</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">苏迟</span><span class="a-cell-entity__meta">suchi@inkroom.cn</span></span></button></td>
+              <td><span class="a-badge a-badge--bad"><i></i>支付超时</span></td>
+              <td>积分包购买</td><td class="is-num">¥ 10.00</td>
+              <td><div class="a-cell-stack"><strong style="font-size:12.5px">1,000 积分</strong><span>基础 1,000</span></div></td>
+              <td>支付宝</td><td class="is-muted">10-21 20:04</td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#order-detail" data-row-ignore>详情</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-copy="MK202610210588" data-toast="复制订单号" data-row-ignore>⧉</button></div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="a-pager">
+        <div class="a-pager__info">显示 <b>1–20</b>，共 <b>4,218</b> 条</div>
+        <div class="a-pager__controls"><button class="a-pager__btn" disabled>‹</button><button class="a-pager__btn is-active">1</button><button class="a-pager__btn">2</button><button class="a-pager__btn">3</button><button class="a-pager__btn">…</button><button class="a-pager__btn">211</button><button class="a-pager__btn">›</button></div>
+        <div class="a-pager__size"><span>每页</span><select><option>20</option><option>50</option><option>100</option></select></div>
+      </div>
+    </section>
+  </main>
+</div></div>
+
+<div class="a-scrim"></div>
+<aside class="a-drawer" id="order-detail" role="dialog" aria-modal="true" aria-label="订单详情">
+  <header class="a-drawer__head">
+    <div><h2>订单详情</h2><p>MK202610220918 · 沈砚白 · 2026-10-22 09:18:04</p></div>
+    <div class="a-drawer__spacer"></div>
+    <span class="a-badge a-badge--ok"><i></i>已支付</span>
+    <button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </header>
+  <div class="a-drawer__body">
+    <div class="a-metrics" style="grid-template-columns:repeat(3,1fr)">
+      <div class="a-metric"><div class="a-metric__label">订单金额</div><div class="a-metric__value" style="font-size:21px">¥ 50.00</div></div>
+      <div class="a-metric"><div class="a-metric__label">到账积分</div><div class="a-metric__value" style="font-size:21px">5,200</div></div>
+      <div class="a-metric"><div class="a-metric__label">支付方式</div><div class="a-metric__value" style="font-size:19px">支付宝</div></div>
+    </div>
+    <section class="a-drawer__section">
+      <h3>订单信息</h3>
+      <dl class="a-kv">
+        <div><dt>订单号</dt><dd><span class="a-mono">MK202610220918</span> <button class="a-row-btn" style="min-height:24px;padding:0 6px;font-size:11px" type="button" data-copy="MK202610220918">复制</button></dd></div>
+        <div><dt>用户</dt><dd><button class="a-cell-entity" type="button" data-open="#user-peek"><span class="a-cell-entity__avatar" style="width:24px;height:24px;border-radius:6px;font-size:9px">沈</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name" style="font-size:12.5px">沈砚白</span><span class="a-cell-entity__meta">shen.yanbai@studio.moe · #10240</span></span></button></dd></div>
+        <div><dt>购买类型</dt><dd>积分包购买 · 创作者包</dd></div>
+        <div><dt>积分明细</dt><dd>基础 5,000 + 赠送 200 = 5,200</dd></div>
+        <div><dt>有效期</dt><dd>365 天 · 2027-10-22 到期</dd></div>
+        <div><dt>渠道流水号</dt><dd><span class="a-mono">202610222200148901</span></dd></div>
+        <div><dt>幂等键</dt><dd><span class="a-mono">order_9f21c4e0</span></dd></div>
+      </dl>
+    </section>
+    <section class="a-drawer__section">
+      <h3>支付时间线</h3>
+      <div class="or-timeline">
+        <div class="or-event"><time>09:18:04</time><div><strong>创建订单</strong><span>用户发起购买 · 金额 ¥50.00</span></div></div>
+        <div class="or-event"><time>09:18:06</time><div><strong>跳转支付</strong><span>支付宝 · 收银台已打开</span></div></div>
+        <div class="or-event"><time>09:18:41</time><div><strong>支付回调已验签</strong><span>金额一致 · 渠道流水号匹配</span></div></div>
+        <div class="or-event"><time>09:18:42</time><div><strong>积分到账</strong><span>充值余额 +5,200 · 流水已生成</span></div></div>
+      </div>
+    </section>
+    <div class="a-banner a-banner--info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg><span>订单与积分流水一一对应。退款会生成反向流水并恢复对应余额桶。</span></div>
+  </div>
+  <footer class="a-drawer__foot">
+    <button class="a-btn a-btn--sm" type="button" data-toast="已发起查单：渠道返回已支付">查单</button>
+    <button class="a-btn a-btn--sm" type="button" data-toast="退款需二次确认">退款</button>
+    <button class="a-btn a-btn--sm a-btn--primary" type="button" data-close>关闭</button>
+  </footer>
+</aside>
+
+<div class="a-modal" id="user-peek" role="dialog" aria-modal="true" aria-label="用户摘要">
+  <div class="a-modal__head">
+    <div style="display:flex;align-items:center;gap:11px"><span class="a-cell-entity__avatar" style="width:42px;height:42px;border-radius:11px;font-size:14px">沈</span><div><h2>沈砚白</h2><p class="a-hint" style="font-family:var(--font-admin-mono);font-size:11px">#10240 · pro · 正常</p></div></div>
+    <button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </div>
+  <dl class="a-kv"><div><dt>邮箱</dt><dd>shen.yanbai@studio.moe</dd></div><div><dt>积分余额</dt><dd><span class="a-num">12,940.00</span></dd></div><div><dt>累计订单</dt><dd>18 笔 · ¥ 1,284.00</dd></div><div><dt>最近活跃</dt><dd>18 分钟前</dd></div></dl>
+  <div class="a-modal__foot"><button class="a-btn a-btn--sm" type="button" data-close>关闭</button><a class="a-btn a-btn--sm a-btn--primary" href="users.html">打开用户管理</a></div>
+</div>
+<script src="../assets/shell.js"></script>
+</body>
+</html>

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>首页 — Mikiko Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Manrope:wght@300..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/user.css">
+<style>
+  .hm-return { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); gap: 22px; align-items: stretch; margin-bottom: 30px; }
+  .hm-return__copy { position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; gap: 26px; padding: 32px; border: 1px solid var(--line); border-radius: 22px; background:
+      radial-gradient(620px 320px at 88% 0%, rgba(217,168,106,.14), transparent 65%), var(--surface); }
+  .hm-return__copy h1 { font-family: var(--font-display); font-size: clamp(34px, 3.6vw, 56px); font-weight: 400; line-height: 1.02; letter-spacing: -.03em; text-wrap: balance; }
+  .hm-return__copy h1 em { color: var(--accent); font-style: italic; }
+  .hm-task { display: flex; flex-direction: column; gap: 14px; padding: 20px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
+  .hm-task__stage { position: relative; flex: 1; min-height: 190px; overflow: hidden; border-radius: 12px; background: var(--media-bg); }
+  .hm-task__stage img { width: 100%; height: 100%; object-fit: cover; opacity: .9; }
+  .hm-task__badge { position: absolute; left: 10px; top: 10px; }
+  .hm-feature { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  @media (max-width: 1000px) { .hm-return { grid-template-columns: 1fr; } .hm-feature { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 640px) { .hm-feature { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body data-site="user" data-page="home">
+<div class="u-shell"><div class="u-main">
+  <div class="u-content">
+    <div class="hm-return">
+      <div class="hm-return__copy" data-reveal>
+        <div style="display:grid;gap:14px">
+          <span class="u-eyebrow">Continue where you left</span>
+          <h1>回到<em>下一张</em>图像</h1>
+          <p class="u-sub">上次的参考图、提示词与尺寸仍保留在工作台。直接继续，或者从一张干净的参数页重新开始。</p>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px">
+          <a class="u-btn u-btn--primary" href="genpic.html">继续创作</a>
+          <a class="u-btn" href="gallery.html">查看全部资产</a>
+          <a class="u-btn u-btn--quiet" href="public-gallery.html">寻找灵感</a>
+        </div>
+      </div>
+      <aside class="hm-task" data-reveal data-reveal-delay="1">
+        <div class="u-panel-title" style="margin:0"><h3>最近任务</h3><span>2 分钟前</span></div>
+        <div class="hm-task__stage">
+          <img src="https://picsum.photos/seed/mikiko-recent/700/520" data-seed="recent" alt="最近生成结果">
+          <span class="u-chip u-chip--accent hm-task__badge"><span class="u-dot"></span>生成中 · 2/4</span>
+        </div>
+        <div style="display:grid;gap:6px">
+          <div style="display:flex;justify-content:space-between;gap:10px"><strong style="font-size:13px">玻璃温室 · 黄昏系列</strong><span class="u-meta">◈ 36.00</span></div>
+          <div class="u-progress"><span></span></div>
+          <div class="u-meta">plus-image · 1536×1024 · 4 张</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <a class="u-btn u-btn--sm u-btn--primary" href="genpic.html">回到任务</a>
+          <button class="u-btn u-btn--sm" type="button" data-toast="已取消本次任务，预留积分将退回">取消任务</button>
+        </div>
+      </aside>
+    </div>
+
+    <div class="u-stat-row" style="margin-bottom:34px" data-reveal>
+      <div class="u-stat"><span class="u-stat__label">生图能力</span><span class="u-stat__value">正常</span><span class="u-stat__foot">14 个抽象模型可用</span></div>
+      <div class="u-stat"><span class="u-stat__label">可用积分</span><span class="u-stat__value" style="font-size:19px;line-height:1.35" data-points="4820.50">4,820.50</span><span class="u-stat__foot">冻结 32 积分 · 体验额度 200 积分</span></div>
+      <div class="u-stat"><span class="u-stat__label">本周生成</span><span class="u-stat__value">128</span><span class="u-stat__foot">成功 121 · 部分失败 4</span></div>
+      <div class="u-stat"><span class="u-stat__label">存储占用</span><span class="u-stat__value">6.4<span style="font-size:14px;color:var(--ink-3)"> GB</span></span><span class="u-stat__foot">上限 50 GB · 12%</span></div>
+    </div>
+
+    <div class="u-section-head" data-reveal>
+      <div style="display:grid;gap:6px">
+        <span class="u-eyebrow">Curated Inspiration</span>
+        <h2 class="u-h2">精选灵感</h2>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="u-meta">今天从公开广场挑选</span>
+        <a class="u-btn u-btn--sm" href="public-gallery.html">浏览广场 <span aria-hidden="true">→</span></a>
+      </div>
+    </div>
+
+    <div class="u-grid u-grid--gallery" data-reveal>
+      <a class="u-card" href="#media-detail" data-open="#media-detail">
+        <div class="u-card__media"><img src="https://picsum.photos/seed/mikiko-cur-1/720/540" data-seed="cur-1" alt="盐湖边的人影">
+          <span class="u-card__tag">图片</span>
+          <div class="u-card__ops"><button class="u-card__op" type="button" data-toast="已点赞">♥</button><button class="u-card__op" type="button" data-toast="已收藏">★</button></div>
+        </div>
+        <div class="u-card__body"><div class="u-card__title">盐湖边的人影，逆光与颗粒</div><div class="u-card__meta"><span>plus-image</span><span>3 小时前</span></div></div>
+      </a>
+      <a class="u-card" href="#media-detail" data-open="#media-detail">
+        <div class="u-card__media"><img src="https://picsum.photos/seed/mikiko-cur-2/720/540" data-seed="cur-2" alt="冷调建筑立面">
+          <span class="u-card__tag">图片</span>
+          <div class="u-card__ops"><button class="u-card__op" type="button" data-toast="已点赞">♥</button><button class="u-card__op" type="button" data-toast="已收藏">★</button></div>
+        </div>
+        <div class="u-card__body"><div class="u-card__title">雨后混凝土立面，蓝调时刻</div><div class="u-card__meta"><span>pro-image</span><span>5 小时前</span></div></div>
+      </a>
+      <a class="u-card" href="#media-detail" data-open="#media-detail">
+        <div class="u-card__media"><img src="https://picsum.photos/seed/mikiko-cur-3/720/540" data-seed="cur-3" alt="暖色静物">
+          <span class="u-card__tag">图片</span>
+          <div class="u-card__ops"><button class="u-card__op" type="button" data-toast="已点赞">♥</button><button class="u-card__op" type="button" data-toast="已收藏">★</button></div>
+        </div>
+        <div class="u-card__body"><div class="u-card__title">亚麻布上的柑橘与陶器</div><div class="u-card__meta"><span>plus-image</span><span>昨天</span></div></div>
+      </a>
+      <a class="u-card" href="#media-detail" data-open="#media-detail">
+        <div class="u-card__media"><img src="https://picsum.photos/seed/mikiko-cur-4/720/540" data-seed="cur-4" alt="雾林">
+          <span class="u-card__tag">图片</span>
+        </div>
+        <div class="u-card__body"><div class="u-card__title">雾中的杉木林，长焦压缩</div><div class="u-card__meta"><span>base-image</span><span>昨天</span></div></div>
+      </a>
+      <a class="u-card" href="#media-detail" data-open="#media-detail">
+        <div class="u-card__media"><img src="https://picsum.photos/seed/mikiko-cur-5/720/540" data-seed="cur-5" alt="城市夜景">
+          <span class="u-card__tag">视频</span><span class="u-play"><span><svg viewBox="0 0 24 24" width="18" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 5v14l11-7Z"/></svg></span></span>
+        </div>
+        <div class="u-card__body"><div class="u-card__title">夜班电车，8 秒循环镜头</div><div class="u-card__meta"><span>seedance-2.5</span><span>2 天前</span></div></div>
+      </a>
+      <a class="u-card" href="#media-detail" data-open="#media-detail">
+        <div class="u-card__media"><img src="https://picsum.photos/seed/mikiko-cur-6/720/540" data-seed="cur-6" alt="织物纹理">
+          <span class="u-card__tag">图片</span>
+        </div>
+        <div class="u-card__body"><div class="u-card__title">手工织物的层叠褶皱</div><div class="u-card__meta"><span>plus-image</span><span>3 天前</span></div></div>
+      </a>
+    </div>
+
+    <div class="u-plate u-plate--pad" style="margin-top:36px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:18px" data-reveal>
+      <div style="display:grid;gap:6px">
+        <h3 style="font-family:var(--font-display);font-size:22px;font-weight:400">试一下视频工作台</h3>
+        <p class="u-sub" style="font-size:13px">首帧、首尾帧与参考生视频共用一套参数区，报价在提交前给出。</p>
+      </div>
+      <a class="u-btn u-btn--primary" href="video-create.html">进入视频创作</a>
+    </div>
+  </div>
+</div></div>
+<script src="../assets/shell.js"></script>
+</body>
+</html>

@@ -29,10 +29,12 @@ import (
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	galleryexportservice "github.com/fatballfish/pic-gallery/internal/service/galleryexport"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
+	imagetitleservice "github.com/fatballfish/pic-gallery/internal/service/imagetitle"
 	mediaassetservice "github.com/fatballfish/pic-gallery/internal/service/mediaasset"
 	mediaprocessservice "github.com/fatballfish/pic-gallery/internal/service/mediaprocess"
 	objectcleanupservice "github.com/fatballfish/pic-gallery/internal/service/objectcleanup"
 	storageconfigservice "github.com/fatballfish/pic-gallery/internal/service/storageconfig"
+	textmodelservice "github.com/fatballfish/pic-gallery/internal/service/textmodel"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/internal/worker"
 	mediaworker "github.com/fatballfish/pic-gallery/internal/worker/media"
@@ -157,6 +159,8 @@ func runNormalWorkerWithOptions(ctx context.Context, startup workerBootstrap, op
 		billingSvc,
 		storageRegistry,
 	)
+	textModelSvc := textmodelservice.NewService(entstore.NewTextModelStore(client), cfg.Security.SecureConfigEncryptionKey)
+	taskSvc.SetTitleGenerator(imagetitleservice.NewService(textModelSvc))
 	taskSvc.SetModelRoutingSource(entstore.NewModelAdminStore(client))
 	if redisClient != nil {
 		taskSvc.SetConcurrencyGate(imagetaskservice.NewRedisConcurrencyGate(redisClient, cfg.Redis.KeyPrefix))

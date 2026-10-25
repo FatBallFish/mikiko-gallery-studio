@@ -4,16 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
+	"entgo.io/ent/dialect/sql"
 	"github.com/google/uuid"
 
 	domainmedia "github.com/fatballfish/pic-gallery/internal/domain/media"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaasset"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediauploadsession"
-	"github.com/fatballfish/pic-gallery/internal/repository/ent/project"
 	mediaassetservice "github.com/fatballfish/pic-gallery/internal/service/mediaasset"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
@@ -36,17 +37,17 @@ func (s *MediaStore) FindUploadByIdempotency(ctx context.Context, userID int64, 
 	return mapMediaUploadSession(entity), true, nil
 }
 
-func (s *MediaStore) CreateUpload(ctx context.Context, req mediaassetservice.CreateUploadRecord) (mediaassetservice.UploadSession, error) {
+func (s *MediaStore) CreateUpload(ctx context.Context, req mediaassetservice.CreateUploadRecord) (result mediaassetservice.UploadSession, resultErr error) {
+	started := time.Now()
+	defer func() {
+		slog.InfoContext(ctx, "media upload store stage", "stage", "CreateUpload.total", "duration_ms", time.Since(started).Milliseconds(), "success", resultErr == nil)
+	}()
 	return withSerializableTx(ctx, s.client, func(tx *repoent.Tx) (mediaassetservice.UploadSession, error) {
 		session := req.Session
-		projectExists, err := tx.Project.Query().Where(
-			project.IDEQ(session.ProjectID), project.UserIDEQ(session.UserID), project.StatusEQ("active"), project.DeletedAtIsNil(),
-		).Exist(ctx)
+		// The group resolver validates active ownership and locks the project once.
+		g, err := resolveAssetGroup(ctx, tx.Client(), session.UserID, session.ProjectID, session.GroupName)
 		if err != nil {
 			return mediaassetservice.UploadSession{}, err
-		}
-		if !projectExists {
-			return mediaassetservice.UploadSession{}, errs.New(404, errs.CodeNotFound, "project not found")
 		}
 		if req.QuotaBytes > 0 {
 			usedBytes, err := activeMediaBytes(ctx, tx, session.UserID)
@@ -56,6 +57,11 @@ func (s *MediaStore) CreateUpload(ctx context.Context, req mediaassetservice.Cre
 			if session.ReservedBytes > req.QuotaBytes || usedBytes > req.QuotaBytes-session.ReservedBytes {
 				return mediaassetservice.UploadSession{}, errs.New(409, errs.CodeConflict, "media storage quota exceeded")
 			}
+		}
+		if g != nil {
+			session.GroupName = g.Name
+		} else {
+			session.GroupName = ""
 		}
 		storageConfigID := parseOptionalUUID(session.StorageConfigID)
 		builder := tx.MediaUploadSession.Create().
@@ -167,21 +173,24 @@ func (s *MediaStore) CompleteExpiredUpload(ctx context.Context, id uuid.UUID) (b
 }
 
 func (s *MediaStore) RecordCompletedParts(ctx context.Context, userID int64, id uuid.UUID, parts []storage.CompletedPart) (mediaassetservice.UploadSession, error) {
-	entity, err := s.client.MediaUploadSession.Query().Where(mediauploadsession.IDEQ(id), mediauploadsession.UserIDEQ(userID)).Only(ctx)
-	if repoent.IsNotFound(err) {
-		return mediaassetservice.UploadSession{}, errs.New(404, errs.CodeNotFound, "upload session not found")
-	}
-	if err != nil {
-		return mediaassetservice.UploadSession{}, err
-	}
-	if entity.Status == "completed" || entity.Status == "aborted" {
+	return withSerializableTx(ctx, s.client, func(tx *repoent.Tx) (mediaassetservice.UploadSession, error) {
+		// The conditional update also guards against a concurrent complete/abort.
+		_, err := tx.MediaUploadSession.Update().Where(
+			mediauploadsession.IDEQ(id), mediauploadsession.UserIDEQ(userID),
+			mediauploadsession.StatusIn("initialized", "uploading"),
+		).SetStatus("uploading").SetCompletedParts(completedPartsJSON(parts)).Save(ctx)
+		if err != nil {
+			return mediaassetservice.UploadSession{}, err
+		}
+		entity, err := tx.MediaUploadSession.Query().Where(mediauploadsession.IDEQ(id), mediauploadsession.UserIDEQ(userID)).Only(ctx)
+		if repoent.IsNotFound(err) {
+			return mediaassetservice.UploadSession{}, errs.New(404, errs.CodeNotFound, "upload session not found")
+		}
+		if err != nil {
+			return mediaassetservice.UploadSession{}, err
+		}
 		return mapMediaUploadSession(entity), nil
-	}
-	updated, err := entity.Update().SetStatus("uploading").SetCompletedParts(completedPartsJSON(parts)).Save(ctx)
-	if err != nil {
-		return mediaassetservice.UploadSession{}, err
-	}
-	return mapMediaUploadSession(updated), nil
+	})
 }
 
 func (s *MediaStore) MarkUploadCompleting(ctx context.Context, userID int64, id uuid.UUID, parts []storage.CompletedPart) (mediaassetservice.UploadSession, error) {
@@ -242,12 +251,13 @@ func (s *MediaStore) CompleteUpload(ctx context.Context, req mediaassetservice.C
 		if len(checksum) != 64 {
 			checksum = ""
 		}
+		name := mediaassetservice.UploadDisplayName(session.OriginalFilename)
 		assetBuilder := tx.MediaAsset.Create().
 			SetID(assetID).
 			SetUserID(session.UserID).
 			SetProjectID(session.ProjectID).
-			SetName(session.OriginalFilename).
-			SetNameKey(strings.ToLower(strings.TrimSpace(session.OriginalFilename))).
+			SetName(name).
+			SetNameKey(strings.ToLower(name)).
 			SetGroupName(session.GroupName).
 			SetMediaType(session.DeclaredMediaType).
 			SetSourceType("local_upload").
@@ -261,6 +271,9 @@ func (s *MediaStore) CompleteUpload(ctx context.Context, req mediaassetservice.C
 			SetSha256(checksum)
 		if session.StorageConfigID != nil {
 			assetBuilder.SetStorageConfigID(*session.StorageConfigID)
+		}
+		if err := setCreateAssetGroup(ctx, tx, assetBuilder, session.UserID, session.ProjectID, session.GroupName); err != nil {
+			return mediaassetservice.Asset{}, err
 		}
 		assetEntity, err := assetBuilder.Save(ctx)
 		if err != nil {
@@ -302,24 +315,24 @@ func (s *MediaStore) AbortUpload(ctx context.Context, userID int64, id uuid.UUID
 }
 
 func activeMediaBytes(ctx context.Context, tx *repoent.Tx, userID int64) (int64, error) {
-	assets, err := tx.MediaAsset.Query().Where(mediaasset.UserIDEQ(userID), mediaasset.DeletedAtIsNil(), mediaasset.StatusNEQ("deleted")).All(ctx)
+	// COALESCE preserves the empty-set total without loading full entities.
+	var assets, sessions []int64
+	err := tx.MediaAsset.Query().Where(mediaasset.UserIDEQ(userID), mediaasset.DeletedAtIsNil(), mediaasset.StatusNEQ("deleted")).
+		Aggregate(func(s *sql.Selector) string {
+			return "COALESCE(" + sql.Sum(s.C(mediaasset.FieldFileSizeBytes)) + ", 0)"
+		}).Scan(ctx, &assets)
 	if err != nil {
 		return 0, err
 	}
-	var total int64
-	for _, assetEntity := range assets {
-		total += assetEntity.FileSizeBytes
-	}
-	sessions, err := tx.MediaUploadSession.Query().Where(
+	err = tx.MediaUploadSession.Query().Where(
 		mediauploadsession.UserIDEQ(userID), mediauploadsession.StatusIn("initialized", "uploading", "completing"),
-	).All(ctx)
+	).Aggregate(func(s *sql.Selector) string {
+		return "COALESCE(" + sql.Sum(s.C(mediauploadsession.FieldReservedBytes)) + ", 0)"
+	}).Scan(ctx, &sessions)
 	if err != nil {
 		return 0, err
 	}
-	for _, session := range sessions {
-		total += session.ReservedBytes
-	}
-	return total, nil
+	return assets[0] + sessions[0], nil
 }
 
 func mapMediaUploadSession(entity *repoent.MediaUploadSession) mediaassetservice.UploadSession {
@@ -348,7 +361,7 @@ func mapMediaAsset(entity *repoent.MediaAsset) mediaassetservice.Asset {
 		storageConfigID = entity.StorageConfigID.String()
 	}
 	return mediaassetservice.Asset{
-		ID: entity.ID, UserID: entity.UserID, ProjectID: entity.ProjectID, LegacyImageID: entity.LegacyImageResultID, Name: entity.Name, GroupName: entity.GroupName,
+		ID: entity.ID, UserID: entity.UserID, ProjectID: entity.ProjectID, LegacyImageID: entity.LegacyImageResultID, Name: entity.Name, GroupID: entity.GroupID, GroupName: entity.GroupName,
 		MediaType: domainmedia.MediaType(entity.MediaType), SourceType: entity.SourceType, SourceTaskKind: entity.SourceTaskKind,
 		SourceTaskID: entity.SourceTaskID, SourceCanvasID: entity.SourceCanvasID, Status: entity.Status,
 		VisibilityStatus: entity.VisibilityStatus, StorageConfigID: storageConfigID, StorageDriver: entity.StorageDriver,

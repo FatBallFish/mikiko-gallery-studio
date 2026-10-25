@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -158,7 +159,7 @@ func (s *Service) Access(ctx context.Context, userID int64, assetID uuid.UUID, p
 	if purpose == AccessPurposeDownload {
 		storagePurpose = storage.TemporaryMediaPurposeDownload
 	}
-	access, supported, err := storage.ProjectTemporaryMediaAccess(ctx, ref.Backend, object.ObjectKey, object.MIMEType, asset.Name, storagePurpose)
+	access, supported, err := storage.ProjectTemporaryMediaAccess(ctx, ref.Backend, object.ObjectKey, object.MIMEType, deliveryFilename(asset.Name, object), storagePurpose)
 	if err != nil {
 		return AccessResult{}, err
 	}
@@ -189,7 +190,7 @@ func (s *Service) OpenContent(ctx context.Context, userID int64, assetID uuid.UU
 	if err != nil {
 		return ContentStream{}, err
 	}
-	return ContentStream{Reader: reader, SizeBytes: size, ContentType: object.MIMEType, Filename: asset.Name}, nil
+	return ContentStream{Reader: reader, SizeBytes: size, ContentType: object.MIMEType, Filename: deliveryFilename(asset.Name, object)}, nil
 }
 
 type assetStorageObject struct {
@@ -285,7 +286,18 @@ func accessDerivativePriorities(mediaType domainmedia.MediaType, purpose string)
 	}
 }
 
-func (s *Service) InitUpload(ctx context.Context, req InitUploadRequest) (UploadSession, error) {
+// Upload timings deliberately exclude request metadata, storage URLs and raw errors.
+func logUploadInitStage(ctx context.Context, stage string, started time.Time, err error) {
+	result := "success"
+	if err != nil {
+		result = "error"
+	}
+	slog.InfoContext(ctx, "media upload init stage", "stage", stage, "duration_ms", time.Since(started).Milliseconds(), "result", result, "context_cancelled", ctx.Err() != nil)
+}
+
+func (s *Service) InitUpload(ctx context.Context, req InitUploadRequest) (result UploadSession, resultErr error) {
+	started := time.Now()
+	defer func() { logUploadInitStage(ctx, "total", started, resultErr) }()
 	if s == nil || s.store == nil || s.router == nil {
 		return UploadSession{}, errs.Internal("media upload service is unavailable")
 	}
@@ -298,7 +310,9 @@ func (s *Service) InitUpload(ctx context.Context, req InitUploadRequest) (Upload
 	if len(req.IdempotencyKey) > maximumIdempotencyKeyLength {
 		return UploadSession{}, errs.BadRequest("Idempotency-Key must be at most 128 characters")
 	}
+	stageStarted := time.Now()
 	runtimePolicy, err := s.runtimePolicy(ctx)
+	logUploadInitStage(ctx, "runtimePolicy", stageStarted, err)
 	if err != nil {
 		return UploadSession{}, fmt.Errorf("resolve media upload policy: %w", err)
 	}
@@ -310,8 +324,11 @@ func (s *Service) InitUpload(ctx context.Context, req InitUploadRequest) (Upload
 	if err != nil {
 		return UploadSession{}, err
 	}
-	if existing, found, err := s.store.FindUploadByIdempotency(ctx, req.UserID, req.IdempotencyKey); err != nil {
-		return UploadSession{}, err
+	stageStarted = time.Now()
+	existing, found, findErr := s.store.FindUploadByIdempotency(ctx, req.UserID, req.IdempotencyKey)
+	logUploadInitStage(ctx, "findIdempotency", stageStarted, findErr)
+	if findErr != nil {
+		return UploadSession{}, findErr
 	} else if found {
 		if existing.RequestFingerprint != fingerprint {
 			s.recordUpload("initialize", "failed", req.SizeBytes)
@@ -320,7 +337,9 @@ func (s *Service) InitUpload(ctx context.Context, req InitUploadRequest) (Upload
 		return existing, nil
 	}
 
+	stageStarted = time.Now()
 	ref, err := s.router.DefaultWriter(ctx)
+	logUploadInitStage(ctx, "defaultWriter", stageStarted, err)
 	if err != nil {
 		return UploadSession{}, fmt.Errorf("resolve upload storage: %w", err)
 	}
@@ -331,9 +350,11 @@ func (s *Service) InitUpload(ctx context.Context, req InitUploadRequest) (Upload
 	sessionID := uuid.New()
 	extension := strings.ToLower(filepath.Ext(req.Filename))
 	objectKey := fmt.Sprintf("media/original/%d/%s/original%s", req.UserID, sessionID.String(), extension)
+	stageStarted = time.Now()
 	backendUpload, err := multipart.CreateMultipart(ctx, storage.MultipartCreateRequest{
 		ObjectKey: objectKey, ContentType: req.MIMEType, SizeBytes: req.SizeBytes, PartSize: s.opts.PartSize,
 	})
+	logUploadInitStage(ctx, "createMultipart", stageStarted, err)
 	if err != nil {
 		return UploadSession{}, fmt.Errorf("initialize multipart upload: %w", err)
 	}
@@ -345,7 +366,9 @@ func (s *Service) InitUpload(ctx context.Context, req InitUploadRequest) (Upload
 		PartSize: backendUpload.PartSize, PartCount: backendUpload.PartCount, Status: "initialized", ReservedBytes: req.SizeBytes,
 		IdempotencyKey: req.IdempotencyKey, RequestFingerprint: fingerprint, ExpiresAt: s.opts.Now().UTC().Add(runtimePolicy.UploadTTL),
 	}
+	stageStarted = time.Now()
 	created, err := s.store.CreateUpload(ctx, CreateUploadRecord{Session: session, QuotaBytes: runtimePolicy.UserQuotaBytes})
+	logUploadInitStage(ctx, "CreateUpload", stageStarted, err)
 	if err == nil {
 		s.recordUpload("initialize", "success", req.SizeBytes)
 		return created, nil
@@ -385,7 +408,7 @@ func (s *Service) SignPart(ctx context.Context, userID int64, sessionID uuid.UUI
 	if err != nil {
 		return storage.MultipartPartTarget{}, err
 	}
-	if session.Status == "completed" || session.Status == "aborted" || session.ExpiresAt.Before(s.opts.Now().UTC()) {
+	if (session.Status != "initialized" && session.Status != "uploading") || !session.ExpiresAt.After(s.opts.Now().UTC()) {
 		return storage.MultipartPartTarget{}, errs.New(409, errs.CodeConflict, "upload session is not writable")
 	}
 	return multipart.SignMultipartPart(ctx, session.MultipartUpload(), partNumber, checksum, 5*time.Minute)
@@ -396,7 +419,7 @@ func (s *Service) UploadPart(ctx context.Context, userID int64, sessionID uuid.U
 	if err != nil {
 		return storage.CompletedPart{}, err
 	}
-	if session.Status == "completed" || session.Status == "aborted" || session.ExpiresAt.Before(s.opts.Now().UTC()) {
+	if (session.Status != "initialized" && session.Status != "uploading") || !session.ExpiresAt.After(s.opts.Now().UTC()) {
 		return storage.CompletedPart{}, errs.New(409, errs.CodeConflict, "upload session is not writable through the proxy endpoint")
 	}
 	part, err := multipart.PutMultipartPart(ctx, session.MultipartUpload(), partNumber, reader, size, checksum)
@@ -422,12 +445,17 @@ func (s *Service) UploadPart(ctx context.Context, userID int64, sessionID uuid.U
 	return part, nil
 }
 
+// GetUploadSession reads current upload authority without refreshing or changing its state.
+func (s *Service) GetUploadSession(ctx context.Context, userID int64, sessionID uuid.UUID) (UploadSession, error) {
+	return s.store.GetUpload(ctx, userID, sessionID)
+}
+
 func (s *Service) Status(ctx context.Context, userID int64, sessionID uuid.UUID) (UploadSession, error) {
 	session, multipart, err := s.uploadBackend(ctx, userID, sessionID)
 	if err != nil {
 		return UploadSession{}, err
 	}
-	if session.Status == "completed" || session.Status == "aborted" {
+	if session.Status != "initialized" && session.Status != "uploading" {
 		return session, nil
 	}
 	status, err := multipart.MultipartStatus(ctx, session.MultipartUpload())
@@ -465,7 +493,9 @@ func (s *Service) CompleteUpload(ctx context.Context, userID int64, sessionID uu
 		UserID: userID, SessionID: sessionID, AssetID: assetID, Completed: completed, CompletedAt: s.opts.Now().UTC(),
 	})
 	if err != nil {
-		_ = sessionStorageDelete(context.WithoutCancel(ctx), s.router, session)
+		if ctx.Err() == nil {
+			_ = sessionStorageDelete(context.WithoutCancel(ctx), s.router, session)
+		}
 		s.recordUpload("complete", "failed", session.DeclaredSizeBytes)
 		return Asset{}, err
 	}

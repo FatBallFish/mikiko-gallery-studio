@@ -3,7 +3,7 @@ import { Search, X } from 'lucide-react'
 import type { CanvasNode } from './core/types'
 
 const labels: Record<CanvasNode['type'], string> = {
-  prompt: '提示词', image: '图片', video: '视频', audio: '音频', image_generation: '图片生成', video_generation: '视频生成', note: '便签',
+  prompt: '提示词（旧版）', image: '图片框（旧版）', video: '视频（旧版）', audio: '音频', image_generation: '图片生成（旧版）', video_generation: '视频生成（旧版）', note: '便签', image_v2: '图片', video_v2: '视频',
 }
 
 export function CanvasNodeSearch({ nodes, onSelect, onClose }: { nodes: CanvasNode[]; onSelect: (node: CanvasNode) => void; onClose: () => void }) {

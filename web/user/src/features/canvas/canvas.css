@@ -1,3 +1,28 @@
+.canvas-node.canvas-node-v2 { display: block; overflow: visible; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.canvas-node-v2[data-selected="true"] { border: 0; box-shadow: none; }
+.canvas-node-v2 .canvas-media-v2__body, .canvas-node-v2 .canvas-media-v2 { height: 100%; }
+.canvas-node-v2 .canvas-media-v2__title { position: absolute; bottom: calc(100% + 8px); left: 0; right: 0; }
+.canvas-node-v2[data-selected="true"] .canvas-media-v2__body { outline: 2px solid var(--accent); outline-offset: 3px; }
+.canvas-node-v2[data-connect-valid="true"] .canvas-media-v2__body { outline: 2px solid #5bbca5; }
+.canvas-node-v2[data-connect-invalid="true"] .canvas-media-v2__body { outline: 2px solid #d96c69; }
+.canvas-node-v2[data-reference-eligible="true"]:hover .canvas-media-v2__body { outline: 2px solid #5bbca5; outline-offset: 3px; }
+.canvas-node[data-reference-eligible="true"]:hover { cursor: crosshair; }
+.canvas-node-v2 .canvas-media-v2__body { position: relative; touch-action: none; }
+.canvas-node-v2 .canvas-media-v2__body > video { pointer-events: none; }
+.canvas-media-preview-button { position: absolute; right: 12px; bottom: 12px; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border: 1px solid var(--border); border-radius: 6px; color: var(--fg); background: var(--surface); cursor: pointer; }
+.canvas-media-preview-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.canvas-console-anchor { position: absolute; z-index: 25; overflow: auto; overscroll-behavior: contain; }
+.canvas-console-anchor > .canvas-console-v2-anchor { width: 100%; min-width: 0; }
+.canvas-reference-pick { position: absolute; z-index: 35; top: 20px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 16px; padding: 12px 16px; border: 1px solid var(--accent); border-radius: 10px; background: var(--surface); font-size: 13px; }
+.canvas-reference-pick button { min-height: 36px; padding: 0 10px; color: var(--fg); border: 1px solid var(--border); border-radius: 6px; background: var(--bg); }
+.canvas-pointer-tools, .canvas-create-tools { position: relative; display: flex; align-items: center; }
+.canvas-pointer-tools > button:nth-child(2) { min-width: 22px; }
+.canvas-legacy-body { display: flex; flex-direction: column; gap: 8px; height: 100%; overflow: auto; font-size: 12px; }
+.canvas-legacy-body img, .canvas-legacy-body video { width: 100%; min-height: 0; flex: 1; object-fit: contain; }
+.canvas-legacy-body audio { max-width: 100%; }
+.canvas-minimap i[data-type="image_v2"] { background: #57a78d; }
+.canvas-minimap i[data-type="video_v2"] { background: #d29851; }
+
 .canvas-editor {
   position: fixed;
   inset: 0;
@@ -128,7 +153,7 @@
   min-height: 0;
   overflow: hidden;
   touch-action: none;
-  cursor: crosshair;
+  cursor: default;
   background: color-mix(in srgb, var(--bg) 82%, #1d2321);
 }
 
@@ -498,6 +523,7 @@
 @media (pointer: coarse) {
   .canvas-editor-header button,
   .canvas-toolbox button,
+  .canvas-dock button:not(.canvas-dock-grip),
   .canvas-zoom-controls button,
   .canvas-command-controls button,
   .canvas-generation-actions button { min-width: 44px; min-height: 44px; }
@@ -580,7 +606,10 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 6px;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  padding: 12px 6px 6px;
+  transform: translateX(-50%);
   border: 1px solid var(--border);
   border-radius: 14px;
   background: color-mix(in srgb, var(--surface) 92%, transparent);
@@ -602,6 +631,22 @@
   background: transparent;
   cursor: pointer;
 }
+
+.canvas-dock .canvas-dock-grip {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 44px;
+  min-width: 44px;
+  min-height: 22px;
+  border: 0;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.canvas-dock-grip span { width: 22px; height: 3px; border-radius: 3px; background: var(--muted); }
+.canvas-dock .canvas-dock-grip:active { cursor: grabbing; }
 
 .canvas-dock button:hover { color: var(--fg); border-color: var(--border); background: var(--bg); }
 .canvas-dock button[aria-pressed="true"] { color: var(--fg); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
@@ -694,8 +739,14 @@
 .canvas-shortcuts-grid kbd { padding: 3px 8px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 6px; background: var(--bg); font-family: var(--pg-mono, monospace); font-size: 11px; }
 .canvas-shortcuts-grid span { color: var(--muted); font-size: 12px; }
 
+@media (max-width: 1100px) {
+  .canvas-zoom-controls { bottom: 92px; }
+  .canvas-command-controls { bottom: 144px; }
+}
+
 @media (max-width: 767px) {
-  .canvas-dock { left: 12px; right: 12px; transform: none; justify-content: space-between; }
+  .canvas-dock { gap: 2px; }
+  .canvas-dock button:not(.canvas-dock-grip) { min-width: 30px; }
 }
 
 .canvas-viewport[data-space] { cursor: grab; }

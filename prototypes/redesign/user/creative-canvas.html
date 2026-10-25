@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>创意画布 — Mikiko Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Manrope:wght@300..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/user.css">
+<style>
+  .cv-templates { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 26px; }
+  .cv-template { display: flex; align-items: center; gap: 13px; padding: 15px 16px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); text-align: left; transition: all var(--t-fast); }
+  .cv-template:hover { border-color: var(--accent-line); background: var(--accent-soft); transform: translateY(-1px); }
+  .cv-template i { display: grid; place-items: center; width: 38px; height: 38px; flex: none; border-radius: 10px; background: var(--surface-3); color: var(--accent); font-style: normal; font-size: 15px; }
+  .cv-template div { display: grid; gap: 2px; min-width: 0; }
+  .cv-template strong { font-size: 12.5px; }
+  .cv-template span { color: var(--ink-3); font-size: 10.5px; }
+  .cv-card__preview { position: relative; aspect-ratio: 16/10; background-color: #0a0c12; background-image: radial-gradient(rgba(255,255,255,.09) 1px, transparent 1px); background-size: 14px 14px; overflow: hidden; }
+  .cv-card__node { position: absolute; border-radius: 5px; }
+  .cv-card__node--img { background: rgba(98,195,162,.55); border: 1px solid rgba(98,195,162,.8); }
+  .cv-card__node--vid { background: rgba(225,138,99,.6); border: 1px solid rgba(225,138,99,.85); }
+  .cv-card__node--txt { background: rgba(156,144,255,.5); border: 1px solid rgba(156,144,255,.8); }
+  .cv-card__node--note { background: rgba(138,182,240,.45); border: 1px solid rgba(138,182,240,.7); }
+  .cv-card__foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 13px; }
+  .cv-card__foot strong { font-size: 12.5px; }
+  @media (max-width: 900px) { .cv-templates { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body data-site="user" data-page="creative-canvas">
+<div class="u-shell"><div class="u-main">
+  <div class="u-content">
+    <div class="u-page-head">
+      <div class="u-page-head__copy">
+        <span class="u-eyebrow">Creative Canvas</span>
+        <h1 class="u-h1">创意画布</h1>
+        <p class="u-sub">把提示词、参考图、生成任务与视频节点放在同一张无限画布上。每个节点都保留自己的参数与运行状态。</p>
+      </div>
+      <div class="u-page-head__actions">
+        <button class="u-btn u-btn--sm" type="button" data-toast="已打开画布资产抽屉">资产抽屉</button>
+        <button class="u-btn u-btn--primary u-btn--sm" type="button" data-toast="已创建空白画布">新建画布</button>
+      </div>
+    </div>
+
+    <div class="cv-templates">
+      <button class="cv-template" type="button" data-toast="已按模板创建：空白画布">
+        <i>＋</i><div><strong>空白画布</strong><span>从提示词节点开始</span></div>
+      </button>
+      <button class="cv-template" type="button" data-toast="已按模板创建：图片探索">
+        <i>◫</i><div><strong>图片探索</strong><span>提示词 → 4 组图片生成</span></div>
+      </button>
+      <button class="cv-template" type="button" data-toast="已按模板创建：图片转视频">
+        <i>▶</i><div><strong>图片转视频</strong><span>图片节点 → 视频生成</span></div>
+      </button>
+    </div>
+
+    <div class="u-section-head">
+      <div style="display:grid;gap:5px">
+        <h2 class="u-h3">我的画布</h2>
+        <span class="u-meta">3 张画布 · 当前项目：夜航系列</span>
+      </div>
+      <div class="u-search" style="max-width:260px;flex:0 1 260px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input placeholder="搜索画布">
+      </div>
+    </div>
+
+    <div class="u-grid u-grid--projects">
+      <article class="u-card">
+        <a class="cv-card__preview" href="canvas-editor.html" aria-label="打来玻璃温室视觉组">
+          <span class="cv-card__node cv-card__node--txt" style="left:12%;top:18%;width:24%;height:16%"></span>
+          <span class="cv-card__node cv-card__node--img" style="left:45%;top:12%;width:22%;height:26%"></span>
+          <span class="cv-card__node cv-card__node--img" style="left:45%;top:46%;width:22%;height:26%"></span>
+          <span class="cv-card__node cv-card__node--vid" style="left:74%;top:30%;width:18%;height:22%"></span>
+          <span class="cv-card__node cv-card__node--note" style="left:15%;top:62%;width:20%;height:18%"></span>
+        </a>
+        <div class="cv-card__foot">
+          <div style="display:grid;gap:1px">
+            <strong>玻璃温室视觉组</strong>
+            <span class="u-meta">6 个节点 · 2 个任务运行中</span>
+          </div>
+          <div style="display:flex;gap:5px">
+            <button class="u-icon-btn" type="button" data-toast="重命名画布" aria-label="重命名">✎</button>
+            <button class="u-icon-btn" type="button" data-toast="更多：复制 / 转移 / 删除" aria-label="更多">⋯</button>
+          </div>
+        </div>
+      </article>
+      <article class="u-card">
+        <a class="cv-card__preview" href="canvas-editor.html" aria-label="打开夜班电车分镜">
+          <span class="cv-card__node cv-card__node--txt" style="left:8%;top:24%;width:20%;height:20%"></span>
+          <span class="cv-card__node cv-card__node--img" style="left:36%;top:14%;width:18%;height:22%"></span>
+          <span class="cv-card__node cv-card__node--img" style="left:36%;top:44%;width:18%;height:22%"></span>
+          <span class="cv-card__node cv-card__node--vid" style="left:62%;top:24%;width:22%;height:30%"></span>
+        </a>
+        <div class="cv-card__foot">
+          <div style="display:grid;gap:1px"><strong>夜班电车分镜</strong><span class="u-meta">4 个节点 · 8 分钟前更新</span></div>
+          <div style="display:flex;gap:5px"><button class="u-icon-btn" type="button" aria-label="重命名" data-toast="重命名画布">✎</button><button class="u-icon-btn" type="button" aria-label="更多" data-toast="更多操作">⋯</button></div>
+        </div>
+      </article>
+      <article class="u-card">
+        <a class="cv-card__preview" href="canvas-editor.html" aria-label="打开材质研究">
+          <span class="cv-card__node cv-card__node--img" style="left:10%;top:16%;width:22%;height:26%"></span>
+          <span class="cv-card__node cv-card__node--img" style="left:10%;top:50%;width:22%;height:26%"></span>
+          <span class="cv-card__node cv-card__node--note" style="left:40%;top:22%;width:22%;height:34%"></span>
+          <span class="cv-card__node cv-card__node--txt" style="left:68%;top:34%;width:20%;height:18%"></span>
+        </a>
+        <div class="cv-card__foot">
+          <div style="display:grid;gap:1px"><strong>材质研究 · 织物与玻璃</strong><span class="u-meta">4 个节点 · 昨天</span></div>
+          <div style="display:flex;gap:5px"><button class="u-icon-btn" type="button" aria-label="重命名" data-toast="重命名画布">✎</button><button class="u-icon-btn" type="button" aria-label="更多" data-toast="更多操作">⋯</button></div>
+        </div>
+      </article>
+    </div>
+  </div>
+</div></div>
+<script src="../assets/shell.js"></script>
+</body>
+</html>

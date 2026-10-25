@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>积分充值 — Mikiko Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Manrope:wght@300..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/user.css">
+<style>
+  .ck-layout { display: grid; grid-template-columns: minmax(0, 1fr) 366px; gap: 20px; align-items: start; }
+  .ck-plans { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .ck-plan { position: relative; display: grid; gap: 8px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); text-align: left; transition: all var(--t-fast); }
+  .ck-plan:hover { border-color: var(--line-2); background: var(--surface-2); transform: translateY(-2px); }
+  .ck-plan.is-active { border-color: var(--accent); background: linear-gradient(180deg, var(--accent-soft), transparent 130%); box-shadow: 0 0 0 1px var(--accent); }
+  .ck-plan__name { font-size: 13px; font-weight: 650; }
+  .ck-plan__points { font-family: var(--font-mono); font-size: 26px; font-weight: 400; letter-spacing: -.03em; }
+  .ck-plan__points small { font-size: 11px; color: var(--ink-3); }
+  .ck-plan__price { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--ink-2); font-size: 12px; }
+  .ck-plan__price b { color: var(--ink); font-family: var(--font-mono); font-size: 17px; font-weight: 500; }
+  .ck-plan__ribbon { position: absolute; right: 12px; top: 12px; padding: 2px 7px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 9.5px; font-weight: 700; }
+  .ck-custom { display: grid; gap: 10px; padding: 18px; border: 1px dashed var(--line-2); border-radius: 14px; background: transparent; }
+  .ck-custom__row { display: flex; gap: 8px; align-items: center; }
+  .ck-summary { position: sticky; top: calc(var(--top-h) + 16px); display: grid; gap: 16px; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+  .ck-methods { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .ck-method { display: flex; align-items: center; gap: 9px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: transparent; font-size: 12px; color: var(--ink-2); transition: all var(--t-fast); }
+  .ck-method:hover { border-color: var(--line-2); }
+  .ck-method.is-active { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
+  .ck-method__logo { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; background: var(--surface-3); font-size: 11px; font-weight: 700; }
+  .ck-order { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 13px 2px; border-bottom: 1px solid var(--line); }
+  .ck-order:last-child { border-bottom: 0; }
+  @media (max-width: 1080px) { .ck-layout { grid-template-columns: 1fr; } .ck-summary { position: static; } }
+  @media (max-width: 620px) { .ck-plans { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body data-site="user" data-page="checkout">
+<div class="u-shell"><div class="u-main">
+  <div class="u-content">
+    <div class="u-page-head">
+      <div class="u-page-head__copy">
+        <span class="u-eyebrow">Add Points</span>
+        <h1 class="u-h1">积分充值</h1>
+        <p class="u-sub">套餐购买的积分有效期 365 天；自定义金额即时到账。余额与消耗按积分等级自动换算展示。</p>
+        <div class="u-points-rules" style="margin-top:12px" aria-label="积分等级与汇率">
+          <strong>积分等级与汇率</strong>
+          <span><b>1 钻石积分</b> = 100 金币积分</span>
+          <span><b>1 金币积分</b> = 100 银币积分</span>
+          <span><b>1 银币积分</b> = 100 积分</span>
+          <span><b>100 积分</b> = 1 元（1 积分 = 0.01 元）</span>
+          <span>展示口径：余额与消耗按等级自动换算（如 300 积分 = 3 银币积分）；本页积分包与订单记录展示原始积分值。</span>
+        </div>
+      </div>
+      <div class="u-page-head__actions">
+        <span class="u-chip u-chip--mono">可用积分 <span data-points="4820.50">4,820.50</span></span>
+      </div>
+    </div>
+
+    <div class="ck-layout">
+      <div style="display:grid;gap:22px">
+        <section>
+          <div class="u-section-head"><h2 class="u-h3">选择套餐</h2><span class="u-meta">按积分从少到多</span></div>
+          <div class="ck-plans">
+            <button class="ck-plan" type="button">
+              <span class="ck-plan__name">灵感包</span>
+              <span class="ck-plan__points">1,000 <small>积分</small></span>
+              <span class="ck-plan__price"><span>基础到账</span><b>¥ 10.00</b></span>
+              <span class="u-meta">约 40 张标准图片</span>
+            </button>
+            <button class="ck-plan is-active" type="button">
+              <span class="ck-plan__ribbon">最常选择</span>
+              <span class="ck-plan__name">创作者包</span>
+              <span class="ck-plan__points">5,200 <small>积分</small></span>
+              <span class="ck-plan__price"><span>含赠送 200</span><b>¥ 50.00</b></span>
+              <span class="u-meta">约 208 张标准图片 / 100 秒视频</span>
+            </button>
+            <button class="ck-plan" type="button">
+              <span class="ck-plan__name">工作室包</span>
+              <span class="ck-plan__points">11,000 <small>积分</small></span>
+              <span class="ck-plan__price"><span>含赠送 1,000</span><b>¥ 100.00</b></span>
+              <span class="u-meta">适合连续批量生成</span>
+            </button>
+            <button class="ck-plan" type="button">
+              <span class="ck-plan__name">年度包</span>
+              <span class="ck-plan__points">58,000 <small>积分</small></span>
+              <span class="ck-plan__price"><span>含赠送 8,000</span><b>¥ 500.00</b></span>
+              <span class="u-meta">约 2,320 张标准图片</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="ck-custom">
+          <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px">
+            <div style="display:grid;gap:2px"><strong style="font-size:13px">自定义金额</strong><span class="u-meta">1 – 10,000 元</span></div>
+            <label class="u-switch"><input type="checkbox"><span class="u-switch__track"></span>使用自定义金额</label>
+          </div>
+          <div class="ck-custom__row">
+            <input class="u-input" value="200" inputmode="decimal" aria-label="充值金额" style="max-width:180px">
+            <span class="u-meta">元</span>
+            <div style="flex:1"></div>
+            <span class="u-meta">实时换算 <b style="color:var(--ink);font-family:var(--font-mono);font-size:13px">20,000 积分</b></span>
+          </div>
+        </section>
+
+        <section>
+          <div class="u-section-head"><h2 class="u-h3">最近订单</h2><span class="u-meta">仅显示最近 90 天</span></div>
+          <div class="u-plate" style="padding:0 18px">
+            <div class="ck-order">
+              <div style="display:grid;gap:2px;min-width:0">
+                <strong style="font-size:12.5px">创作者包 · 5,200 积分</strong>
+                <span class="u-meta">MK202610220918 · 支付宝 · 10-22 09:18</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <span class="u-status u-status--ok" style="font-size:11px"><span class="u-dot"></span>已到账</span>
+                <span class="u-num" style="font-size:13px">¥ 50.00</span>
+                <button class="u-icon-btn" type="button" aria-label="订单详情" data-open="#order-detail">›</button>
+              </div>
+            </div>
+            <div class="ck-order">
+              <div style="display:grid;gap:2px;min-width:0">
+                <strong style="font-size:12.5px">兑换码 · 1,000 积分</strong>
+                <span class="u-meta">REDEEM-7Q4M-2KX9 · 10-18 14:02</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <span class="u-status u-status--ok" style="font-size:11px"><span class="u-dot"></span>已到账</span>
+                <span class="u-num" style="font-size:13px">—</span>
+                <button class="u-icon-btn" type="button" aria-label="订单详情" data-toast="兑换码记录">›</button>
+              </div>
+            </div>
+            <div class="ck-order">
+              <div style="display:grid;gap:2px;min-width:0">
+                <strong style="font-size:12.5px">工作室包 · 11,000 积分</strong>
+                <span class="u-meta">MK202610091133 · 微信支付 · 10-09 11:33</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <span class="u-status u-status--warn" style="font-size:11px"><span class="u-dot"></span>待支付</span>
+                <span class="u-num" style="font-size:13px">¥ 100.00</span>
+                <button class="u-btn u-btn--sm" type="button" data-toast="已重新发起支付">继续支付</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <div class="u-section-head"><h2 class="u-h3">兑换积分</h2></div>
+          <div style="display:flex;gap:8px;max-width:460px">
+            <input class="u-input" placeholder="输入兑换码，例如 REDEEM-XXXX-XXXX">
+            <button class="u-btn u-btn--primary" type="button" data-toast="兑换成功：+1,000 积分" data-tone="ok">兑换</button>
+          </div>
+        </section>
+      </div>
+
+      <aside class="ck-summary">
+        <div class="u-panel-title" style="margin:0"><h3>订单概览</h3><span>Step 1 / 2</span></div>
+        <div class="u-estimate">
+          <div class="u-estimate__row"><span>购买项目</span><b>创作者包</b></div>
+          <div class="u-estimate__row"><span>到账积分</span><b>5,200</b></div>
+          <div class="u-estimate__row"><span>支付金额</span><b>¥ 50.00</b></div>
+          <div class="u-estimate__row u-estimate__row--total"><span>应付总额</span><b>¥ 50.00</b></div>
+        </div>
+        <div style="display:grid;gap:8px">
+          <span class="u-label">支付方式</span>
+          <div class="ck-methods">
+            <button class="ck-method is-active" type="button"><span class="ck-method__logo" style="color:#1677ff">支</span>支付宝</button>
+            <button class="ck-method" type="button"><span class="ck-method__logo" style="color:#07c160">微</span>微信支付</button>
+            <button class="ck-method" type="button"><span class="ck-method__logo" style="color:#635bff">S</span>Stripe</button>
+            <button class="ck-method" type="button"><span class="ck-method__logo">Mock</span>测试通道</button>
+          </div>
+        </div>
+        <button class="u-btn u-btn--primary u-btn--lg u-btn--block" type="button" data-toast="已创建订单，等待支付回调">立即支付 ¥ 50.00</button>
+        <p class="u-meta" style="line-height:1.6">支付成功后积分即时到账。订单与回调可追溯；未到账时可在“最近订单”中查看状态。</p>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <span class="u-chip u-chip--mono">安全支付</span>
+          <span class="u-chip u-chip--mono">订单可追溯</span>
+          <span class="u-chip u-chip--mono">原路退款</span>
+        </div>
+      </aside>
+    </div>
+  </div>
+</div></div>
+
+<div class="u-backdrop"></div>
+<div class="u-modal" id="order-detail" role="dialog" aria-modal="true" aria-label="订单详情">
+  <div class="u-modal__head">
+    <div><h2 class="u-h2" style="font-size:22px">订单详情</h2><p class="u-meta" style="margin-top:4px">MK202610220918</p></div>
+    <button class="u-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </div>
+  <dl class="u-facts" style="grid-template-columns:1fr 1fr">
+    <div class="u-fact"><dt>订单状态</dt><dd style="color:var(--emerald)">已到账</dd></div>
+    <div class="u-fact"><dt>支付方式</dt><dd>支付宝</dd></div>
+    <div class="u-fact"><dt>套餐</dt><dd>创作者包</dd></div>
+    <div class="u-fact"><dt>到账积分</dt><dd>5,200</dd></div>
+    <div class="u-fact"><dt>金额</dt><dd>¥ 50.00</dd></div>
+    <div class="u-fact"><dt>支付时间</dt><dd>10-22 09:18</dd></div>
+  </dl>
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px">
+    <button class="u-btn" type="button" data-close>关闭</button>
+    <button class="u-btn u-btn--primary" type="button" data-close data-toast="已复制订单号">复制订单号</button>
+  </div>
+</div>
+<script src="../assets/shell.js"></script>
+</body>
+</html>

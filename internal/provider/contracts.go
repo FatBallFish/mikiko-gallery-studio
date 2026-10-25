@@ -71,6 +71,8 @@ type ImageRequest struct {
 }
 
 type ImageResult struct {
+	Name              string                  `json:"name,omitempty"`
+	MediaAssetID      string                  `json:"media_asset_id,omitempty"`
 	ID                string                  `json:"id,omitempty"`
 	ProjectID         string                  `json:"project_id,omitempty"`
 	Project           *domainproject.Snapshot `json:"project,omitempty"`

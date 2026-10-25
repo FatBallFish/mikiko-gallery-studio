@@ -515,8 +515,8 @@ func TestAgentTaskCreateAndQueryEndpoints(t *testing.T) {
 
 	historyDetailRec = httptest.NewRecorder()
 	handler.ServeHTTP(historyDetailRec, historyDetailReq)
-	if historyDetailRec.Code != http.StatusNotFound {
-		t.Fatalf("expected history detail 404 after delete, got %d body=%s", historyDetailRec.Code, historyDetailRec.Body.String())
+	if historyDetailRec.Code != http.StatusOK {
+		t.Fatalf("expected source history detail retained after hide, got %d body=%s", historyDetailRec.Code, historyDetailRec.Body.String())
 	}
 }
 
@@ -673,8 +673,8 @@ func TestAgentTaskB64ResultPersistsAndDownloadsLocalImage(t *testing.T) {
 	deletedDownloadReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
 	deletedDownloadRec := httptest.NewRecorder()
 	handler.ServeHTTP(deletedDownloadRec, deletedDownloadReq)
-	if deletedDownloadRec.Code != http.StatusNotFound {
-		t.Fatalf("expected deleted task image download 404, got %d body=%s", deletedDownloadRec.Code, deletedDownloadRec.Body.String())
+	if deletedDownloadRec.Code != http.StatusOK {
+		t.Fatalf("expected hidden task image download retained, got %d body=%s", deletedDownloadRec.Code, deletedDownloadRec.Body.String())
 	}
 }
 

@@ -7,6 +7,7 @@ export type VideoDraft = {
   task_type: VideoTaskType
   prompt_template: string
   prompt_variables: Array<{ name: string; value: string }>
+  reference_bindings?: Array<{ name: string; asset_id: string }>
   inputs: Array<{ asset_id: string; role: VideoDraftInputRole; ordinal: number }>
   duration_seconds: number
   resolution: string
@@ -86,6 +87,11 @@ export function applyVideoCapability(draft: VideoDraft, capability: VideoCapabil
       next = { ...next, duration_seconds: match.duration_seconds, resolution: match.resolution, aspect_ratio: match.aspect_ratio, generate_audio: match.audio_mode === 'generated' }
     }
   }
+  const allowedRoles = VIDEO_TASK_INPUT_ROLES[next.task_type]
+  const inputs = next.inputs.filter((input) => allowedRoles.includes(input.role))
+  if (inputs.length !== next.inputs.length) { next = { ...next, inputs }; changes.push('已移除当前生成方式不支持的引用') }
+  const outputCount = Math.max(1, Math.min(model.max_output_count || 1, next.output_count))
+  if (outputCount !== next.output_count) { next = { ...next, output_count: outputCount }; changes.push('输出数量已调整') }
   return { draft: next, changes }
 }
 
@@ -96,7 +102,7 @@ function bestCombination(combinations: NonNullable<VideoCapabilityModelGroup['op
 export function videoDraftKey(draft: VideoDraft) {
   return JSON.stringify({
     route_model_code: draft.route_model_code, task_type: draft.task_type, prompt_template: draft.prompt_template,
-    prompt_variables: draft.prompt_variables, inputs: draft.inputs, duration_seconds: draft.duration_seconds,
+    prompt_variables: draft.prompt_variables, reference_bindings: draft.reference_bindings, inputs: draft.inputs, duration_seconds: draft.duration_seconds,
     resolution: draft.resolution, aspect_ratio: draft.aspect_ratio, generate_audio: draft.generate_audio, output_count: draft.output_count,
   })
 }
@@ -115,9 +121,15 @@ export function reuseVideoTask(task: VideoTask): VideoDraft {
     .map((input, index) => ({ asset_id: input.asset_id, role: input.role as VideoDraftInputRole, ordinal: input.ordinal ?? index }))
   return {
     route_model_code: task.route_model_code, task_type: task.task_type, prompt_template: task.prompt_template,
-    prompt_variables: [], inputs, duration_seconds: task.duration_seconds, resolution: task.resolution,
+    prompt_variables: snapshotRecords(task.prompt_binding_snapshot?.variables).filter((item) => typeof item.name === 'string' && typeof item.value === 'string').map((item) => ({ name: item.name as string, value: item.value as string })),
+    reference_bindings: snapshotRecords(task.prompt_binding_snapshot?.references).filter((item) => typeof item.name === 'string' && typeof item.asset_id === 'string').map((item) => ({ name: item.name as string, asset_id: item.asset_id as string })),
+    inputs, duration_seconds: task.duration_seconds, resolution: task.resolution,
     aspect_ratio: task.aspect_ratio, generate_audio: task.audio_mode ? task.audio_mode === 'generated' : Boolean(task.generate_audio), output_count: task.requested_output_count,
   }
+}
+
+function snapshotRecords(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object') : []
 }
 
 // Names referenced as {{@名称}} in a prompt template, matching the backend

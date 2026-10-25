@@ -9,6 +9,7 @@ import (
 
 	domainmodeladmin "github.com/fatballfish/pic-gallery/internal/domain/modeladmin"
 	videoprovider "github.com/fatballfish/pic-gallery/internal/provider/video"
+	worker "github.com/fatballfish/pic-gallery/internal/worker/video"
 )
 
 type fakeLoader struct {
@@ -57,6 +58,7 @@ func TestSubmitPollsProviderUntilArtifactIsReady(t *testing.T) {
 		model: domainmodeladmin.ModelAccountModel{ID: 2, AccountID: 1, ModelCode: "wan-3.0", Enabled: true},
 	}
 	service := NewService(loader)
+	service.validateArtifact = func(context.Context, videoprovider.Artifact, []string, *bool) error { return nil }
 	service.pollInterval = 5 * time.Millisecond
 	service.timeout = time.Second
 	service.newProvider = func(domainmodeladmin.ModelAccount, domainmodeladmin.ModelAccountModel) (videoprovider.Provider, error) {
@@ -99,5 +101,40 @@ func TestSubmitRejectsModelFromAnotherAccount(t *testing.T) {
 	_, err := service.Submit(context.Background(), Request{AccountID: 1, AccountModelID: 2, Prompt: "ocean", TaskType: "text_to_video"})
 	if err == nil {
 		t.Fatal("expected model/account mismatch error")
+	}
+}
+
+func TestAdminVideoArtifactPolicyPropagationAndFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		extra       map[string]any
+		wantEnabled bool
+		wantNil     bool
+		wantHosts   int
+	}{
+		{"default", nil, false, true, 0},
+		{"legacy", map[string]any{"video_artifact_hosts": []any{"cdn.example.com"}}, false, true, 1},
+		{"disabled", map[string]any{"video_artifact_hosts_enabled": false, "video_artifact_hosts": []string{"cdn.example.com"}}, false, false, 1},
+		{"enabled empty", map[string]any{"video_artifact_hosts_enabled": true}, true, false, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			service := NewService(fakeLoader{})
+			called := false
+			service.validateArtifact = func(_ context.Context, _ videoprovider.Artifact, hosts []string, enabled *bool) error {
+				called = true
+				if len(hosts) != tc.wantHosts || (enabled == nil) != tc.wantNil || (enabled != nil && *enabled != tc.wantEnabled) {
+					t.Errorf("hosts=%v enabled=%v", hosts, enabled)
+				}
+				return errors.New("blocked artifact")
+			}
+			now := time.Now()
+			service.store(&Test{ID: "test", CreatedAt: now, UpdatedAt: now})
+			hosts, enabled := worker.ArtifactHostPolicyFromExtra(tc.extra)
+			service.poll("test", &fakeProvider{status: videoprovider.Status{State: videoprovider.StateSucceeded, Artifacts: []videoprovider.Artifact{{URL: "https://cdn.example.com/video.mp4"}}}}, videoprovider.JobRef{}, hosts, enabled)
+			result, _ := service.Get("test")
+			if !called || result.Status != "failed" || len(result.Artifacts) != 0 || result.Error == "" {
+				t.Fatalf("result=%#v called=%v", result, called)
+			}
+		})
 	}
 }

@@ -22,6 +22,11 @@ export default defineConfig(({ mode }) => {
           // (e.g. the OIDC redirect_uri) from the page the user is on.
           changeOrigin: false,
         },
+        // Exact public protocol routes: never send browser consent or other
+        // SPA paths to the API. Keep Host while PublicAPIURL remains canonical.
+        '^/mcp(?:\\?.*)?$': { target: apiTarget, changeOrigin: false },
+        '^/\\.well-known/oauth-(?:authorization-server|protected-resource)(?:/mcp)?(?:\\?.*)?$': { target: apiTarget, changeOrigin: false },
+        '^/oauth/(?:authorize|token|register|revoke)(?:\\?.*)?$': { target: apiTarget, changeOrigin: false },
         '/docs': {
           target: apiTarget,
           changeOrigin: false,

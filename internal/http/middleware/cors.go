@@ -76,8 +76,9 @@ func setCORSHeaders(w http.ResponseWriter, r *http.Request, origin string) {
 	if requested := r.Header.Get("Access-Control-Request-Headers"); requested != "" {
 		header.Set("Access-Control-Allow-Headers", requested)
 	} else {
-		header.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key, X-Access-Key, X-Body-SHA256, X-Signature, X-Timestamp")
+		header.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key, MCP-Protocol-Version, Mcp-Method, Mcp-Name, Mcp-Session-Id, Mcp-Previous-Session-Id, Last-Event-ID")
 	}
+	header.Set("Access-Control-Expose-Headers", "WWW-Authenticate, MCP-Protocol-Version, Mcp-Session-Id, Mcp-Previous-Session-Id")
 	header.Set("Access-Control-Max-Age", "600")
 	header.Add("Vary", "Origin")
 }

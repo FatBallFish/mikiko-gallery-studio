@@ -97,6 +97,15 @@ func (s *Service) checkpointProviderSuccess(
 		}
 	}
 	*task = decorated
+	// The paid upstream response is durable before optional title enrichment.
+	s.nameImageResults(ctx, *task, response.Data)
+	if namedPayload, nameErr := s.encryptArtifactResults(response.Data); nameErr == nil {
+		namedTask := *task
+		namedTask.ArtifactRecovery.EncryptedPayload = namedPayload
+		if s.saveTerminalState(ctx, namedTask, owner) == nil {
+			*task = namedTask
+		}
+	}
 	if err := s.pinArtifactWriter(ctx, task, owner); err != nil {
 		return fmt.Errorf("resolve artifact storage writer: %w", err)
 	}
@@ -106,6 +115,9 @@ func (s *Service) checkpointProviderSuccess(
 func (s *Service) executeArtifactRecovery(ctx context.Context, task domainimagetask.Task, owner string) (domainimagetask.ExecuteResult, error) {
 	task.Status = domainimagetask.StatusRunning
 	setTaskProgress(&task, domainimagetask.ProgressStagePersisting, "正在恢复并保存生成结果")
+	if err := s.updateOwnedProgress(ctx, task, owner); err != nil {
+		return domainimagetask.ExecuteResult{}, err
+	}
 	results, err := s.decryptArtifactResults(task.ArtifactRecovery.EncryptedPayload)
 	if err != nil {
 		failure := newArtifactFailure(s, errs.CodeArtifactRecoveryPayloadInvalid, "decode", false, err)

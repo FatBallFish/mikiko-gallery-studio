@@ -25,7 +25,6 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotaskattempt"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotaskinput"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotaskitem"
-	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	worker "github.com/fatballfish/pic-gallery/internal/worker/video"
 	"github.com/shopspring/decimal"
 )
@@ -118,12 +117,13 @@ func (s *VideoTaskStore) GetExecutionAccount(ctx context.Context, ref worker.Pro
 	if candidate.AccountModelID != int64(accountModel.ID) || accountModel.AccountID != int64(account.ID) {
 		return worker.ExecutionAccount{}, errors.New("video execution account relationship changed")
 	}
+	hosts, enabled := worker.ArtifactHostPolicyFromExtra(account.Extra)
 	return worker.ExecutionAccount{
 		RouteCandidateID: int64(candidate.ID), AccountModelID: int64(accountModel.ID), ModelAccountID: int64(account.ID),
 		ProviderCode: account.AdapterType, BaseURL: account.BaseURL, APIKey: strings.TrimSpace(account.CredentialsEncrypted["api_key"]),
 		ModelCode: accountModel.ModelCode, CallbackURL: stringSnapshot(account.Extra, "video_callback_url"),
 		CallbackSecret: strings.TrimSpace(account.CredentialsEncrypted["callback_secret"]), Timeout: time.Duration(account.TimeoutMs) * time.Millisecond,
-		ArtifactAllowedHosts: stringSliceSnapshot(account.Extra, "video_artifact_hosts"),
+		ArtifactAllowedHosts: hosts, ArtifactHostsEnabled: enabled,
 	}, nil
 }
 
@@ -547,18 +547,10 @@ func (s *VideoTaskStore) FinalizeTask(ctx context.Context, req worker.FinalizeRe
 				return false, nil
 			}
 		}
-		apiKeyID := int64(0)
-		if task.APIKeyID != nil {
-			apiKeyID = *task.APIKeyID
-		}
-		if _, err := s.billing.FinalizeTaskTx(ctx, tx, billingservice.FinalizeStoreRequest{
-			UserID: task.UserID, APIKeyID: apiKeyID, TaskID: task.ID.String(), EstimatedPoints: task.ReservedPoints,
-			ActualPoints: req.ActualPoints, Reason: "video generation finalize",
-		}, "video", map[string]any{"successful_video_count": req.SuccessOutputCount}); err != nil {
-			return false, fmt.Errorf("finalize video task points: %w", err)
-		}
-		if _, err := tx.VideoTask.UpdateOne(task).SetStatus(string(req.Status)).SetProgressStage("completed").SetSuccessOutputCount(req.SuccessOutputCount).
-			SetActualPoints(req.ActualPoints).SetSettlementStatus("finalized").SetFinishedAt(time.Now().UTC()).Save(ctx); err != nil {
+		if _, err := s.finalizeVideoTaskTx(ctx, tx, task, FinalizeVideoTaskRequest{
+			Status: string(req.Status), SuccessOutputCount: req.SuccessOutputCount, ActualPoints: req.ActualPoints,
+			UsageSummary: map[string]any{"successful_video_count": req.SuccessOutputCount},
+		}); err != nil {
 			return false, err
 		}
 		return true, nil

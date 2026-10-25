@@ -267,6 +267,9 @@ func (s *ProjectStore) Delete(ctx context.Context, userID int64, projectID strin
 	sourceBefore := mapProjectEntity(source)
 	sourceBefore.TaskCount, sourceBefore.AssetCount = counts.Tasks, counts.Assets
 	if req.TargetProjectID != "" {
+		if err := transferAssetGroups(ctx, tx, userID, sourceID, targetID); err != nil {
+			return domainproject.DeleteResult{}, fmt.Errorf("transfer project asset groups: %w", err)
+		}
 		if _, err := tx.ImageTask.Update().Where(imagetask.UserIDEQ(userID), imagetask.ProjectIDEQ(sourceID)).SetProjectID(targetID).Save(ctx); err != nil {
 			return domainproject.DeleteResult{}, fmt.Errorf("transfer project tasks: %w", err)
 		}

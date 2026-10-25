@@ -32,6 +32,8 @@ import {
 } from "./AdminMediaTabs";
 import { modelAccountMediaType, modelMediaType } from "./adminModelMedia";
 
+import { videoArtifactHostSuggestions, videoArtifactHosts, videoArtifactHostsEnabled, normalizeVideoArtifactHost } from "./videoArtifactPolicy";
+
 const videoTasks = [
   { value: "text_to_video", label: "文生视频" },
   { value: "image_to_video", label: "图生视频" },
@@ -61,7 +63,8 @@ type AccountDraft = {
   weight: number;
   concurrency: number;
   timeout: number;
-  artifactHosts: string;
+  artifactHosts: string[];
+  artifactHostsEnabled: boolean;
 };
 type ModelDraft = {
   account: ModelAccount;
@@ -209,7 +212,8 @@ export function VideoProviderAccountsPanel({ onFeedback = () => undefined, count
         extra: {
           ...(accountDraft.row?.extra ?? {}),
           media_type: "video",
-          video_artifact_hosts: artifactHostList(accountDraft.artifactHosts),
+          video_artifact_hosts: accountDraft.artifactHosts,
+          video_artifact_hosts_enabled: accountDraft.artifactHostsEnabled,
         },
       };
       const saved = accountDraft.row
@@ -572,19 +576,19 @@ export function VideoProviderAccountsPanel({ onFeedback = () => undefined, count
               <LedgerField label="账号名称" required error={accountValidation.name}><input className="a-input" value={accountDraft.name} onChange={(event) => setAccountDraft({ ...accountDraft, name: event.target.value })} /></LedgerField>
               <LedgerField label="适配器" hint="Seedance 按 Token、MiniMax/百炼按秒、Gasic 按次计费。"><select className="a-select" value={accountDraft.adapter} onChange={(event) => setAccountDraft({ ...accountDraft, adapter: event.target.value as AccountDraft["adapter"] })}><option value="seedance">Seedance</option><option value="minimax">MiniMax</option><option value="gasic">Gasic</option><option value="bailian">阿里百炼</option></select></LedgerField>
               <LedgerField label="Base URL" required error={accountValidation.baseURL}><input className="a-input" value={accountDraft.baseURL} onChange={(event) => setAccountDraft({ ...accountDraft, baseURL: event.target.value })} placeholder="https://ark.cn-beijing.volces.com/api/v3" style={{ fontFamily: "var(--font-admin-mono)", fontSize: 12.5 }} /></LedgerField>
-              <LedgerField
+              <SwitchField label="启用结果文件域名白名单" checked={accountDraft.artifactHostsEnabled} onChange={(artifactHostsEnabled) => setAccountDraft({ ...accountDraft, artifactHostsEnabled })} />
+              <MultiSelectField
                 label="结果文件域名白名单"
-                hint="Worker 只允许从这些 HTTPS 域名下载上游生成结果，防止任意 URL 下载（SSRF 防护）。每行一个域名，例如 dashscope-a717.oss-accelerate.aliyuncs.com；留空会导致视频结果保存失败。"
-              >
-                <textarea
-                  className="a-textarea"
-                  rows={3}
-                  value={accountDraft.artifactHosts}
-                  onChange={(event) => setAccountDraft({ ...accountDraft, artifactHosts: event.target.value })}
-                  placeholder="dashscope-a717.oss-accelerate.aliyuncs.com"
-                  style={{ fontFamily: "var(--font-admin-mono)", fontSize: 12.5 }}
-                />
-              </LedgerField>
+                hint="默认关闭。HTTPS、公网 IP 和重定向安全校验始终生效。启用后必须选择域名；仅精确匹配，不支持通配符。建议来自阿里云官方视频 API 示例，请按实际结果地址选择。"
+                values={accountDraft.artifactHosts}
+                options={videoArtifactHostSuggestions}
+                onChange={(artifactHosts) => setAccountDraft({ ...accountDraft, artifactHosts })}
+                normalize={normalizeVideoArtifactHost}
+                customPlaceholder="添加自定义结果域名"
+                placeholder="选择建议或添加多个自定义域名"
+                error={accountValidation.artifactHosts}
+                allowCustom
+              />
               <LedgerField label="账号状态"><select className="a-select" value={accountDraft.status} onChange={(event) => setAccountDraft({ ...accountDraft, status: event.target.value })}><option value="enabled">启用</option><option value="disabled">停用</option><option value="error">异常</option></select></LedgerField>
             </FormSection>
             <FormSection index={2} title="鉴权" description="密钥只写不读，保存后显示掩码。">
@@ -897,7 +901,7 @@ function videoAccountColumns({ models, onEdit, onConfigureModels, onDelete }: {
 }
 
 function blankAccount(): AccountDraft {
-  return { name: "", adapter: "seedance", baseURL: "", apiKey: "", status: "enabled", priority: 1, weight: 100, concurrency: 5, timeout: 300000, artifactHosts: "" };
+  return { name: "", adapter: "seedance", baseURL: "", apiKey: "", status: "enabled", priority: 1, weight: 100, concurrency: 5, timeout: 300000, artifactHosts: [], artifactHostsEnabled: false };
 }
 
 function editAccount(row: ModelAccount): AccountDraft {
@@ -912,7 +916,8 @@ function editAccount(row: ModelAccount): AccountDraft {
     weight: row.weight,
     concurrency: row.concurrency_limit,
     timeout: row.timeout_ms,
-    artifactHosts: artifactHostsFromExtra(row.extra),
+    artifactHosts: videoArtifactHosts(row.extra),
+    artifactHostsEnabled: videoArtifactHostsEnabled(row.extra),
   };
 }
 
@@ -1045,12 +1050,14 @@ function validateAccountDraft(draft: AccountDraft): Record<string, string> {
   if (!Number.isFinite(draft.weight) || draft.weight < 0) errors.weight = "权重必须是非负整数。";
   if (!Number.isInteger(draft.concurrency) || draft.concurrency < 1) errors.concurrency = "并发上限必须大于 0。";
   if (!Number.isInteger(draft.timeout) || draft.timeout < 1000) errors.timeout = "超时至少为 1000 毫秒。";
+  if (draft.artifactHostsEnabled && !draft.artifactHosts.length) errors.artifactHosts = "启用白名单时至少选择一个结果域名。";
+  if (draft.artifactHosts.some((host) => !normalizeVideoArtifactHost(host))) errors.artifactHosts = "请填写精确域名，不含协议、路径或通配符。";
   return errors;
 }
 
 function accountDraftDirtyCount(draft: AccountDraft, row?: ModelAccount): number {
   const baseline = row ? editAccount(row) : blankAccount();
-  const keys: Array<keyof AccountDraft> = ["name", "adapter", "baseURL", "status", "priority", "weight", "concurrency", "timeout"];
+  const keys: Array<keyof AccountDraft> = ["name", "adapter", "baseURL", "status", "priority", "weight", "concurrency", "timeout", "artifactHosts", "artifactHostsEnabled"];
   let count = keys.filter((key) => String(draft[key]) !== String(baseline[key])).length;
   if (draft.apiKey) count += 1;
   return count;
@@ -1183,15 +1190,4 @@ function stringOptions(value: unknown, fallback: string[]): string[] {
 function withCurrent(values: string[], current?: string): string[] {
   if (!current || values.includes(current)) return values;
   return [current, ...values];
-}
-
-function artifactHostsFromExtra(extra?: Record<string, unknown>): string {
-  const value = extra?.video_artifact_hosts;
-  if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean).join("\n");
-  if (typeof value === "string") return value;
-  return "";
-}
-
-function artifactHostList(value: string): string[] {
-  return Array.from(new Set(value.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean)));
 }

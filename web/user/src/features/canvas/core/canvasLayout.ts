@@ -1,3 +1,4 @@
+import { canEditCanvasNode } from './canvasNodeKinds'
 import dagre from '@dagrejs/dagre'
 import type { CanvasDocument, CanvasNode, CanvasViewport } from './types'
 
@@ -44,7 +45,7 @@ export function visibleCanvasNodeIDs(nodes: CanvasNode[], viewport: CanvasViewpo
 }
 
 export function autoLayoutCanvasNodes(document: CanvasDocument, nodeIDs: string[]) {
-  const selected = new Set(nodeIDs)
+  const selected = new Set(document.nodes.filter((node) => nodeIDs.includes(node.id) && canEditCanvasNode(node)).map((node) => node.id))
   const targets = document.nodes.filter((node) => selected.has(node.id))
   if (targets.length < 2) return document
   const graph = new dagre.graphlib.Graph()

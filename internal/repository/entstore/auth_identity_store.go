@@ -9,6 +9,10 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 )
 
+func (s *AuthStore) HasOIDCIdentity(ctx context.Context, id int64) (bool, error) {
+	return s.client.UserIdentity.Query().Where(useridentity.UserIDEQ(id), useridentity.ProviderEQ("mikiko")).Exist(ctx)
+}
+
 func mapUserIdentityEntity(entity *repoent.UserIdentity) domainauth.UserIdentity {
 	return domainauth.UserIdentity{
 		ID:        int64(entity.ID),

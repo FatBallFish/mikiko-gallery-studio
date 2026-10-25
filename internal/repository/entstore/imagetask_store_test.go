@@ -61,6 +61,9 @@ func TestImageTaskSaveWritesUnifiedMediaAssetWithSameResultID(t *testing.T) {
 	if asset.LegacyImageResultID == nil || *asset.LegacyImageResultID != resultID || asset.ObjectKey != task.Results[0].ObjectKey || asset.ProjectID != project.ID || asset.SourceTaskID == nil || asset.SourceTaskID.String() != task.ID || asset.Status != "ready_original" {
 		t.Fatalf("dual-written asset=%+v", asset)
 	}
+	if asset.GroupID == nil || asset.GroupName != "Drafts" {
+		t.Fatalf("generated group inconsistent: %+v", asset)
+	}
 	jobs, err := client.MediaProcessingJob.Query().Where(
 		mediaprocessingjob.AssetIDEQ(resultID),
 		mediaprocessingjob.JobTypeEQ("probe"),
@@ -1523,6 +1526,63 @@ func mustUUID(t *testing.T, value string) uuid.UUID {
 		t.Fatalf("parse uuid %q: %v", value, err)
 	}
 	return parsed
+}
+
+func TestImageTaskStoreClaimRecoveryProgressAndHeartbeatPreservation(t *testing.T) {
+	for _, status := range []string{domainimagetask.StatusQueued, domainimagetask.StatusRunning} {
+		t.Run(status, func(t *testing.T) {
+			ctx := context.Background()
+			client, err := repoent.Open(dialect.SQLite, "file:recoveryprogress"+status+"?mode=memory&cache=shared&_fk=1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer client.Close()
+			if err := client.Schema.Create(ctx); err != nil {
+				t.Fatal(err)
+			}
+			store := NewImageTaskStore(client)
+			now := time.Now().UTC()
+			expired := now.Add(-time.Minute)
+			task := domainimagetask.Task{
+				ID: "22222222-2222-2222-2222-222222222222", UserID: 88, Status: status,
+				AbstractModel: "plus", TaskType: string(provider.TaskTypeTextToImage), Prompt: "recover",
+				BaseResolution: "2k", OutputImageCount: 1,
+				LeaseOwner: "old-worker", LeaseExpiresAt: &expired,
+				ArtifactRecovery: domainimagetask.ArtifactRecovery{Status: "pending", EncryptedPayload: "encrypted"},
+			}
+			if err := store.Save(ctx, task); err != nil {
+				t.Fatal(err)
+			}
+			claimed, err := store.AcquireNextQueuedTask(ctx, "worker", now, time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if claimed.ProgressStage != domainimagetask.ProgressStagePersisting || claimed.ProgressMessage != "正在恢复并保存生成结果" {
+				t.Fatalf("claimed recovery progress = %q %q", claimed.ProgressStage, claimed.ProgressMessage)
+			}
+			for _, stage := range []string{domainimagetask.ProgressStagePersisting, domainimagetask.ProgressStageSettling} {
+				if err := store.UpdateProgressIfOwned(ctx, task.ID, "worker", stage, "detailed progress", now); err != nil {
+					t.Fatal(err)
+				}
+				renewed, err := store.RenewTaskLease(ctx, task.ID, "worker", now.Add(time.Second), 2*time.Minute)
+				if err != nil {
+					t.Fatal(err)
+				}
+				loaded, err := store.GetByID(ctx, task.UserID, task.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, snapshot := range []domainimagetask.Task{renewed, loaded} {
+					if snapshot.ProgressStage != stage || snapshot.ProgressMessage != "detailed progress" || snapshot.ArtifactRecovery.EncryptedPayload != "encrypted" {
+						t.Fatalf("heartbeat changed progress or recovery: %#v", snapshot)
+					}
+					if snapshot.LeaseOwner != "worker" || snapshot.LeaseExpiresAt == nil || !snapshot.LeaseExpiresAt.Equal(now.Add(time.Second+2*time.Minute)) {
+						t.Fatalf("heartbeat lease = %q %v", snapshot.LeaseOwner, snapshot.LeaseExpiresAt)
+					}
+				}
+			}
+		})
+	}
 }
 
 func TestImageTaskStoreAcquireNextQueuedTaskAndReclaimExpiredLease(t *testing.T) {
