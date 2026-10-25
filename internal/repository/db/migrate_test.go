@@ -16,6 +16,7 @@ import (
 	"entgo.io/ent/dialect"
 	"github.com/fatballfish/pic-gallery/internal/config"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/migrationcheckpoint"
 )
 
 func TestValidateMigrationRequestRejectsUnsafeInputs(t *testing.T) {
@@ -409,7 +410,7 @@ func TestMigrateSerializesAndIsIdempotentOnPostgres(t *testing.T) {
 	if count, err := client.Installation.Query().Count(context.Background()); err != nil || count != 1 {
 		t.Fatalf("installation count = %d, err=%v, want 1", count, err)
 	}
-	checkpoint, err := client.MigrationCheckpoint.Query().Only(context.Background())
+	checkpoint, err := client.MigrationCheckpoint.Query().Where(migrationcheckpoint.NameEQ(projectOwnershipMigrationName)).Only(context.Background())
 	if err != nil || !checkpoint.Completed || checkpoint.Phase != projectBackfillPhaseDone {
 		t.Fatalf("project ownership checkpoint = %#v, err=%v, want completed", checkpoint, err)
 	}

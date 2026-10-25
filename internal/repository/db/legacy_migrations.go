@@ -26,6 +26,16 @@ DO $$
 BEGIN
     PERFORM pg_advisory_xact_lock(hashtext('pic-gallery:prepare-legacy-data'));
 
+    IF to_regclass(current_schema() || '.api_keys') IS NOT NULL THEN
+        -- Ent's JSON Default is a Go create default, not a SQL column default.
+        -- Preserve the pre-scope capabilities explicitly; [] means no access.
+        ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS scopes jsonb;
+        UPDATE api_keys
+        SET scopes = '["account:read","models:read","images:read","images:write"]'::jsonb
+        WHERE scopes IS NULL OR scopes::jsonb = 'null'::jsonb;
+        ALTER TABLE api_keys ALTER COLUMN scopes SET NOT NULL;
+    END IF;
+
     IF to_regclass(current_schema() || '.model_accounts') IS NOT NULL THEN
         IF NOT EXISTS (
             SELECT 1 FROM information_schema.columns
