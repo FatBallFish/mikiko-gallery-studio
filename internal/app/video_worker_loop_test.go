@@ -185,8 +185,8 @@ func TestRunWorkerRoleSlotsKeepsConcurrencyIndependent(t *testing.T) {
 	if got := peak.Load(); got != 3 {
 		t.Fatalf("peak concurrency = %d, want 3", got)
 	}
-	close(release)
 	cancel()
+	close(release)
 	select {
 	case err := <-done:
 		if !errors.Is(err, context.Canceled) {
