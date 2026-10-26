@@ -15,7 +15,7 @@ import (
 // Exercise the same Ent schema creation and installation-version recording used
 // by migrateLocked, without requiring a PostgreSQL service for the regression.
 func TestRouteImagePricingSchemaV10BlocksUnmigratedV9(t *testing.T) {
-	if CurrentDatabaseSchemaVersion != 10 {
+	if CurrentDatabaseSchemaVersion < 10 {
 		t.Fatalf("image_pricing release requires schema 10, got %d", CurrentDatabaseSchemaVersion)
 	}
 	ctx := context.Background()
@@ -64,7 +64,7 @@ func TestRouteImagePricingSchemaV10BlocksUnmigratedV9(t *testing.T) {
 	if err != nil {
 		t.Fatalf("official migrator version recording: %v", err)
 	}
-	if result.Previous == nil || result.Previous.DatabaseSchemaVersion != 9 || result.Current.DatabaseSchemaVersion != 10 || !result.Changed {
+	if result.Previous == nil || result.Previous.DatabaseSchemaVersion != 9 || result.Current.DatabaseSchemaVersion != CurrentDatabaseSchemaVersion || !result.Changed {
 		t.Fatalf("unexpected migration result: %#v", result)
 	}
 	if err := CheckSchemaCompatibility(ctx, client, expected); err != nil {
@@ -123,7 +123,7 @@ func TestRouteImagePricingSchemaV10OfficialPostgresMigration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("official migration: %v", err)
 	}
-	if result.Previous == nil || result.Previous.DatabaseSchemaVersion != 9 || result.Current.DatabaseSchemaVersion != 10 || !result.Changed {
+	if result.Previous == nil || result.Previous.DatabaseSchemaVersion != 9 || result.Current.DatabaseSchemaVersion != CurrentDatabaseSchemaVersion || !result.Changed {
 		t.Fatalf("unexpected migration result: %#v", result)
 	}
 	var dataType, nullable string

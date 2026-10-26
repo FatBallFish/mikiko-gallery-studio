@@ -46,6 +46,7 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<GalleryFilter>('all')
+  const [sort, setSort] = useState<'latest' | 'hot'>('latest')
   const [modelFilter, setModelFilter] = useState('')
   const [selected, setSelected] = useState<ImageResult | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -67,6 +68,7 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
     try {
       const result = await publicMediaApi.list(pageNumber, PAGE_SIZE, {
         accessToken,
+        sort,
         model: modelFilter || undefined,
         query: query.trim() || undefined,
         liked: filter === 'liked',
@@ -88,7 +90,7 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
       setLoading(false)
       setLoadingMore(false)
     }
-  }, [accessToken, filter, query, modelFilter])
+  }, [accessToken, filter, query, modelFilter, sort])
 
   useEffect(() => {
     setRows([])
@@ -121,7 +123,7 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
 
   function requireLogin(action = '请先登录后再查看完整作品', targetImageId?: string) {
     if (accessToken) return true
-    app.notify('info', action)
+    app.notify('warn', action)
     app.navigate('login', { returnTo: 'public-gallery', imageId: targetImageId ?? imageId })
     return false
   }
@@ -173,7 +175,7 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
   function reuseConfiguration(image: ImageResult) {
     if (!requireLogin('请先登录后再复用配置', image.id)) return
     if (!image.prompt) {
-      app.notify('info', '请先打开详情获取完整提示词')
+      app.notify('warn', '请先打开详情获取完整提示词')
       return
     }
     stageWorkspaceCreationDraft(workspaceCreationDraftFromSnapshot(image), window.sessionStorage, window.history)
@@ -261,6 +263,7 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
         <p className="u-sub pg-intro">由创作者主动公开的作品。提示词、模型与生成参数完整可见，可以直接复用为下一次创作。</p>
       </header>
 
+      <label>排序 <select value={sort} onChange={(event) => setSort(event.target.value as 'latest' | 'hot')}><option value="latest">最新公开</option><option value="hot">最热</option></select></label>
       <GalleryFilterToolbar
         label="公开广场筛选"
         query={query}
@@ -300,7 +303,11 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
       {visibleRows.length ? (
         <div className="u-grid u-grid--gallery">
           {visibleRows.map((item) => {
-            if (item.media_type === 'video') return <PublicVideoCard key={`video:${item.id}`} video={item.video} />
+            if (item.media_type === 'video') return <PublicVideoCard key={`video:${item.id}`} video={item.video} onChange={(updated) => {
+              const removed = filter === 'liked' && !updated.liked_by_viewer || filter === 'favorited' && !updated.favorited_by_viewer
+              setFeed((items) => removed ? items.filter((known) => !(known.media_type === 'video' && known.id === updated.id)) : items.map((known) => known.media_type === 'video' && known.id === updated.id ? { ...known, video: updated } : known))
+              if (removed) setTotal((value) => Math.max(0, value - 1))
+            }} />
             const image = rows.find((row) => row.id === item.id) ?? item.image
             const card = publicGalleryCardView(image)
             const imagePath = image.url || image.download_url

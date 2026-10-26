@@ -98,3 +98,17 @@ const sizeCapability = structuredClone(videoContext.video)
 sizeCapability.model_groups[0].options_by_task_type.reference_to_video!.inputs!.reference_image!.max_bytes = 5
 assert.match(videoDraftInvalidReason(hydratedDraft, sizeCapability, { hydrating: { ...incompatible, name: 'large.png', mime_type: 'image/png' } }), /大小/)
 assert.equal(videoDraftInvalidReason(hydratedDraft, videoContext.video, { hydrating: { ...incompatible, name: 'ok.png', mime_type: 'image/png' } }), '')
+
+const { nativeImageProfile } = await import('../../../../shared/native-image')
+const layerProfile = nativeImageProfile('doubao-seedream-5-0-pro-260628')!
+const layerContext = { image: { model_groups: [{ code: 'image', task_types: ['text_to_image', 'image_edit'], native_image_profile: layerProfile, native_image_layer_pricing_confirmed: true }] } as Capability, video: null }
+const layerDocument = { ...document, nodes: [{ ...target, payload: { draft: { route_model_code: 'image', operation: 'layer_decomposition' } } }] }
+assert.equal(canvasReferenceAdmission(layerDocument, target.id, [{ id: 'first', kind: 'image' }], layerContext).ok, true, 'layer may be selected before first upload')
+assert.equal(canvasReferenceAdmission(layerDocument, target.id, [{ id: 'a', kind: 'image' }, { id: 'b', kind: 'image' }], layerContext).ok, false, 'all entry points enforce one source')
+assert.equal(canvasReferenceAdmission(layerDocument, target.id, [{ id: 'first', kind: 'image' }], { ...layerContext, reserved: { image: 1 } }).ok, false)
+const unpriced = structuredClone(layerContext)
+unpriced.image.model_groups[0].native_image_layer_pricing_confirmed = false
+assert.match(canvasReferenceAdmission(layerDocument, target.id, [{ id: 'first', kind: 'image' }], unpriced).reason, /价格/)
+const webpSource = { ...source, payload: { ...source.payload, mime_type: 'image/webp' } }
+assert.match(validateCanvasReference({ ...layerDocument, nodes: [...layerDocument.nodes, webpSource] }, webpSource, target.id, 'reference', layerContext), /格式/)
+assert.equal(layerDocument.nodes.length, 1, 'invalid admission does not modify the document')

@@ -79,8 +79,8 @@ if (maskSecretPreview('sk_once_abc123') !== 'sk_onc••••••••c123'
 }
 
 const sample = apiKeyQuickstart(apiKey({ access_key: 'pk_test_123456', secret_preview: 'sk_once_abc123' }))
-if (!sample.code.includes('Authorization: Bearer $STUDIO_API_KEY') || !sample.code.includes('/v1/images/generations')) {
-  throw new Error(`api key quickstart should use an environment variable and OpenAI-compatible path, got ${sample.code}`)
+if (!sample.code.includes('Authorization: Bearer $STUDIO_API_KEY') || !sample.code.includes('$STUDIO_REST_BASE/image-models')) {
+  throw new Error(`api key quickstart should use environment variables and free model discovery, got ${sample.code}`)
 }
 if (sample.code.includes('Bearer pk_test_123456') || sample.code.includes('sk_once_abc123') || sample.code.includes('api.picgallery.ai')) {
   throw new Error(`api key quickstart must not expose access keys, raw secrets, or old brand domains, got ${sample.code}`)

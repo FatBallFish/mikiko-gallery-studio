@@ -48,7 +48,7 @@ import { createCanvasEstimateCoordinator, type CanvasEstimateTarget } from './co
 import './canvas.css'
 
 type Props = { canvasID: string; onBack: () => void }
-type DragState = { startX: number; startY: number; selectedIDs: string[]; delta: { x: number; y: number } }
+type DragState = { pointerID: number; startX: number; startY: number; selectedIDs: string[]; duplicate: boolean; started: boolean; delta: { x: number; y: number } }
 type ResizeState = { pointerID: number; nodeID: string; startX: number; startY: number; startSize: { width: number; height: number }; size: { width: number; height: number } }
 type SelectionState = { start: { x: number; y: number }; current: { x: number; y: number } }
 type PanState = { startX: number; startY: number; viewport: CanvasViewport }
@@ -135,6 +135,8 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
     measure()
   }, [])
   const [drag, setDrag] = useState<DragState | null>(null)
+  const dragRef = useRef<DragState | null>(null)
+  function updateDrag(next: DragState | null) { dragRef.current = next; setDrag(next) }
   const [resize, setResize] = useState<ResizeState | null>(null)
   const [selection, setSelection] = useState<SelectionState | null>(null)
   const [pan, setPan] = useState<PanState | null>(null)
@@ -625,7 +627,7 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
     setGroupConfigID('')
     setSelection(null)
     setPan(null)
-    setDrag(null)
+    updateDrag(null)
     setResize(null)
     store?.getState().select([])
   }
@@ -737,6 +739,7 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
     if (node.type === 'image_v2') {
       const draft = asObject(node.payload?.draft)
       const model = imageCapability?.model_groups.find((item) => item.code === String(draft.route_model_code ?? draft.abstract_model ?? ''))
+      if (draft.operation === 'layer_decomposition' && !model?.native_image_profile?.operations.includes('layer_decomposition')) errors.push('当前模型不支持图层拆分，请手动选择支持的模型或生成方式')
       const error = nativeImageValidation(model?.native_image_profile, draft as NativeImageRequestFields, inputs.length)
       if (error) errors.push(error)
     }
@@ -924,7 +927,21 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
       data-mode={state.mode}
       data-space={spacePressed || undefined}
       onDoubleClick={(event) => {
-        if (readOnly || (event.target as Element).closest('[data-canvas-node],[data-canvas-no-zoom],[data-canvas-edge-hit]')) return
+        const target = event.target as Element
+        if (target.closest('input,textarea,select,button,a,[contenteditable]:not([contenteditable="false"]),[data-canvas-interactive],[data-canvas-no-zoom],[data-canvas-port],[data-canvas-resize-handle]')) return
+        const nodeID = target.closest<HTMLElement>('[data-canvas-node]')?.dataset.nodeId
+        if (nodeID) {
+          if (state.mode === 'connect' || connectionRef.current || referencePick || spacePressedRef.current) return
+          const node = documentState.nodes.find((item) => item.id === nodeID)
+          if (!node) return
+          event.preventDefault()
+          const selectedNode = documentState.nodes.find((item) => item.id === state.selectedIDs[0])
+          const consoleVisible = !readOnly && state.selectedIDs.length === 1 && selectedNode && isCanvasGenerationNode(selectedNode)
+          const bottom = consoleVisible ? Math.min(consoleHeight, Math.max(0, viewportSize.height - 160)) + 36 : 0
+          store.getState().setViewport(fitCanvasViewport(computeCanvasBounds([node]), viewportSize, 32, { minZoom: 0.000001, maxZoom: 1.25, insets: { bottom } }))
+          return
+        }
+        if (readOnly || target.closest('[data-canvas-edge-hit]')) return
         openNodeMenu(event.clientX, event.clientY)
       }}
       onContextMenu={(event) => {
@@ -1124,19 +1141,34 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
           const selected = selectedSet.has(node.id) ? state.selectedIDs : event.shiftKey ? [...state.selectedIDs, node.id] : [node.id]
           store.getState().select(selected)
           if (readOnly) return
-          // Alt/Option + drag duplicates the selection first (competitor convention).
-          let dragIDs = selected
-          if (event.altKey && selected.every((id) => { const item = documentState.nodes.find((node) => node.id === id); return item && canCopyCanvasNode(item) })) {
-            store.getState().copySelected()
-            store.getState().pasteClipboard()
-            dragIDs = store.getState().selectedIDs
-          }
-          // Dragging any group member moves the whole group.
-          dragIDs = canvasGroupMembers(documentState, dragIDs)
-          if (dragIDs.length !== store.getState().selectedIDs.length) store.getState().select(dragIDs)
-          setDrag({ startX: event.clientX, startY: event.clientY, selectedIDs: dragIDs, delta: { x: 0, y: 0 } })
+          // Start a drag only after a deliberate screen-space movement. In particular,
+          // the two pointer sequences of a double click must not create move history.
+          updateDrag({ pointerID: event.pointerId, startX: event.clientX, startY: event.clientY, selectedIDs: selected, duplicate: event.altKey, started: false, delta: { x: 0, y: 0 } })
           event.currentTarget.setPointerCapture(event.pointerId)
-        }} onDrag={(event) => { if (drag) setDrag({ ...drag, delta: { x: (event.clientX - drag.startX) / documentState.viewport.zoom, y: (event.clientY - drag.startY) / documentState.viewport.zoom } }) }} onDragEnd={() => { if (drag) store.getState().moveSelected(drag.delta); setDrag(null) }} onResizeStart={(event) => {
+        }} onDrag={(event) => {
+          const pending = dragRef.current
+          if (!pending || pending.pointerID !== event.pointerId) return
+          const dx = event.clientX - pending.startX
+          const dy = event.clientY - pending.startY
+          if (!pending.started && Math.hypot(dx, dy) <= 5) return
+          let dragIDs = pending.selectedIDs
+          if (!pending.started) {
+            if (pending.duplicate && dragIDs.every((id) => { const item = documentState.nodes.find((node) => node.id === id); return item && canCopyCanvasNode(item) })) {
+              store.getState().copySelected()
+              store.getState().pasteClipboard()
+              dragIDs = store.getState().selectedIDs
+            }
+            dragIDs = canvasGroupMembers(store.getState().command.present, dragIDs)
+            store.getState().select(dragIDs)
+          }
+          updateDrag({ ...pending, selectedIDs: dragIDs, started: true, delta: { x: dx / documentState.viewport.zoom, y: dy / documentState.viewport.zoom } })
+        }} onDragEnd={(event) => {
+          const pending = dragRef.current
+          if (!pending || pending.pointerID !== event.pointerId) return
+          if (event.type !== 'pointercancel' && pending.started) store.getState().moveSelected(pending.delta)
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+          updateDrag(null)
+        }} onResizeStart={(event) => {
           event.stopPropagation()
           store.getState().select([node.id])
           setResize({ pointerID: event.pointerId, nodeID: node.id, startX: event.clientX, startY: event.clientY, startSize: node.size, size: node.size })
@@ -1183,7 +1215,7 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
           const asset = canvasReferenceAsset(source, media)
           return [{ id: edge.id, alias: String(source.payload?.name ?? asset.name), title: media?.asset.name ?? String(source.payload?.title ?? source.payload?.name ?? source.id), asset, role: edge.input_role }]
         })
-        return <div ref={observeConsole} className="canvas-console-anchor" data-canvas-no-zoom style={canvasConsoleBounds(viewportSize, { x: node.position.x * documentState.viewport.zoom + documentState.viewport.x, y: (node.position.y + node.size.height) * documentState.viewport.zoom + documentState.viewport.y + 20 }, consoleHeight)}>
+        return <div ref={observeConsole} className="canvas-console-anchor" data-canvas-no-zoom style={{ ...canvasConsoleBounds(viewportSize, { x: node.position.x * documentState.viewport.zoom + documentState.viewport.x, y: (node.position.y + node.size.height) * documentState.viewport.zoom + documentState.viewport.y + 20 }, Math.min(consoleHeight, Math.max(0, viewportSize.height - 160))), maxHeight: Math.max(0, viewportSize.height - 160) }}>
           <CanvasGenerationConsole key={node.id} node={{ ...node, type: node.type as 'image_v2' | 'video_v2' }} draft={asObject(node.payload?.draft)} imageCapability={imageCapability} videoCapability={videoCapability} references={references} estimate={{ estimated_points: estimate?.points, display_points: estimate?.points, valid: valid && !errors.length, sufficient, error: errors[0] || estimate?.error || (valid && !sufficient ? '积分不足，请充值后重试' : undefined) }} run={adaptCanvasRun(runs.find((run) => run.node_id === node.id))} busy={busyNodeID === node.id || runs.some((run) => run.node_id === node.id && activeRunStatuses.has(run.status))} estimating={estimate?.status === 'waiting' || estimate?.status === 'loading'} accessToken={app.session?.token} onPatchDraft={(patch) => store.getState().updateNode(node.id, (current) => ({ ...current, payload: { ...current.payload, draft: { ...asObject(current.payload?.draft), ...patch, quote_token: undefined } } }))} onRestoreReference={async (assetID, originalID) => {
             const sourceID = markedSources.current.get(assetID) ?? store.getState().command.present.edges.filter((edge) => edge.target === node.id).map((edge) => edge.source).find((id) => store.getState().command.present.nodes.some((item) => item.id === id && item.asset_id === assetID))
             const source = store.getState().command.present.nodes.find((item) => item.id === sourceID && item.asset_id === assetID)
@@ -1281,7 +1313,7 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
 
 function CanvasNodeView({ node, selected, readOnly, connecting, connectValid, connectInvalid, referenceEligible, run, media, onRename, onSelect, onDrag, onDragEnd, onResizeStart, onResize, onResizeEnd, onStartConnection, onUpdate, onAttach, onCancel, onMediaDetail, onMediaDimensions }: {
   node: CanvasNode; selected: boolean; readOnly: boolean; connecting: boolean; connectValid: boolean; connectInvalid: boolean; referenceEligible: boolean; run?: CanvasRun; media?: CanvasHydratedMedia
-  onSelect: (event: React.PointerEvent<HTMLElement>) => void; onDrag: (event: React.PointerEvent<HTMLElement>) => void; onDragEnd: () => void
+  onSelect: (event: React.PointerEvent<HTMLElement>) => void; onDrag: (event: React.PointerEvent<HTMLElement>) => void; onDragEnd: (event: React.PointerEvent<HTMLElement>) => void
   onResizeStart: (event: React.PointerEvent<HTMLButtonElement>) => void; onResize: (event: React.PointerEvent<HTMLButtonElement>) => void; onResizeEnd: (event: React.PointerEvent<HTMLButtonElement>) => void
   onStartConnection: (event: React.PointerEvent<HTMLButtonElement>) => void
   onUpdate: (payload: Record<string, unknown>) => void; onRename: (name: string) => void; onAttach: () => void; onCancel: () => void; onMediaDetail: () => void; onMediaDimensions: (size: { width: number; height: number }) => void

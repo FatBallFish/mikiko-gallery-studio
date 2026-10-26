@@ -6,6 +6,6 @@ for (const forbidden of ["app.navigate('docs')", '/developer-docs/']) {
   if (source.includes(forbidden)) throw new Error(`API Keys must not use an intermediate or hard-coded documentation route: ${forbidden}`)
 }
 
-if (!source.includes("import { openDocsEntry } from '../docsUrl'") || !source.includes("openDocsEntry('api-keys')")) {
+if (!source.includes("import { docsSiteUrl, openDocsEntry } from '../docsUrl'") || !source.includes("openDocsEntry('api-keys')") || !source.includes("new URL('#/guide/mcp', docsSiteUrl())")) {
   throw new Error('API Keys documentation action must open the centrally resolved documentation URL directly')
 }

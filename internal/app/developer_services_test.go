@@ -80,7 +80,7 @@ func TestConfigureDeveloperServicesUnconfiguredCanonicalURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := router.NewWithAPIAndConfig(api, cfg)
-	for _, path := range []string{"/healthz", "/api/open/v1/me"} {
+	for _, path := range []string{"/healthz", "/api/open/v1/me", "/api/v1/public/developer-endpoints"} {
 		r := httptest.NewRequest("GET", path, nil)
 		r.Header.Set("Authorization", "Bearer "+key.Secret)
 		w := httptest.NewRecorder()
@@ -223,6 +223,10 @@ func TestConfigureDeveloperServicesHTTPIntegration(t *testing.T) {
 		}
 		return d
 	}
+	_, endpoints := request("GET", "/api/v1/public/developer-endpoints", "", "", "", 200)
+	if data(endpoints)["mcp_url"] != server.URL+"/mcp" || data(endpoints)["canonical_configured"] != true {
+		t.Fatalf("public endpoints: %#v", endpoints)
+	}
 	_, metadata := request("GET", "/.well-known/oauth-authorization-server", "", "", "", 200)
 	if metadata["issuer"] != server.URL || metadata["token_endpoint"] != server.URL+"/oauth/token" {
 		t.Fatalf("noncanonical metadata: %#v", metadata)
@@ -276,7 +280,11 @@ func TestConfigureDeveloperServicesHTTPIntegration(t *testing.T) {
 		form := url.Values{"grant_type": {"authorization_code"}, "code": {redirect.Query().Get("code")}, "client_id": {clientID}, "redirect_uri": {"http://127.0.0.1:32123/callback"}, "resource": {server.URL + "/mcp"}, "code_verifier": {verifier}}
 		_, tokens := request("POST", "/oauth/token", "", "application/x-www-form-urlencoded", form.Encode(), 200)
 		request("POST", "/oauth/token", "", "application/x-www-form-urlencoded", form.Encode(), 400)
-		token, ok := tokens["access_token"].(string)
+		_, rotated := request("POST", "/oauth/token", "", "application/x-www-form-urlencoded", url.Values{"grant_type": {"refresh_token"}, "refresh_token": {tokens["refresh_token"].(string)}, "client_id": {clientID}, "resource": {server.URL + "/mcp"}}.Encode(), 200)
+		if rotated["refresh_token"] == tokens["refresh_token"] {
+			t.Fatal("refresh token did not rotate")
+		}
+		token, ok := rotated["access_token"].(string)
 		if !ok || token == "" {
 			t.Fatalf("token: %#v", tokens)
 		}

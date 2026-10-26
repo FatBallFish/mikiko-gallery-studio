@@ -56,6 +56,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providermodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicimageinteraction"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicimagestat"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicvideointeraction"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/redeemcode"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/referenceasset"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/refreshsession"
@@ -174,6 +175,8 @@ type Client struct {
 	PublicImageInteraction *PublicImageInteractionClient
 	// PublicImageStat is the client for interacting with the PublicImageStat builders.
 	PublicImageStat *PublicImageStatClient
+	// PublicVideoInteraction is the client for interacting with the PublicVideoInteraction builders.
+	PublicVideoInteraction *PublicVideoInteractionClient
 	// RedeemCode is the client for interacting with the RedeemCode builders.
 	RedeemCode *RedeemCodeClient
 	// ReferenceAsset is the client for interacting with the ReferenceAsset builders.
@@ -287,6 +290,7 @@ func (c *Client) init() {
 	c.ProviderModel = NewProviderModelClient(c.config)
 	c.PublicImageInteraction = NewPublicImageInteractionClient(c.config)
 	c.PublicImageStat = NewPublicImageStatClient(c.config)
+	c.PublicVideoInteraction = NewPublicVideoInteractionClient(c.config)
 	c.RedeemCode = NewRedeemCodeClient(c.config)
 	c.ReferenceAsset = NewReferenceAssetClient(c.config)
 	c.RefreshSession = NewRefreshSessionClient(c.config)
@@ -450,6 +454,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ProviderModel:               NewProviderModelClient(cfg),
 		PublicImageInteraction:      NewPublicImageInteractionClient(cfg),
 		PublicImageStat:             NewPublicImageStatClient(cfg),
+		PublicVideoInteraction:      NewPublicVideoInteractionClient(cfg),
 		RedeemCode:                  NewRedeemCodeClient(cfg),
 		ReferenceAsset:              NewReferenceAssetClient(cfg),
 		RefreshSession:              NewRefreshSessionClient(cfg),
@@ -540,6 +545,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ProviderModel:               NewProviderModelClient(cfg),
 		PublicImageInteraction:      NewPublicImageInteractionClient(cfg),
 		PublicImageStat:             NewPublicImageStatClient(cfg),
+		PublicVideoInteraction:      NewPublicVideoInteractionClient(cfg),
 		RedeemCode:                  NewRedeemCodeClient(cfg),
 		ReferenceAsset:              NewReferenceAssetClient(cfg),
 		RefreshSession:              NewRefreshSessionClient(cfg),
@@ -610,16 +616,16 @@ func (c *Client) Use(hooks ...Hook) {
 		c.ObjectDeletionJob, c.ObjectReconcileCheckpoint, c.ObjectStorageConfig,
 		c.PaymentOrder, c.PaymentProviderInstance, c.PaymentWebhookEvent,
 		c.PointLedger, c.Project, c.PromptOptimizationRun, c.ProviderErrorPolicy,
-		c.ProviderModel, c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode,
-		c.ReferenceAsset, c.RefreshSession, c.RouteModel, c.RouteModelCandidate,
-		c.RouteModelGroup, c.RouteModelGroupMember, c.RouteModelPrice,
-		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.TextModel,
-		c.TextModelAccount, c.User, c.UserGroup, c.UserGroupMember, c.UserIdentity,
-		c.UserSubscription, c.VideoModelCapability, c.VideoModelRateCard,
-		c.VideoPriceRule, c.VideoPricingStrategy, c.VideoProviderCallbackEvent,
-		c.VideoProviderCostRule, c.VideoRouteConfig, c.VideoTask, c.VideoTaskAttempt,
-		c.VideoTaskInput, c.VideoTaskItem, c.WalletGrant,
-		c.WalletReservationAllocation,
+		c.ProviderModel, c.PublicImageInteraction, c.PublicImageStat,
+		c.PublicVideoInteraction, c.RedeemCode, c.ReferenceAsset, c.RefreshSession,
+		c.RouteModel, c.RouteModelCandidate, c.RouteModelGroup,
+		c.RouteModelGroupMember, c.RouteModelPrice, c.RouteModelVisibilityGroup,
+		c.SecureConfig, c.SubscriptionPlan, c.TextModel, c.TextModelAccount, c.User,
+		c.UserGroup, c.UserGroupMember, c.UserIdentity, c.UserSubscription,
+		c.VideoModelCapability, c.VideoModelRateCard, c.VideoPriceRule,
+		c.VideoPricingStrategy, c.VideoProviderCallbackEvent, c.VideoProviderCostRule,
+		c.VideoRouteConfig, c.VideoTask, c.VideoTaskAttempt, c.VideoTaskInput,
+		c.VideoTaskItem, c.WalletGrant, c.WalletReservationAllocation,
 	} {
 		n.Use(hooks...)
 	}
@@ -639,16 +645,16 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.ObjectDeletionJob, c.ObjectReconcileCheckpoint, c.ObjectStorageConfig,
 		c.PaymentOrder, c.PaymentProviderInstance, c.PaymentWebhookEvent,
 		c.PointLedger, c.Project, c.PromptOptimizationRun, c.ProviderErrorPolicy,
-		c.ProviderModel, c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode,
-		c.ReferenceAsset, c.RefreshSession, c.RouteModel, c.RouteModelCandidate,
-		c.RouteModelGroup, c.RouteModelGroupMember, c.RouteModelPrice,
-		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.TextModel,
-		c.TextModelAccount, c.User, c.UserGroup, c.UserGroupMember, c.UserIdentity,
-		c.UserSubscription, c.VideoModelCapability, c.VideoModelRateCard,
-		c.VideoPriceRule, c.VideoPricingStrategy, c.VideoProviderCallbackEvent,
-		c.VideoProviderCostRule, c.VideoRouteConfig, c.VideoTask, c.VideoTaskAttempt,
-		c.VideoTaskInput, c.VideoTaskItem, c.WalletGrant,
-		c.WalletReservationAllocation,
+		c.ProviderModel, c.PublicImageInteraction, c.PublicImageStat,
+		c.PublicVideoInteraction, c.RedeemCode, c.ReferenceAsset, c.RefreshSession,
+		c.RouteModel, c.RouteModelCandidate, c.RouteModelGroup,
+		c.RouteModelGroupMember, c.RouteModelPrice, c.RouteModelVisibilityGroup,
+		c.SecureConfig, c.SubscriptionPlan, c.TextModel, c.TextModelAccount, c.User,
+		c.UserGroup, c.UserGroupMember, c.UserIdentity, c.UserSubscription,
+		c.VideoModelCapability, c.VideoModelRateCard, c.VideoPriceRule,
+		c.VideoPricingStrategy, c.VideoProviderCallbackEvent, c.VideoProviderCostRule,
+		c.VideoRouteConfig, c.VideoTask, c.VideoTaskAttempt, c.VideoTaskInput,
+		c.VideoTaskItem, c.WalletGrant, c.WalletReservationAllocation,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -737,6 +743,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.PublicImageInteraction.mutate(ctx, m)
 	case *PublicImageStatMutation:
 		return c.PublicImageStat.mutate(ctx, m)
+	case *PublicVideoInteractionMutation:
+		return c.PublicVideoInteraction.mutate(ctx, m)
 	case *RedeemCodeMutation:
 		return c.RedeemCode.mutate(ctx, m)
 	case *ReferenceAssetMutation:
@@ -6444,6 +6452,139 @@ func (c *PublicImageStatClient) mutate(ctx context.Context, m *PublicImageStatMu
 	}
 }
 
+// PublicVideoInteractionClient is a client for the PublicVideoInteraction schema.
+type PublicVideoInteractionClient struct {
+	config
+}
+
+// NewPublicVideoInteractionClient returns a client for the PublicVideoInteraction from the given config.
+func NewPublicVideoInteractionClient(c config) *PublicVideoInteractionClient {
+	return &PublicVideoInteractionClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `publicvideointeraction.Hooks(f(g(h())))`.
+func (c *PublicVideoInteractionClient) Use(hooks ...Hook) {
+	c.hooks.PublicVideoInteraction = append(c.hooks.PublicVideoInteraction, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `publicvideointeraction.Intercept(f(g(h())))`.
+func (c *PublicVideoInteractionClient) Intercept(interceptors ...Interceptor) {
+	c.inters.PublicVideoInteraction = append(c.inters.PublicVideoInteraction, interceptors...)
+}
+
+// Create returns a builder for creating a PublicVideoInteraction entity.
+func (c *PublicVideoInteractionClient) Create() *PublicVideoInteractionCreate {
+	mutation := newPublicVideoInteractionMutation(c.config, OpCreate)
+	return &PublicVideoInteractionCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of PublicVideoInteraction entities.
+func (c *PublicVideoInteractionClient) CreateBulk(builders ...*PublicVideoInteractionCreate) *PublicVideoInteractionCreateBulk {
+	return &PublicVideoInteractionCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *PublicVideoInteractionClient) MapCreateBulk(slice any, setFunc func(*PublicVideoInteractionCreate, int)) *PublicVideoInteractionCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &PublicVideoInteractionCreateBulk{err: fmt.Errorf("calling to PublicVideoInteractionClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*PublicVideoInteractionCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &PublicVideoInteractionCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for PublicVideoInteraction.
+func (c *PublicVideoInteractionClient) Update() *PublicVideoInteractionUpdate {
+	mutation := newPublicVideoInteractionMutation(c.config, OpUpdate)
+	return &PublicVideoInteractionUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *PublicVideoInteractionClient) UpdateOne(_m *PublicVideoInteraction) *PublicVideoInteractionUpdateOne {
+	mutation := newPublicVideoInteractionMutation(c.config, OpUpdateOne, withPublicVideoInteraction(_m))
+	return &PublicVideoInteractionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *PublicVideoInteractionClient) UpdateOneID(id int) *PublicVideoInteractionUpdateOne {
+	mutation := newPublicVideoInteractionMutation(c.config, OpUpdateOne, withPublicVideoInteractionID(id))
+	return &PublicVideoInteractionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for PublicVideoInteraction.
+func (c *PublicVideoInteractionClient) Delete() *PublicVideoInteractionDelete {
+	mutation := newPublicVideoInteractionMutation(c.config, OpDelete)
+	return &PublicVideoInteractionDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *PublicVideoInteractionClient) DeleteOne(_m *PublicVideoInteraction) *PublicVideoInteractionDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *PublicVideoInteractionClient) DeleteOneID(id int) *PublicVideoInteractionDeleteOne {
+	builder := c.Delete().Where(publicvideointeraction.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &PublicVideoInteractionDeleteOne{builder}
+}
+
+// Query returns a query builder for PublicVideoInteraction.
+func (c *PublicVideoInteractionClient) Query() *PublicVideoInteractionQuery {
+	return &PublicVideoInteractionQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypePublicVideoInteraction},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a PublicVideoInteraction entity by its id.
+func (c *PublicVideoInteractionClient) Get(ctx context.Context, id int) (*PublicVideoInteraction, error) {
+	return c.Query().Where(publicvideointeraction.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *PublicVideoInteractionClient) GetX(ctx context.Context, id int) *PublicVideoInteraction {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *PublicVideoInteractionClient) Hooks() []Hook {
+	return c.hooks.PublicVideoInteraction
+}
+
+// Interceptors returns the client interceptors.
+func (c *PublicVideoInteractionClient) Interceptors() []Interceptor {
+	return c.inters.PublicVideoInteraction
+}
+
+func (c *PublicVideoInteractionClient) mutate(ctx context.Context, m *PublicVideoInteractionMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&PublicVideoInteractionCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&PublicVideoInteractionUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&PublicVideoInteractionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&PublicVideoInteractionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown PublicVideoInteraction mutation op: %q", m.Op())
+	}
+}
+
 // RedeemCodeClient is a client for the RedeemCode schema.
 type RedeemCodeClient struct {
 	config
@@ -10707,15 +10848,15 @@ type (
 		ObjectReconcileCheckpoint, ObjectStorageConfig, PaymentOrder,
 		PaymentProviderInstance, PaymentWebhookEvent, PointLedger, Project,
 		PromptOptimizationRun, ProviderErrorPolicy, ProviderModel,
-		PublicImageInteraction, PublicImageStat, RedeemCode, ReferenceAsset,
-		RefreshSession, RouteModel, RouteModelCandidate, RouteModelGroup,
-		RouteModelGroupMember, RouteModelPrice, RouteModelVisibilityGroup,
-		SecureConfig, SubscriptionPlan, TextModel, TextModelAccount, User, UserGroup,
-		UserGroupMember, UserIdentity, UserSubscription, VideoModelCapability,
-		VideoModelRateCard, VideoPriceRule, VideoPricingStrategy,
-		VideoProviderCallbackEvent, VideoProviderCostRule, VideoRouteConfig, VideoTask,
-		VideoTaskAttempt, VideoTaskInput, VideoTaskItem, WalletGrant,
-		WalletReservationAllocation []ent.Hook
+		PublicImageInteraction, PublicImageStat, PublicVideoInteraction, RedeemCode,
+		ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
+		RouteModelGroup, RouteModelGroupMember, RouteModelPrice,
+		RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan, TextModel,
+		TextModelAccount, User, UserGroup, UserGroupMember, UserIdentity,
+		UserSubscription, VideoModelCapability, VideoModelRateCard, VideoPriceRule,
+		VideoPricingStrategy, VideoProviderCallbackEvent, VideoProviderCostRule,
+		VideoRouteConfig, VideoTask, VideoTaskAttempt, VideoTaskInput, VideoTaskItem,
+		WalletGrant, WalletReservationAllocation []ent.Hook
 	}
 	inters struct {
 		APIKey, APIKeyQuotaReservation, AdminUser, AssetGroup, AuditLog,
@@ -10727,14 +10868,14 @@ type (
 		ObjectReconcileCheckpoint, ObjectStorageConfig, PaymentOrder,
 		PaymentProviderInstance, PaymentWebhookEvent, PointLedger, Project,
 		PromptOptimizationRun, ProviderErrorPolicy, ProviderModel,
-		PublicImageInteraction, PublicImageStat, RedeemCode, ReferenceAsset,
-		RefreshSession, RouteModel, RouteModelCandidate, RouteModelGroup,
-		RouteModelGroupMember, RouteModelPrice, RouteModelVisibilityGroup,
-		SecureConfig, SubscriptionPlan, TextModel, TextModelAccount, User, UserGroup,
-		UserGroupMember, UserIdentity, UserSubscription, VideoModelCapability,
-		VideoModelRateCard, VideoPriceRule, VideoPricingStrategy,
-		VideoProviderCallbackEvent, VideoProviderCostRule, VideoRouteConfig, VideoTask,
-		VideoTaskAttempt, VideoTaskInput, VideoTaskItem, WalletGrant,
-		WalletReservationAllocation []ent.Interceptor
+		PublicImageInteraction, PublicImageStat, PublicVideoInteraction, RedeemCode,
+		ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
+		RouteModelGroup, RouteModelGroupMember, RouteModelPrice,
+		RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan, TextModel,
+		TextModelAccount, User, UserGroup, UserGroupMember, UserIdentity,
+		UserSubscription, VideoModelCapability, VideoModelRateCard, VideoPriceRule,
+		VideoPricingStrategy, VideoProviderCallbackEvent, VideoProviderCostRule,
+		VideoRouteConfig, VideoTask, VideoTaskAttempt, VideoTaskInput, VideoTaskItem,
+		WalletGrant, WalletReservationAllocation []ent.Interceptor
 	}
 )

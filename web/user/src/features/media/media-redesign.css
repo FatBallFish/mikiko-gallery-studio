@@ -123,6 +123,9 @@
   padding: 12px 14px 14px;
   border-top: 1px solid var(--line);
 }
+.media-library .media-asset-group { display: table; max-width: 100%; margin-top: 10px; padding: 3px 8px; border: 1px solid var(--line); border-radius: var(--r-sm); color: var(--ink-2); background: var(--surface-2); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.media-library .gl-card__meta { flex-wrap: wrap; row-gap: 4px; }
+.media-library .gl-card__meta span:first-child { white-space: normal; overflow-wrap: anywhere; }
 .video-publication { display: grid; min-width: 0; gap: 8px; }
 .video-publication__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
 .video-publication__status { min-width: 0; overflow-wrap: anywhere; }

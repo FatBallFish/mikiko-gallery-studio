@@ -1,9 +1,11 @@
 import { FormEvent, useMemo, useState } from 'react'
-import type { ApiKey } from '../../../shared/api-types'
+import type { ApiKey, DeveloperEndpoints } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { userApi } from '../../../shared/user-api'
+import { sharedApiClient } from '../../../shared/http-client'
+import { developerClientTemplates, developerEndpointRows, endpointDisabledReason } from './developerEndpoints'
 import { Button, CopyButton, EmptyState, ErrorState, Modal, copyText, useApp } from '../components'
-import { openDocsEntry } from '../docsUrl'
+import { docsSiteUrl, openDocsEntry } from '../docsUrl'
 import { Check, Copy, Edit, RotateCcw, Trash2, X } from '../ui/icons'
 import { errorMessage, useApiResource } from '../useApiResource'
 import {
@@ -40,7 +42,8 @@ export function ApiKeysPage() {
   const [deleteTarget, setDeleteTarget] = useState<ApiKey | null>(null)
   const [busyKeyId, setBusyKeyId] = useState<string | null>(null)
   const selectedKey = useMemo(() => keys.data?.find((key) => key.id === selectedId) ?? keys.data?.[0] ?? null, [keys.data, selectedId])
-  const quickstart = apiKeyQuickstart(selectedKey)
+  const endpoints = useApiResource(() => sharedApiClient.get<DeveloperEndpoints>('/api/v1/public/developer-endpoints', { auth: false }), [])
+  const quickstart = apiKeyQuickstart(selectedKey, endpoints.data?.rest_base)
   const activeCount = useMemo(() => (keys.data ?? []).filter((key) => key.status === 'active').length, [keys.data])
 
   async function copyValue(value: string, message: string) {
@@ -236,6 +239,20 @@ export function ApiKeysPage() {
               </div>
             ) : null}
           </div>
+
+          <section className="u-plate u-plate--pad" aria-labelledby="developer-endpoints-title">
+            <div className="u-panel-title"><h2 id="developer-endpoints-title">开发者端点与 MCP 配置</h2><button className="u-btn" type="button" disabled={endpoints.loading} onClick={() => void endpoints.reload()}>刷新端点</button></div>
+            {endpoints.loading && <p role="status">正在读取公共端点配置…</p>}
+            {endpoints.error && <ErrorState message={endpoints.error} onRetry={() => void endpoints.reload()} />}
+            {endpoints.data && <>
+              {endpointDisabledReason(endpoints.data) && <p role="status">{endpointDisabledReason(endpoints.data)}</p>}
+              <dl>{developerEndpointRows(endpoints.data).map(([label, value]) => <div key={label} style={{ marginBottom: 16 }}><dt>{label}</dt><dd style={{ margin: 0, overflowWrap: 'anywhere' }}><code>{value || '未配置'}</code>{value && <CopyButton text={value} label={`复制${label}`} />}</dd></div>)}</dl>
+              <p className="u-meta">REST 使用 /api/open/v1，OpenAI SDK 使用 /v1，MCP 使用 /mcp。不要重复追加路径。OAuth 由客户端浏览器授权取得令牌，API Key 与浏览器登录令牌不能互换。</p>
+              {developerClientTemplates(endpoints.data).map(template => <article key={template.name} style={{ marginTop: 24 }}><div className="u-panel-title"><h3>{template.name}</h3><CopyButton text={template.code} label={`复制 ${template.name} 配置`} /></div><p className="u-meta">{template.format}</p><pre className="acct-code-block">{template.code}</pre><p>{template.instructions}</p></article>)}
+            </>}
+            <p><button type="button" className="u-link acct-inline-link" onClick={() => window.open(new URL('#/guide/mcp', docsSiteUrl()).href, '_blank', 'noopener,noreferrer')}>OAuth 与客户端完整教程</button></p>
+            <p className="u-meta">模板依据官方格式编写；本轮尚未执行 Mikiko/ZCode、Codex、Claude 真实客户端授权与工具调用验证。</p>
+          </section>
 
           <div className="u-split">
             <div className="u-plate u-plate--pad">

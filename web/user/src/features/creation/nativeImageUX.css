@@ -1,3 +1,8 @@
+.native-image-mode { min-width: 0; margin-top: 10px; }
+.native-image-mode > small { display: block; margin-top: 6px; overflow-wrap: anywhere; }
+.native-image-mode .vd-mode { min-width: 0; }
+.native-image-mode .vd-mode:disabled { opacity: .55; cursor: not-allowed; }
+.native-image-mode .vd-mode span { overflow-wrap: anywhere; }
 .native-negative-prompt { margin-top: 12px; min-width: 0; }
 .native-negative-prompt summary { cursor: pointer; color: var(--text-secondary); font-size: 12px; padding: 8px 0; }
 .native-negative-prompt .prompt-template-editor { min-height: 76px; }

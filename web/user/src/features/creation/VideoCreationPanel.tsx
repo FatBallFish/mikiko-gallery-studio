@@ -100,7 +100,7 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
       setDraft((current) => {
         const base = current ?? defaultVideoDraft(next, initialAssetId ? 'image_to_video' : undefined)
         const normalized = applyVideoCapability(base, next)
-        if (normalized.changes.length) app.notify('info', normalized.changes.join('；'))
+        if (normalized.changes.length) app.notify('warn', normalized.changes.join('；'))
         return normalized.draft
       })
       setError('')
@@ -279,12 +279,12 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
     const model = videoModelForDraft(state.capability, state.draft)
     for (const asset of assets) {
       const reason = videoInputAssetReason(model, state.draft.task_type, role, asset)
-      if (reason) { app.notify('error', reason); return false }
+      if (reason) { app.notify('warn', reason); return false }
     }
     const current = role === 'first_frame' || role === 'last_frame' ? state.draft.inputs.filter((input) => input.role !== role) : state.draft.inputs
     const incoming = assets.map((asset, ordinal) => ({ asset_id: asset.id, role, ordinal }))
     const result = referenceAdmission({ policy: videoReferencePolicy(model, state.draft.task_type), current, incoming, reserved: reservations.current.pending(excludeToken), kind: (input) => input.role, key: (input) => `${input.role}:${input.asset_id}` })
-    if (!result.ok) { app.notify('error', result.reason); return false }
+    if (!result.ok) { app.notify('warn', result.reason); return false }
     const next = { ...state.draft, inputs: result.merged }
     live.current = { ...state, draft: next }
     setDraft(next)
@@ -299,37 +299,37 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
     if (!state.draft || !state.capability) return
     const model = videoModelForDraft(state.capability, state.draft)
     const policy = videoReferencePolicy(model, state.draft.task_type)
-    if (policy.reason) { app.notify('error', policy.reason); return }
+    if (policy.reason) { app.notify('warn', policy.reason); return }
     const entries = files.map((file, ordinal) => {
       const mediaType = file.type.split('/')[0]
       const role = VIDEO_TASK_INPUT_ROLES[state.draft!.task_type].find((role) => resolveInputCapabilities(model, state.draft!.task_type)?.[role]?.media_types.includes(mediaType))
       return { file, role, asset_id: `pending:${ordinal}:${file.name}`, ordinal }
     })
     for (const entry of entries) {
-      if (!entry.role) { app.notify('error', '当前模型与生成方式不支持该引用类型'); return }
+      if (!entry.role) { app.notify('warn', '当前模型与生成方式不支持该引用类型'); return }
       const reason = videoInputAssetReason(model, state.draft.task_type, entry.role, { media_type: entry.file.type.split('/')[0] as MediaAsset['media_type'], mime_type: entry.file.type, name: entry.file.name, file_size_bytes: entry.file.size })
-      if (reason) { app.notify('error', reason); return }
+      if (reason) { app.notify('warn', reason); return }
     }
     const incoming = entries.map((entry) => ({ asset_id: entry.asset_id, role: entry.role!, ordinal: entry.ordinal }))
     const replacing = new Set(incoming.filter((input) => input.role === 'first_frame' || input.role === 'last_frame').map((input) => input.role))
     const current = state.draft.inputs.filter((input) => !replacing.has(input.role))
     const reservation = reservations.current.reserve(policy, current, incoming, (input) => input.role)
-    if (!reservation.ok) { app.notify('error', reservation.reason); return }
+    if (!reservation.ok) { app.notify('warn', reservation.reason); return }
     setQuote(null)
     setPendingUploads((count) => count + 1)
     try {
       const uploaded = await Promise.all(entries.map(async (entry) => ({ asset: await uploadSingleMediaAsset(entry.file, state.projectID), role: entry.role! })))
       const now = live.current
       if (!now.draft || !now.capability || now.projectID !== state.projectID || now.draft.route_model_code !== state.draft.route_model_code || now.draft.task_type !== state.draft.task_type) {
-        app.notify('error', '模型、生成方式或项目已变化，上传素材保留在资产库，请重新选择引用'); return
+        app.notify('warn', '模型、生成方式或项目已变化，上传素材保留在资产库，请重新选择引用'); return
       }
       const currentModel = videoModelForDraft(now.capability, now.draft)
       for (const { asset, role } of uploaded) {
         const reason = videoInputAssetReason(currentModel, now.draft.task_type, role, asset)
-        if (reason) { app.notify('error', reason); return }
+        if (reason) { app.notify('warn', reason); return }
       }
       const result = referenceAdmission({ policy: videoReferencePolicy(currentModel, now.draft.task_type), current: now.draft.inputs.filter((input) => !replacing.has(input.role)), incoming: uploaded.map(({ asset, role }, ordinal) => ({ asset_id: asset.id, role, ordinal })), reserved: reservations.current.pending(reservation.token), kind: (input) => input.role, key: (input) => `${input.role}:${input.asset_id}` })
-      if (!result.ok) { app.notify('error', result.reason); return }
+      if (!result.ok) { app.notify('warn', result.reason); return }
       const next = { ...now.draft, inputs: result.merged }
       live.current = { ...now, draft: next }
       setDraft(next)
@@ -348,13 +348,13 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
     live.current = { ...live.current, draft: normalized.draft }
     setDraft(normalized.draft)
     setFieldErrors({})
-    if (normalized.changes.length) app.notify('info', normalized.changes.join('；'))
+    if (normalized.changes.length) app.notify('warn', normalized.changes.join('；'))
   }
 
   async function startPromptOptimization() {
     const value = activeDraft.prompt_template.trim()
     if (Array.from(value).length < 8) {
-      app.notify('error', '提示词至少需要 8 个字符后才能优化')
+      app.notify('warn', '提示词至少需要 8 个字符后才能优化')
       return
     }
     const next = beginPromptOptimization(promptOptimization, value)
@@ -400,7 +400,7 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
 
   function openFramePicker() {
     const policy = videoReferencePolicy(model, activeDraft.task_type)
-    if (policy.reason) { app.notify('error', policy.reason); return }
+    if (policy.reason) { app.notify('warn', policy.reason); return }
     const role = VIDEO_TASK_INPUT_ROLES[activeDraft.task_type].find((role) => resolveInputCapabilities(model, activeDraft.task_type)?.[role]?.max_count !== 0 && resolveInputCapabilities(model, activeDraft.task_type)?.[role])
     if (role) setPickerRole(role)
   }
@@ -419,7 +419,7 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
     void hydrateInputAssets(reused)
     setDraft(reused)
     setQuote(null)
-    app.notify('info', '已复用提示词、兼容参数与引用资源')
+    app.notify('success', '已复用提示词、兼容参数与引用资源')
   }
 
   // Reused tasks carry their input asset ids; fetch the asset records so the
@@ -431,7 +431,7 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
         const asset = await userApi.getMediaAsset(input.asset_id)
         setSelectedAssets((current) => ({ ...current, [asset.id]: asset }))
       } catch {
-        app.notify('error', '部分引用已失效或无权访问，已保留引用，请移除或重新选择')
+        app.notify('warn', '部分引用已失效或无权访问，已保留引用，请移除或重新选择')
       }
     }))
   }
@@ -466,7 +466,7 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
     setEditingAsset(true)
     try {
       const policy = videoReferencePolicy(model, activeDraft.task_type)
-      if (policy.reason || !resolveInputCapabilities(model, activeDraft.task_type)?.first_frame) { app.notify('error', policy.reason || '当前生成方式不支持首帧引用'); return }
+      if (policy.reason || !resolveInputCapabilities(model, activeDraft.task_type)?.first_frame) { app.notify('warn', policy.reason || '当前生成方式不支持首帧引用'); return }
       const access = await userApi.getMediaAssetAccess(assetID, 'preview')
       const frame = await captureVideoFrameBlob(userApi.mediaAssetUrl(access.url, app.session?.token))
       await uploadReferences([new File([frame], `视频续帧-${assetID.slice(0, 8)}.png`, { type: 'image/png' })])
@@ -478,10 +478,10 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
   }
 
   async function submit() {
-    if (Object.values(reservations.current.pending()).some((count) => (count ?? 0) > 0)) { app.notify('error', '引用素材正在上传，请等待上传完成后重新估价'); return }
+    if (Object.values(reservations.current.pending()).some((count) => (count ?? 0) > 0)) { app.notify('warn', '引用素材正在上传，请等待上传完成后重新估价'); return }
     const current = live.current
     const reason = current.draft && current.capability ? videoDraftInvalidReason(current.draft, current.capability, selectedAssets) : '视频能力不可用'
-    if (reason) { app.notify('error', reason); return }
+    if (reason) { app.notify('warn', reason); return }
     if (!quote || quote.key !== videoDraftKey(activeDraft) || new Date(quote.quote_expires_at).getTime() <= Date.now()) {
       setEstimateError('报价已失效，正在重新估价。')
       setQuote(null)

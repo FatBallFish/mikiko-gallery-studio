@@ -186,7 +186,7 @@ func TestNativeImageRESTAndMCPFakeProviderLifecycle(t *testing.T) {
 					if p.UserID != 7 || purpose != "download" {
 						t.Errorf("wrong access principal/purpose: %#v %s", p, purpose)
 					}
-					return map[string]any{"url": download.URL + "/" + id.String()}, nil
+					return map[string]any{"url": download.URL + "/" + id.String(), "expires_at": time.Now().UTC().Add(time.Minute), "range_supported": true}, nil
 				}})
 				var call func(string, map[string]any) map[string]any
 				if transport == "oauth_mcp" {

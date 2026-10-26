@@ -79,13 +79,24 @@ export function computeCanvasBounds(nodes: CanvasNode[]): CanvasBounds {
   return { x, y, width: Math.max(1, right - x), height: Math.max(1, bottom - y) }
 }
 
-export function fitCanvasViewport(bounds: CanvasBounds, viewport: ViewportSize, padding = 48): CanvasViewport {
-  const usableWidth = Math.max(1, viewport.width - padding * 2)
-  const usableHeight = Math.max(1, viewport.height - padding * 2)
-  const zoom = clamp(Math.min(usableWidth / bounds.width, usableHeight / bounds.height), 0.05, 2)
+export type CanvasFitOptions = {
+  minZoom?: number
+  maxZoom?: number
+  insets?: Partial<Record<'top' | 'right' | 'bottom' | 'left', number>>
+}
+
+export function fitCanvasViewport(bounds: CanvasBounds, viewport: ViewportSize, padding = 48, options: CanvasFitOptions = {}): CanvasViewport {
+  const left = options.insets?.left ?? 0
+  const top = options.insets?.top ?? 0
+  const width = Math.max(1, viewport.width - left - (options.insets?.right ?? 0))
+  const height = Math.max(1, viewport.height - top - (options.insets?.bottom ?? 0))
+  const usableWidth = Math.max(1, width - padding * 2)
+  const usableHeight = Math.max(1, height - padding * 2)
+  const zoom = clamp(Math.min(usableWidth / bounds.width, usableHeight / bounds.height), options.minZoom ?? 0.05, options.maxZoom ?? 2)
+  // Center with the final, bounded zoom inside the unobscured screen area.
   return {
-    x: viewport.width / 2 - (bounds.x + bounds.width / 2) * zoom,
-    y: viewport.height / 2 - (bounds.y + bounds.height / 2) * zoom,
+    x: left + width / 2 - (bounds.x + bounds.width / 2) * zoom,
+    y: top + height / 2 - (bounds.y + bounds.height / 2) * zoom,
     zoom,
   }
 }

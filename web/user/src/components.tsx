@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Maximize2 as FullscreenIcon } from 'lucide-react'
+import { Maximize2 as FullscreenIcon, CircleCheck, TriangleAlert, CircleX, Info } from 'lucide-react'
+import { useToastLifetime } from './ui/useToastLifetime'
 import type { GalleryImage, ImageResult, ImageTaskStatus, ImageTaskType, PublishStatus, MediaAsset, Project } from '../../shared/api-types'
 import { cn } from '../../shared/classnames'
 import { userApi } from '../../shared/user-api'
@@ -917,7 +918,7 @@ export function Shell({ children, scrollMode = 'app' }: { children: React.ReactN
 
 export function ToastViewport({ toasts, onExpire }: { toasts: Toast[]; onExpire: (id: number) => void }) {
   return (
-    <div className={userState.toastStack} aria-live="polite" aria-atomic="true">
+    <div className={`${userState.toastStack} u-toast-viewport`} aria-label="操作反馈">
       {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} onExpire={onExpire} />
       ))}
@@ -925,16 +926,23 @@ export function ToastViewport({ toasts, onExpire }: { toasts: Toast[]; onExpire:
   )
 }
 
-function ToastItem({ toast, onExpire }: { toast: Toast; onExpire: (id: number) => void }) {
-  useEffect(() => {
-    const timer = window.setTimeout(() => onExpire(toast.id), toast.durationMs ?? 4200)
-    return () => window.clearTimeout(timer)
-  }, [onExpire, toast.durationMs, toast.id])
+const toastPresentation = {
+  success: { label: '成功', Icon: CircleCheck },
+  warn: { label: '警告', Icon: TriangleAlert },
+  error: { label: '错误', Icon: CircleX },
+  info: { label: '提示', Icon: Info },
+} as const
 
+function ToastItem({ toast, onExpire }: { toast: Toast; onExpire: (id: number) => void }) {
+  const lifetime = useToastLifetime(toast.durationMs ?? 4200, () => onExpire(toast.id))
+  const { label, Icon } = toastPresentation[toast.tone]
   return (
-    <div className={userState.toast} style={{ '--toast-duration': `${toast.durationMs ?? 4200}ms`, '--toast-ring': toast.tone === 'success' ? 'var(--accent-emerald)' : toast.tone === 'error' ? 'var(--accent-coral)' : 'var(--accent)' } as React.CSSProperties}>
-      <span className="grid size-7 place-items-center rounded-full bg-[color-mix(in_oklch,var(--toast-ring)_18%,transparent)] font-black text-[var(--toast-ring)]">{toast.tone === 'success' ? '✓' : toast.tone === 'error' ? '!' : 'i'}</span>
-      <p>{toast.message}</p>
+    <div {...lifetime} className={`u-toast-message u-toast-message--${toast.tone}`}>
+      <Icon size={20} aria-hidden="true" className="u-toast-message__icon" />
+      <div role={toast.tone === 'error' ? 'alert' : 'status'} aria-atomic="true">
+        <strong>{label}</strong><p>{toast.message}</p>
+      </div>
+      <button type="button" className="u-toast-message__close" aria-label={`关闭${label}通知`} onClick={() => onExpire(toast.id)}><X size={16} aria-hidden="true" /></button>
     </div>
   )
 }

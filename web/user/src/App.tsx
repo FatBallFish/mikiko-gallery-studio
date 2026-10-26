@@ -100,7 +100,10 @@ function UserApplication() {
   ))
 
   const notify = useCallback((tone: ToastTone, message: string) => {
-    setToasts((items) => [...items, { id: Date.now() + Math.random(), tone, message, durationMs: 4200 }])
+    setToasts((items) => [...items, { id: Date.now() + Math.random(), tone, message, durationMs: tone === 'error' || tone === 'warn' ? 6500 : 4200 }].slice(-4))
+  }, [])
+  const dismissToast = useCallback((id: number) => {
+    setToasts((items) => items.filter((toast) => toast.id !== id))
   }, [])
 
   useEffect(() => {
@@ -330,7 +333,7 @@ function UserApplication() {
       setSession(sessionRef.current)
       window.localStorage.setItem(sessionKey, JSON.stringify(sessionRef.current))
     } catch {
-      notify('error', '主题偏好已应用到本机，但暂未同步到账户')
+      notify('warn', '主题偏好已应用到本机，但暂未同步到账户')
     }
   }, [installSession, notify, themePreference])
 
@@ -462,7 +465,7 @@ function UserApplication() {
       {session && projectUserID ? (
         <ProjectProvider key={projectUserID} userID={projectUserID}>{page}{featureFlags.media_upload ? <UploadTray hidden={route === 'creative-canvas' && Boolean(routeCanvasId)} /> : null}</ProjectProvider>
       ) : page}
-      <ToastViewport toasts={toasts} onExpire={(id) => setToasts((items) => items.filter((toast) => toast.id !== id))} />
+      <ToastViewport toasts={toasts} onExpire={dismissToast} />
     </AppContext.Provider>
   )
 }

@@ -3,8 +3,11 @@ package handlers
 import (
 	"errors"
 	"fmt"
+	mediaassetservice "github.com/fatballfish/pic-gallery/internal/service/mediaasset"
 	"io"
+	"mime"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -20,7 +23,7 @@ func (a *API) SetVideoPublications(service *videopublication.Service) { a.videoP
 func publicationID(path, prefix string) (uuid.UUID, string, error) {
 	rest := strings.TrimPrefix(path, prefix)
 	action := ""
-	for _, suffix := range []string{":withdraw", ":approve", ":reject", ":unpublish", "/video", "/poster"} {
+	for _, suffix := range []string{":withdraw", ":approve", ":reject", ":unpublish", "/video", "/poster", "/download", "/like", "/favorite"} {
 		if strings.HasSuffix(rest, suffix) {
 			rest = strings.TrimSuffix(rest, suffix)
 			action = suffix
@@ -85,7 +88,11 @@ func (a *API) HandlePublicVideos(w http.ResponseWriter, r *http.Request) {
 	if !a.videoPublicationAvailable(w, r) {
 		return
 	}
-	page, err := a.videoPublications.List(r.Context(), "", mediaQueryInt(r, "page", 1), mediaQueryInt(r, "page_size", 20), false)
+	viewer := int64(0)
+	if user := a.optionalUserWithQueryToken(r); user != nil {
+		viewer = user.ID
+	}
+	page, err := a.videoPublications.ListPublic(r.Context(), viewer, parseBoolQuery(r, "liked"), parseBoolQuery(r, "favorited"), r.URL.Query().Get("sort"), mediaQueryInt(r, "page", 1), mediaQueryInt(r, "page_size", 20))
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
@@ -98,7 +105,7 @@ func (a *API) HandlePublicVideos(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteSuccess(w, r, http.StatusOK, out)
 }
 func (a *API) HandlePublicVideoDetail(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodPost {
 		writeMethodNotAllowed(w, r)
 		return
 	}
@@ -115,6 +122,45 @@ func (a *API) HandlePublicVideoDetail(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, errs.New(404, errs.CodeNotFound, "video not found"))
 		return
 	}
+
+	if action == "/like" || action == "/favorite" {
+		if r.Method != http.MethodPost {
+			writeMethodNotAllowed(w, r)
+			return
+		}
+		user, err := a.requireUser(r)
+		if err != nil {
+			httpx.WriteError(w, r, err)
+			return
+		}
+		var body struct {
+			Active *bool `json:"active"`
+		}
+		if err := decodeStrictJSON(r, &body); err != nil || body.Active == nil {
+			httpx.WriteError(w, r, errs.BadRequest("active boolean is required"))
+			return
+		}
+		v, interactionErr := a.videoPublications.SetInteraction(r.Context(), id, user.ID, strings.TrimPrefix(action, "/"), *body.Active)
+		if interactionErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(interactionErr))
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		httpx.WriteSuccess(w, r, http.StatusOK, v.Video)
+		return
+	}
+	if r.Method == http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	if action == "/download" {
+		if _, err := a.requireUser(r); err != nil {
+			httpx.WriteError(w, r, err)
+			return
+		}
+		a.servePublicationContent(w, r, id, false, false)
+		return
+	}
 	if action == "/video" || action == "/poster" {
 		a.servePublicationContent(w, r, id, action == "/poster", false)
 		return
@@ -123,7 +169,11 @@ func (a *API) HandlePublicVideoDetail(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, errs.New(404, errs.CodeNotFound, "video not found"))
 		return
 	}
-	v, err := a.videoPublications.Get(r.Context(), id, false)
+	viewer := int64(0)
+	if user := a.optionalUserWithQueryToken(r); user != nil {
+		viewer = user.ID
+	}
+	v, err := a.videoPublications.GetForViewer(r.Context(), id, viewer)
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
@@ -215,7 +265,16 @@ func (a *API) HandleAdminVideoReviewDetail(w http.ResponseWriter, r *http.Reques
 	httpx.WriteSuccess(w, r, http.StatusOK, v)
 }
 func (a *API) servePublicationContent(w http.ResponseWriter, r *http.Request, id uuid.UUID, poster, admin bool) {
-	stream, err := a.videoPublications.OpenRange(r.Context(), id, poster, admin, r.Header.Get("Range"), r.Method == http.MethodHead)
+	var stream mediaassetservice.RangedContentStream
+	var err error
+	filename := ""
+	download := strings.HasSuffix(r.URL.Path, "/download") && !admin
+	if download {
+		stream, filename, err = a.videoPublications.OpenDownloadRange(r.Context(), id, r.Header.Get("Range"), r.Method == http.MethodHead)
+	} else {
+		stream, err = a.videoPublications.OpenRange(r.Context(), id, poster, admin, r.Header.Get("Range"), r.Method == http.MethodHead)
+	}
+	w.Header().Set("Cache-Control", "no-store")
 	if errors.Is(err, storage.ErrInvalidRange) {
 		w.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", stream.Size))
 		w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
@@ -227,6 +286,26 @@ func (a *API) servePublicationContent(w http.ResponseWriter, r *http.Request, id
 	}
 	if stream.Reader != nil {
 		defer stream.Reader.Close()
+	}
+	if download {
+		ext := ".mp4"
+		switch stream.ContentType {
+		case "video/webm":
+			ext = ".webm"
+		case "video/quicktime":
+			ext = ".mov"
+		case "video/x-matroska":
+			ext = ".mkv"
+		}
+		filename = strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(filename, "\r", ""), "\n", ""))
+		filename = filepath.Base(strings.ReplaceAll(filename, "\\", "/"))
+		if filename == "" || filename == "." || filename == "/" {
+			filename = "video"
+		}
+		if old := filepath.Ext(filename); old != "" {
+			filename = strings.TrimSuffix(filename, old)
+		}
+		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename + ext}))
 	}
 	w.Header().Set("Content-Type", stream.ContentType)
 	w.Header().Set("X-Content-Type-Options", "nosniff")

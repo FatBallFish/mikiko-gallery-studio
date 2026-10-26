@@ -118,11 +118,21 @@ func TestPublicMediaFeedSummaryBoundary(t *testing.T) {
 
 func TestNativeImageRequestsAndDiscovery(t *testing.T) {
 	root := nativeSchemas(t, "openapi.yaml")
-	for _, name := range []string{"DeveloperImagePreflightRequest", "DeveloperImageCreateRequest"} {
-		for field, target := range map[string]string{"operation": "NativeImageOperation", "native_options": "NativeImageOptions"} {
-			if root[name].Properties[field].Ref != "./components/schemas/common.yaml#/components/schemas/"+target {
-				t.Errorf("%s.%s must reuse shared schema", name, field)
-			}
+	for _, spec := range openplatform.Specs() {
+		name := map[string]string{"preflight_image_task": "DeveloperImagePreflightRequest", "create_image_task": "DeveloperImageCreateRequest"}[spec.Name]
+		if name == "" {
+			continue
+		}
+		encoded, err := yaml.Marshal(spec.InputSchema)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var expected nativeSchema
+		if err := yaml.Unmarshal(encoded, &expected); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(root[name], expected) {
+			t.Errorf("%s must match shared catalogue schema", name)
 		}
 	}
 	agent := nativeSchemas(t, "components/schemas/agent.yaml")

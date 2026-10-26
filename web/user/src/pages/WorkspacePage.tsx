@@ -2,8 +2,8 @@ import { createReferenceReservations, referenceAdmission, type ReferenceAdmissio
 import { LayerResult } from '../features/creation/LayerResult'
 import { NegativePromptControl } from '../features/creation/NegativePromptControl'
 import { userNativeImageFields } from '../features/creation/nativeImageUX'
-import { NativeImageControls } from '../features/creation/NativeImageControls'
-import { nativeLayerUnavailableReason } from './workspaceParameters'
+import { NativeImageControls, NativeImageModeControl } from '../features/creation/NativeImageControls'
+import { nativeLayerModeUnavailableReason, nativeLayerUnavailableReason } from './workspaceParameters'
 import { nativeImageFields, nativeImageDimensions, nativeWorkspaceModel, nativeImageCountLimit, nativeImageReferencePolicy, nativeImageReferenceAccept, nativeImageReferenceFileError, nativeImageValidation, type NativeImageRequestFields } from '../../../shared/native-image'
 import { canHideHistoryRecord, canRetryImageHistory } from './historyRecordActions'
 import { useHistoryRecordActions } from './HistoryRecordControls'
@@ -262,7 +262,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const sheetDragRef = useRef<SheetDragState | null>(null)
   const suppressSheetClickRef = useRef(false)
   const sheetClickResetRef = useRef<number | null>(null)
-  const taskType: ImageTaskType = editRefs.length ? 'image_edit' : 'text_to_image'
+  const taskType: ImageTaskType = editRefs.length || nativeDraft.operation === 'layer_decomposition' ? 'image_edit' : 'text_to_image'
   const referenceCount = editRefs.length
   restoreContext.current = { project: `${selectedProjectID}:${projects.selectionGeneration}`, user: app.profile?.id == null ? '' : String(app.profile.id), model, references: editRefs.map((item) => item.id).join(',') }
   restoreGeneration.reconcile(restoreContext.current)
@@ -502,7 +502,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 
   const applyCreationDraft = useCallback((draft: WorkspaceCreationDraft) => {
     if (!capability) return undefined
-    if (reservations.pending().image) { notifyRef.current('error', '引用正在添加，请等待完成后复用配置。'); return undefined }
+    if (reservations.pending().image) { notifyRef.current('warn', '引用正在添加，请等待完成后复用配置。'); return undefined }
     let normalized: ReturnType<typeof normalizeWorkspaceCreationDraft>
     try {
       normalized = normalizeWorkspaceCreationDraft(draft.intent === 'asset-edit' && !draft.route_model_code && admissionLive.current.model ? { ...draft, route_model_code: admissionLive.current.model } : draft, capability)
@@ -610,7 +610,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const editProfile = editModel?.native_image_profile
   const admissionPolicy: ReferenceAdmissionPolicy<'image'> = {
     limits: { image: nativeDraft.operation === 'layer_decomposition' ? 1 : editModel?.max_reference_image_count == null ? editProfile?.max_reference_images ?? null : Math.min(editModel.max_reference_image_count, editProfile?.max_reference_images ?? Infinity) },
-    reason: !rawSelectedModel ? modelSelectionError : !rawSelectedModel.task_types.includes('image_edit') || editProfile && !editProfile.operations.includes(nativeDraft.operation === 'layer_decomposition' ? 'layer_decomposition' : 'edit') ? '当前型号不支持此引用操作，请手动选择支持的型号。' : undefined,
+    reason: !rawSelectedModel ? modelSelectionError : !rawSelectedModel.task_types.includes('image_edit') || editProfile && !editProfile.operations.includes(nativeDraft.operation === 'layer_decomposition' ? 'layer_decomposition' : 'edit') ? '当前型号不支持此引用操作，请手动选择支持的型号。' : nativeDraft.operation === 'layer_decomposition' ? nativeLayerModeUnavailableReason(editProfile, editModel?.native_image_layer_pricing_confirmed === true, editModel?.native_image_layer_unavailable_reason) || undefined : undefined,
   }
   const admissionMounted = useRef(true)
   useEffect(() => { admissionMounted.current = true; return () => { admissionMounted.current = false } }, [])
@@ -626,7 +626,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 	const pixelSizes = useMemo(() => workspacePixelOptions(selectedModel, capability?.pixel_sizes ?? []), [selectedModel, capability])
 	const outputOptions = useMemo(() => workspaceOutputOptions(selectedModel), [selectedModel])
 	const backgroundOptions = useMemo(() => workspaceBackgroundOptions(selectedModel), [selectedModel])
-  const imageCountLimit = nativeImageCountLimit(selectedModel?.native_image_profile, workspaceTaskImageSafetyLimit)
+  const imageCountLimit = nativeDraft.operation === 'layer_decomposition' ? 1 : nativeImageCountLimit(selectedModel?.native_image_profile, workspaceTaskImageSafetyLimit)
   const compressionVisible = workspaceCompressionVisible(selectedModel, outputFormat)
   const customSizeSupported = workspaceCustomSizeSupported(selectedModel) && sizeModes.includes('pixel')
 	const customSizeNormalization = useMemo(() => selectedModel?.native_image_profile ? nativeImageDimensions(selectedModel.native_image_profile, customWidth, customHeight) : normalizeWorkspaceCustomSize(customWidth, customHeight, selectedModel), [customWidth, customHeight, selectedModel])
@@ -707,8 +707,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 		? Boolean(effectivePixelSize && (pixelSelection === 'custom' ? customSizeSupported && customSizeNormalization.valid : pixelSizes.includes(pixelSize)))
 		: Boolean(baseResolution && effectiveRatio && baseResolutionOptionsForModel.includes(baseResolution) && (ratios.includes(effectiveRatio) || customRatioSupported && workspaceCustomRatioValid(effectiveRatio)))
 
-  const workspaceMarkContext = useRef({ projectID: projects.selectedProjectID, userID: app.profile?.id, model, ids: editRefs.map((item) => item.id) })
-  workspaceMarkContext.current = { projectID: projects.selectedProjectID, userID: app.profile?.id, model, ids: editRefs.map((item) => item.id) }
+  const workspaceMarkContext = useRef({ projectID: projects.selectedProjectID, userID: app.profile?.id, model, operation: nativeDraft.operation, ids: editRefs.map((item) => item.id) })
+  workspaceMarkContext.current = { projectID: projects.selectedProjectID, userID: app.profile?.id, model, operation: nativeDraft.operation, ids: editRefs.map((item) => item.id) }
   const cleanNativeDraft = userNativeImageFields(nativeDraft, selectedModel?.native_image_profile, editRefs.length)
   useEffect(() => {
     if (!selectedModel) return
@@ -793,21 +793,21 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const remainingGalleryImportLimit = editRemainingLimit
 
   async function admitReferences<T>(incoming: T[], key: ((item: T) => string) | undefined, load: () => Promise<ReferenceAsset[]>) {
-    if (restoreGeneration.pending(restoreContext.current)) { app.notify('error', '正在恢复创作引用，请等待完成后再添加。'); return null }
+    if (restoreGeneration.pending(restoreContext.current)) { app.notify('warn', '正在恢复创作引用，请等待完成后再添加。'); return null }
     const context = admissionLive.current
     const request = reservations.reserve<unknown>(context.policy, context.refs, incoming, () => 'image', key ? (item) => typeof item === 'object' && item !== null && 'id' in item ? String(item.id) : key(item as T) : undefined)
-    if (!request.ok || request.token === undefined) { app.notify('error', request.reason); return null }
+    if (!request.ok || request.token === undefined) { app.notify('warn', request.reason); return null }
     setReservationVersion((value) => value + 1)
     try {
       const assets = await load()
       const live = admissionLive.current
-      if (!admissionMounted.current || context.model !== live.model || context.projectID !== live.projectID || context.operation !== live.operation) throw new Error('型号、操作或项目已变化，本批引用未添加，请重试。')
+      if (!admissionMounted.current || context.model !== live.model || context.projectID !== live.projectID || context.operation !== live.operation) { app.notify('warn', '型号、操作或项目已变化，本批引用未添加，请重试。'); return null }
       for (const asset of assets) {
         const formatError = referenceAssetError(asset)
-        if (formatError) throw new Error(formatError)
+        if (formatError) { app.notify('warn', formatError); return null }
       }
       const result = referenceAdmission({ policy: live.policy, current: live.refs, incoming: assets, reserved: reservations.pending(request.token), kind: () => 'image' as const, key: (item) => item.id })
-      if (!result.ok) throw new Error(result.reason)
+      if (!result.ok) { app.notify('warn', result.reason); return null }
       admissionLive.current = { ...live, refs: result.merged }
       setEditRefs(result.merged)
       return result.added
@@ -927,7 +927,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     const remaining = editRemainingLimit
     if (admissionPolicy.reason || remaining <= 0) {
       pendingPromptAssetInsertRef.current = null
-      app.notify('error', admissionPolicy.reason || '当前模型的参考图数量已达上限，请先移除一张。')
+      app.notify('warn', admissionPolicy.reason || '当前模型的参考图数量已达上限，请先移除一张。')
       return
     }
     pendingPromptAssetInsertRef.current = promptInsertTarget
@@ -945,7 +945,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 
   async function confirmGalleryImport(selectedIds: string[]) {
     if (!galleryImportTarget || !selectedIds.length) return
-    if (selectedIds.some((id) => { const image = galleryImages.find((item) => item.id === id); return !image || referenceAssetError(image) })) { app.notify('error', '所选资产格式或大小不符合当前型号要求，本批未导入。'); return }
+    if (selectedIds.some((id) => { const image = galleryImages.find((item) => item.id === id); return !image || referenceAssetError(image) })) { app.notify('warn', '所选资产格式或大小不符合当前型号要求，本批未导入。'); return }
     setGalleryImportBusy(true)
     try {
       const assets = await admitReferences([...new Set(selectedIds)], (id) => id, () => userApi.importReferenceAssetsFromGallery([...new Set(selectedIds)]))
@@ -977,7 +977,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       else rejected.push(validation.message ?? `${file.name} 不符合图片上传要求。`)
     }
     if (rejected.length) {
-      app.notify('error', rejected.length === 1 ? rejected[0] : `${rejected.length} 个文件不符合上传要求，本批未上传。${rejected[0] ? ` ${rejected[0]}` : ''}`)
+      app.notify('warn', rejected.length === 1 ? rejected[0] : `${rejected.length} 个文件不符合上传要求，本批未上传。${rejected[0] ? ` ${rejected[0]}` : ''}`)
     }
     if (rejected.length) return
     setBusy(true)
@@ -1028,15 +1028,15 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 
   async function createTask() {
     if (!projectReadiness.ready) {
-      app.notify('error', projectReadiness.reason)
+      app.notify('warn', projectReadiness.reason)
       return
     }
     if (!requiredReferencesReady) {
-      app.notify('error', WORKSPACE_REFERENCE_REQUIRED_MESSAGE)
+      app.notify('warn', WORKSPACE_REFERENCE_REQUIRED_MESSAGE)
       return
     }
     if (generateReadiness.disabled) {
-      app.notify('error', generateReadiness.reason)
+      app.notify('warn', generateReadiness.reason)
       return
     }
     const submissionRestoreVersion = restoreGeneration.checkpoint()
@@ -1116,7 +1116,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   async function startPromptOptimization() {
     const value = prompt.trim()
     if (Array.from(value).length < 8) {
-      app.notify('error', '提示词至少需要 8 个字符后才能优化')
+      app.notify('warn', '提示词至少需要 8 个字符后才能优化')
       return
     }
     const next = beginPromptOptimization(promptOptimization, value)
@@ -1162,7 +1162,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 
   async function applyAsEditSource(image: ImageResult) {
     const invalid = referenceAssetError(image)
-    if (invalid) { app.notify('error', invalid); return }
+    if (invalid) { app.notify('warn', invalid); return }
     setBusy(true)
     try {
       const imported = await admitReferences([image], (item) => item.id, () => userApi.importReferenceAssetsFromGallery([image.id]))
@@ -1355,7 +1355,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
         <ModelGroupSelect options={model && !rawSelectedModel ? [{ code: model, id: model, name: `${model}（不可用）`, task_types: [], prices: [], supports_reference: false }, ...availableModels] : availableModels} groups={capability?.route_model_groups} value={model} onChange={(code) => {
           restoreContext.current = { ...restoreContext.current, model: code }
           const ticket = restoreGeneration.begin({ ...restoreContext.current })
-          setModel(code); setNativeDraft({}); refreshRestore((value) => value + 1)
+          setModel(code); setNativeDraft((current) => ({ operation: current.operation === 'layer_decomposition' ? 'layer_decomposition' : undefined })); refreshRestore((value) => value + 1)
           const sourceRefs = [...editRefs]
           void (async () => {
             try {
@@ -1370,6 +1370,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           })()
         }} />
       ) : null}
+      <NativeImageModeControl profile={editProfile} value={nativeDraft} referenceCount={editRefs.length} layerPriceReady={rawSelectedModel?.task_types.includes('image_edit') === true && editModel?.native_image_layer_pricing_confirmed === true} layerUnavailableReason={editModel?.native_image_layer_unavailable_reason} disabled={busy || pendingRestore} onChange={(next) => { setNativeDraft(next); if (next.operation === 'layer_decomposition') setCount(1) }} />
       {!loading && !availableModels.length ? <EmptyState title="平台模型配置中" detail={publicUnavailableReason(capability?.unavailable_reason)} /> : null}
     </div>
   )
@@ -1377,9 +1378,9 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const referenceControls = (
     <div className="cr-group">
       <div className="cr-group__head">
-        <h4>参考图/图片编辑来源</h4>
+        <h4>{nativeDraft.operation === 'layer_decomposition' ? '图层拆分来源' : '参考图/图片编辑来源'}</h4>
         <div className="cr-ref-head">
-          <span>{editRefs.length} / {maxReferenceImages}</span>
+          <span>{nativeDraft.operation === 'layer_decomposition' ? '单张必填 · ' : ''}{editRefs.length} / {maxReferenceImages}</span>
           <button type="button" disabled={busy || editRemainingLimit <= 0} onClick={() => void openGalleryImport('edit')}>从资产导入</button>
         </div>
       </div>
@@ -1416,7 +1417,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           }}
           {...uploadDropBindings('edit')}
         >
-          <input className="hidden" type="file" accept={referenceAccept} multiple disabled={busy || editRemainingLimit <= 0} onChange={(event) => uploadReference(event, 'edit')} />
+          <input className="hidden" type="file" accept={referenceAccept} multiple={nativeDraft.operation !== 'layer_decomposition'} disabled={busy || editRemainingLimit <= 0} onChange={(event) => uploadReference(event, 'edit')} />
           <UploadGlyph />
           <span>上传</span>
         </label>
@@ -1651,6 +1652,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
             max={imageCountLimit}
             value={count || 1}
             aria-label="生成数量"
+            disabled={nativeDraft.operation === 'layer_decomposition'}
             onChange={(event) => updateImageCount(Number(event.target.value))}
           />
           <button type="button" aria-label="增加数量" disabled={count >= imageCountLimit} onClick={() => updateImageCount(count + 1)}>+</button>

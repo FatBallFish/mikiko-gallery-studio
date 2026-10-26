@@ -253,6 +253,11 @@ function unwrap<T>(payload: unknown): T {
 
 function errorFromPayload(payload: unknown, status: number) {
   if (payload && typeof payload === 'object' && 'error' in payload) {
+    if (typeof payload.error === 'string') {
+      const oauth = payload as { error: string; error_description?: unknown }
+      const message = typeof oauth.error_description === 'string' ? oauth.error_description : oauth.error
+      return new ApiError(message, status, oauth.error)
+    }
     const wrapped = payload as { error?: { message?: string; code?: string; details?: Record<string, unknown> }; meta?: { request_id?: string } }
     const message = wrapped.error?.message ?? '请求失败'
     const requestId = wrapped.meta?.request_id

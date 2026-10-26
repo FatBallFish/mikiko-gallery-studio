@@ -238,7 +238,6 @@
 @media (max-width: 760px) {
   .cr-frame-actions .u-btn { min-height: 34px; }
   .cr-history-panel .cr-hist > .u-card > .cr-task-actions { padding: 0 10px 10px; }
-  .cr-history-video .u-card__title { min-height: 0; }
 }
 
 /* keyboard focus stays visible across prototype controls */

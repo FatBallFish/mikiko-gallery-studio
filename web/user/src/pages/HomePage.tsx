@@ -164,7 +164,7 @@ export function HomePage() {
               <strong style={{ fontSize: 13 }}>{recent.title}</strong>
               <span className="u-meta">{latestTask?.route_model_code || latestTask?.abstract_model || '—'}</span>
             </div>
-            <div className="u-progress"><span style={{ width: `${recent.state === 'active' ? taskProgress : recent.state === 'complete' ? 100 : 0}%` }} /></div>
+            <div className={`u-progress hm-task__progress${recent.state === 'active' ? ' is-active' : ''}`} role="progressbar" aria-label="最近任务进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={recent.state === 'complete' ? 100 : taskProgress}><span style={{ width: `${recent.state === 'active' ? taskProgress : recent.state === 'complete' ? 100 : 0}%` }} /></div>
             <div className="u-meta">{recent.detail}</div>
             <div className="u-meta">{latestTask ? `${latestTask.aspect_ratio || '-'} · ${latestTask.image_count || '—'} 张` : '还没有生成记录'}</div>
           </div>

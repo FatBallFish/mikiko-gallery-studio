@@ -53,6 +53,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providermodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicimageinteraction"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicimagestat"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicvideointeraction"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/redeemcode"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/referenceasset"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/refreshsession"
@@ -136,6 +137,7 @@ const (
 	TypeProviderModel               = "ProviderModel"
 	TypePublicImageInteraction      = "PublicImageInteraction"
 	TypePublicImageStat             = "PublicImageStat"
+	TypePublicVideoInteraction      = "PublicVideoInteraction"
 	TypeRedeemCode                  = "RedeemCode"
 	TypeReferenceAsset              = "ReferenceAsset"
 	TypeRefreshSession              = "RefreshSession"
@@ -56691,6 +56693,638 @@ func (m *PublicImageStatMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *PublicImageStatMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown PublicImageStat edge %s", name)
+}
+
+// PublicVideoInteractionMutation represents an operation that mutates the PublicVideoInteraction nodes in the graph.
+type PublicVideoInteractionMutation struct {
+	config
+	op            Op
+	typ           string
+	id            *int
+	created_at    *time.Time
+	updated_at    *time.Time
+	video_id      *uuid.UUID
+	user_id       *int64
+	adduser_id    *int64
+	liked         *bool
+	favorited     *bool
+	clearedFields map[string]struct{}
+	done          bool
+	oldValue      func(context.Context) (*PublicVideoInteraction, error)
+	predicates    []predicate.PublicVideoInteraction
+}
+
+var _ ent.Mutation = (*PublicVideoInteractionMutation)(nil)
+
+// publicvideointeractionOption allows management of the mutation configuration using functional options.
+type publicvideointeractionOption func(*PublicVideoInteractionMutation)
+
+// newPublicVideoInteractionMutation creates new mutation for the PublicVideoInteraction entity.
+func newPublicVideoInteractionMutation(c config, op Op, opts ...publicvideointeractionOption) *PublicVideoInteractionMutation {
+	m := &PublicVideoInteractionMutation{
+		config:        c,
+		op:            op,
+		typ:           TypePublicVideoInteraction,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withPublicVideoInteractionID sets the ID field of the mutation.
+func withPublicVideoInteractionID(id int) publicvideointeractionOption {
+	return func(m *PublicVideoInteractionMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *PublicVideoInteraction
+		)
+		m.oldValue = func(ctx context.Context) (*PublicVideoInteraction, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().PublicVideoInteraction.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withPublicVideoInteraction sets the old PublicVideoInteraction of the mutation.
+func withPublicVideoInteraction(node *PublicVideoInteraction) publicvideointeractionOption {
+	return func(m *PublicVideoInteractionMutation) {
+		m.oldValue = func(context.Context) (*PublicVideoInteraction, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m PublicVideoInteractionMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m PublicVideoInteractionMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *PublicVideoInteractionMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *PublicVideoInteractionMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().PublicVideoInteraction.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *PublicVideoInteractionMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *PublicVideoInteractionMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the PublicVideoInteraction entity.
+// If the PublicVideoInteraction object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PublicVideoInteractionMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *PublicVideoInteractionMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *PublicVideoInteractionMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *PublicVideoInteractionMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the PublicVideoInteraction entity.
+// If the PublicVideoInteraction object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PublicVideoInteractionMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *PublicVideoInteractionMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetVideoID sets the "video_id" field.
+func (m *PublicVideoInteractionMutation) SetVideoID(u uuid.UUID) {
+	m.video_id = &u
+}
+
+// VideoID returns the value of the "video_id" field in the mutation.
+func (m *PublicVideoInteractionMutation) VideoID() (r uuid.UUID, exists bool) {
+	v := m.video_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVideoID returns the old "video_id" field's value of the PublicVideoInteraction entity.
+// If the PublicVideoInteraction object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PublicVideoInteractionMutation) OldVideoID(ctx context.Context) (v uuid.UUID, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVideoID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVideoID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVideoID: %w", err)
+	}
+	return oldValue.VideoID, nil
+}
+
+// ResetVideoID resets all changes to the "video_id" field.
+func (m *PublicVideoInteractionMutation) ResetVideoID() {
+	m.video_id = nil
+}
+
+// SetUserID sets the "user_id" field.
+func (m *PublicVideoInteractionMutation) SetUserID(i int64) {
+	m.user_id = &i
+	m.adduser_id = nil
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *PublicVideoInteractionMutation) UserID() (r int64, exists bool) {
+	v := m.user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserID returns the old "user_id" field's value of the PublicVideoInteraction entity.
+// If the PublicVideoInteraction object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PublicVideoInteractionMutation) OldUserID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserID: %w", err)
+	}
+	return oldValue.UserID, nil
+}
+
+// AddUserID adds i to the "user_id" field.
+func (m *PublicVideoInteractionMutation) AddUserID(i int64) {
+	if m.adduser_id != nil {
+		*m.adduser_id += i
+	} else {
+		m.adduser_id = &i
+	}
+}
+
+// AddedUserID returns the value that was added to the "user_id" field in this mutation.
+func (m *PublicVideoInteractionMutation) AddedUserID() (r int64, exists bool) {
+	v := m.adduser_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *PublicVideoInteractionMutation) ResetUserID() {
+	m.user_id = nil
+	m.adduser_id = nil
+}
+
+// SetLiked sets the "liked" field.
+func (m *PublicVideoInteractionMutation) SetLiked(b bool) {
+	m.liked = &b
+}
+
+// Liked returns the value of the "liked" field in the mutation.
+func (m *PublicVideoInteractionMutation) Liked() (r bool, exists bool) {
+	v := m.liked
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLiked returns the old "liked" field's value of the PublicVideoInteraction entity.
+// If the PublicVideoInteraction object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PublicVideoInteractionMutation) OldLiked(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLiked is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLiked requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLiked: %w", err)
+	}
+	return oldValue.Liked, nil
+}
+
+// ResetLiked resets all changes to the "liked" field.
+func (m *PublicVideoInteractionMutation) ResetLiked() {
+	m.liked = nil
+}
+
+// SetFavorited sets the "favorited" field.
+func (m *PublicVideoInteractionMutation) SetFavorited(b bool) {
+	m.favorited = &b
+}
+
+// Favorited returns the value of the "favorited" field in the mutation.
+func (m *PublicVideoInteractionMutation) Favorited() (r bool, exists bool) {
+	v := m.favorited
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFavorited returns the old "favorited" field's value of the PublicVideoInteraction entity.
+// If the PublicVideoInteraction object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PublicVideoInteractionMutation) OldFavorited(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFavorited is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFavorited requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFavorited: %w", err)
+	}
+	return oldValue.Favorited, nil
+}
+
+// ResetFavorited resets all changes to the "favorited" field.
+func (m *PublicVideoInteractionMutation) ResetFavorited() {
+	m.favorited = nil
+}
+
+// Where appends a list predicates to the PublicVideoInteractionMutation builder.
+func (m *PublicVideoInteractionMutation) Where(ps ...predicate.PublicVideoInteraction) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the PublicVideoInteractionMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *PublicVideoInteractionMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.PublicVideoInteraction, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *PublicVideoInteractionMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *PublicVideoInteractionMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (PublicVideoInteraction).
+func (m *PublicVideoInteractionMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *PublicVideoInteractionMutation) Fields() []string {
+	fields := make([]string, 0, 6)
+	if m.created_at != nil {
+		fields = append(fields, publicvideointeraction.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, publicvideointeraction.FieldUpdatedAt)
+	}
+	if m.video_id != nil {
+		fields = append(fields, publicvideointeraction.FieldVideoID)
+	}
+	if m.user_id != nil {
+		fields = append(fields, publicvideointeraction.FieldUserID)
+	}
+	if m.liked != nil {
+		fields = append(fields, publicvideointeraction.FieldLiked)
+	}
+	if m.favorited != nil {
+		fields = append(fields, publicvideointeraction.FieldFavorited)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *PublicVideoInteractionMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case publicvideointeraction.FieldCreatedAt:
+		return m.CreatedAt()
+	case publicvideointeraction.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case publicvideointeraction.FieldVideoID:
+		return m.VideoID()
+	case publicvideointeraction.FieldUserID:
+		return m.UserID()
+	case publicvideointeraction.FieldLiked:
+		return m.Liked()
+	case publicvideointeraction.FieldFavorited:
+		return m.Favorited()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *PublicVideoInteractionMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case publicvideointeraction.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case publicvideointeraction.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case publicvideointeraction.FieldVideoID:
+		return m.OldVideoID(ctx)
+	case publicvideointeraction.FieldUserID:
+		return m.OldUserID(ctx)
+	case publicvideointeraction.FieldLiked:
+		return m.OldLiked(ctx)
+	case publicvideointeraction.FieldFavorited:
+		return m.OldFavorited(ctx)
+	}
+	return nil, fmt.Errorf("unknown PublicVideoInteraction field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *PublicVideoInteractionMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case publicvideointeraction.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case publicvideointeraction.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case publicvideointeraction.FieldVideoID:
+		v, ok := value.(uuid.UUID)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVideoID(v)
+		return nil
+	case publicvideointeraction.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	case publicvideointeraction.FieldLiked:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLiked(v)
+		return nil
+	case publicvideointeraction.FieldFavorited:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFavorited(v)
+		return nil
+	}
+	return fmt.Errorf("unknown PublicVideoInteraction field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *PublicVideoInteractionMutation) AddedFields() []string {
+	var fields []string
+	if m.adduser_id != nil {
+		fields = append(fields, publicvideointeraction.FieldUserID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *PublicVideoInteractionMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case publicvideointeraction.FieldUserID:
+		return m.AddedUserID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *PublicVideoInteractionMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case publicvideointeraction.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUserID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown PublicVideoInteraction numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *PublicVideoInteractionMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *PublicVideoInteractionMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *PublicVideoInteractionMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown PublicVideoInteraction nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *PublicVideoInteractionMutation) ResetField(name string) error {
+	switch name {
+	case publicvideointeraction.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case publicvideointeraction.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case publicvideointeraction.FieldVideoID:
+		m.ResetVideoID()
+		return nil
+	case publicvideointeraction.FieldUserID:
+		m.ResetUserID()
+		return nil
+	case publicvideointeraction.FieldLiked:
+		m.ResetLiked()
+		return nil
+	case publicvideointeraction.FieldFavorited:
+		m.ResetFavorited()
+		return nil
+	}
+	return fmt.Errorf("unknown PublicVideoInteraction field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *PublicVideoInteractionMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *PublicVideoInteractionMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *PublicVideoInteractionMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *PublicVideoInteractionMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *PublicVideoInteractionMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *PublicVideoInteractionMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *PublicVideoInteractionMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown PublicVideoInteraction unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *PublicVideoInteractionMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown PublicVideoInteraction edge %s", name)
 }
 
 // RedeemCodeMutation represents an operation that mutates the RedeemCode nodes in the graph.

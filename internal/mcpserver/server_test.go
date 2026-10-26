@@ -65,7 +65,7 @@ func TestOfficialSDKAuthenticatedTools(t *testing.T) {
 				return nil, errors.New("asset not found")
 			}
 		}
-		return map[string]any{"user_id": p.UserID}, nil
+		return map[string]any{"id": p.UserID, "email": "fixture@example.com", "nickname": "fixture", "status": "active", "group_code": "basic"}, nil
 	})})
 	if err != nil {
 		t.Fatal(err)
@@ -107,12 +107,12 @@ func TestOfficialSDKAuthenticatedTools(t *testing.T) {
 		return result
 	}
 	result := call(first, "get_current_user", map[string]any{})
-	if result.IsError || !strings.Contains(result.Content[0].(*mcp.TextContent).Text, `"user_id":41`) {
+	if result.IsError || !strings.Contains(result.Content[0].(*mcp.TextContent).Text, `"id":41`) {
 		t.Fatalf("unexpected result %#v", result)
 	}
 	second := connect("second")
 	result = call(second, "get_current_user", map[string]any{})
-	if !strings.Contains(result.Content[0].(*mcp.TextContent).Text, `"user_id":42`) {
+	if !strings.Contains(result.Content[0].(*mcp.TextContent).Text, `"id":42`) {
 		t.Fatalf("principal leaked: %#v", result)
 	}
 	mu.Lock()

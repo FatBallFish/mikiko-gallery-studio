@@ -226,7 +226,7 @@ const taskScopedProfile = { model: 'edit-native', max_reference_images: 4 } as a
 const scopedReferenceModel = workspaceModelForTask({ id: 'stable', code: 'stable', name: 'Stable', task_types: ['text_to_image', 'image_edit'], prices: [], supports_reference: true, max_reference_image_count: 0, capabilities_by_task_type: { image_edit: { max_reference_image_count: 4, native_image_profile: taskScopedProfile, native_image_layer_pricing_confirmed: true } } }, 'image_edit')
 if (scopedReferenceModel?.max_reference_image_count !== 4 || scopedReferenceModel.native_image_profile !== taskScopedProfile || !scopedReferenceModel.native_image_layer_pricing_confirmed) throw new Error('first reference must use current model edit capability including scoped profile and layer pricing')
 
-const { nativeLayerUnavailableReason } = await import('./workspaceParameters')
+const { nativeLayerModeUnavailableReason, nativeLayerUnavailableReason } = await import('./workspaceParameters')
 const { nativeImageProfile } = await import('../../../shared/native-image')
 const layerProfile = nativeImageProfile('doubao-seedream-5-0-pro-260628')!
 const layerModel = { ...model, native_image_profile: layerProfile, native_image_layer_pricing_confirmed: false, native_image_layer_unavailable_reason: '顶层底图售价未配置' }
@@ -246,10 +246,14 @@ for (const [profile, references, ready, reason, expected] of [
   [layerProfile, 1, false, undefined, '当前路由尚未完成拆层价格配置'],
   [layerProfile, 1, false, '  ', '当前路由尚未完成拆层价格配置'],
   [layerProfile, 1, true, '过期原因', ''],
-  [layerProfile, 0, false, '底图售价未配置', '拆层需要一张参考图'],
-  [layerProfile, 2, false, '底图售价未配置', '拆层需要一张参考图'],
+  [layerProfile, 0, false, '底图售价未配置', '底图售价未配置'],
+  [layerProfile, 2, false, '底图售价未配置', '底图售价未配置'],
   [{ ...layerProfile, layer_decomposition: false }, 1, false, '底图售价未配置', '当前型号拆层操作能力尚未开放'],
   [{ ...layerProfile, operations: ['generate', 'edit'] }, 1, false, '底图售价未配置', '当前型号拆层操作能力尚未开放'],
 ] as const) {
   if (nativeLayerUnavailableReason(profile as typeof layerProfile, references, ready, reason) !== expected) throw new Error(`incorrect layer unavailable reason: ${expected}`)
 }
+
+if (nativeLayerModeUnavailableReason(layerProfile, true)) throw new Error('mode selection must allow zero or multiple current references')
+if (!nativeLayerUnavailableReason(layerProfile, 0, true).includes('必填')) throw new Error('empty layer source must block submission')
+if (!nativeLayerUnavailableReason(layerProfile, 2, true).includes('已保留')) throw new Error('multiple sources require explicit preservation message')

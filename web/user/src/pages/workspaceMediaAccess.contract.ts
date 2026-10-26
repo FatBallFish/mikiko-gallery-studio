@@ -35,7 +35,7 @@ for (const removed of [
 // Reference imports must stay inside the atomic admission callback, after handler validation.
 const editHandler = workspace.slice(workspace.indexOf('async function applyAsEditSource'), workspace.indexOf('function removeEditAsset'))
 const importCall = editHandler.indexOf('userApi.importReferenceAssetsFromGallery([image.id])')
-const formatGuard = editHandler.indexOf("if (invalid) { app.notify('error', invalid); return }")
+const formatGuard = editHandler.indexOf("if (invalid) { app.notify('warn', invalid); return }")
 if (!(formatGuard >= 0 && importCall > formatGuard) || !editHandler.includes('await admitReferences([image], (item) => item.id, () => userApi.importReferenceAssetsFromGallery([image.id]))')) {
   throw new Error('history reference import must validate the asset and invoke its ID-based API only inside atomic admission')
 }
@@ -44,7 +44,7 @@ const execute = admission.indexOf('await load()')
 for (const guard of ['restoreGeneration.pending(restoreContext.current)', 'reservations.reserve', 'if (!request.ok || request.token === undefined)']) {
   if (admission.indexOf(guard) < 0 || admission.indexOf(guard) >= execute) throw new Error(`reference import must guard ${guard} before executing its API callback`)
 }
-if (!admission.includes('reserved: reservations.pending(request.token)') || !admission.includes('if (!result.ok) throw new Error(result.reason)')) {
+if (!admission.includes('reserved: reservations.pending(request.token)') || !admission.includes("if (!result.ok) { app.notify('warn', result.reason); return null }")) {
   throw new Error('reference import completion must revalidate current admission before updating references')
 }
 

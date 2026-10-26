@@ -2072,6 +2072,39 @@ var (
 			},
 		},
 	}
+	// PublicVideoInteractionsColumns holds the columns for the "public_video_interactions" table.
+	PublicVideoInteractionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "video_id", Type: field.TypeUUID},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "liked", Type: field.TypeBool, Default: false},
+		{Name: "favorited", Type: field.TypeBool, Default: false},
+	}
+	// PublicVideoInteractionsTable holds the schema information for the "public_video_interactions" table.
+	PublicVideoInteractionsTable = &schema.Table{
+		Name:       "public_video_interactions",
+		Columns:    PublicVideoInteractionsColumns,
+		PrimaryKey: []*schema.Column{PublicVideoInteractionsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "publicvideointeraction_video_id_user_id",
+				Unique:  true,
+				Columns: []*schema.Column{PublicVideoInteractionsColumns[3], PublicVideoInteractionsColumns[4]},
+			},
+			{
+				Name:    "publicvideointeraction_user_id_liked",
+				Unique:  false,
+				Columns: []*schema.Column{PublicVideoInteractionsColumns[4], PublicVideoInteractionsColumns[5]},
+			},
+			{
+				Name:    "publicvideointeraction_user_id_favorited",
+				Unique:  false,
+				Columns: []*schema.Column{PublicVideoInteractionsColumns[4], PublicVideoInteractionsColumns[6]},
+			},
+		},
+	}
 	// RedeemCodesColumns holds the columns for the "redeem_codes" table.
 	RedeemCodesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -3451,6 +3484,7 @@ var (
 		ProviderModelsTable,
 		PublicImageInteractionsTable,
 		PublicImageStatsTable,
+		PublicVideoInteractionsTable,
 		RedeemCodesTable,
 		ReferenceAssetsTable,
 		RefreshSessionsTable,
@@ -3549,6 +3583,9 @@ func init() {
 	}
 	PublicImageStatsTable.Annotation = &entsql.Annotation{
 		Table: "public_image_stats",
+	}
+	PublicVideoInteractionsTable.Annotation = &entsql.Annotation{
+		Table: "public_video_interactions",
 	}
 	RouteModelsTable.Annotation = &entsql.Annotation{
 		Table: "route_models",

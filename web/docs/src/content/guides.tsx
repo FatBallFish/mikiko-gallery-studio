@@ -1,8 +1,11 @@
 import React from 'react'
 import { CodeBlock } from '../components/CodeBlock'
 import type { Guide } from '../types'
+import { developerDetails } from './developerDetails'
+import { DetailedGuide } from './DetailedGuide'
 
-const baseURL = 'https://api.example.com'
+// Example only; never derive OAuth endpoints from this placeholder.
+const baseURL = 'https://studio.example.com'
 const auth = '-H "Authorization: Bearer $MIKIKO_API_KEY"'
 
 export const guides: Guide[] = [
@@ -11,7 +14,7 @@ export const guides: Guide[] = [
     searchText: 'quickstart bearer first request image video 快速开始 首个请求',
     content: <>
       <Lead>在控制台创建具有所需 scopes 的 API Key，保存在服务端环境变量中。统一开发者接口使用 /api/open/v1；先发现模型，再预检完整请求，最后创建任务并保存任务 ID。</Lead>
-      <h2 id="first-request">确认身份与模型</h2>
+      <h2 id="base-urls">选择正确 BaseURL</h2><p>密钥页端点源自可信公共配置。Origin 不含路径；原生 REST 使用 /api/open/v1，OpenAI SDK 使用 /v1，MCP 使用 /mcp，不重复追加前缀。示例域名必须替换为部署端点；canonical 未配时 OAuth 禁用，不能从 Host 推导 issuer。</p><p><a href="#/guide/mcp">端点、OAuth 与客户端教程</a> · <a href="#/guide/inventory">所有操作与实际字段映射</a> · <a href="#/reference">API reference</a></p><h2 id="first-request">确认身份与模型</h2>
       <CodeBlock code={`export MIKIKO_BASE_URL=${baseURL}
 # MIKIKO_API_KEY 通过秘密管理器注入
 curl "$MIKIKO_BASE_URL/api/open/v1/me" ${auth}
@@ -119,7 +122,7 @@ GET  /api/open/v1/projects`} />
   {
     id: 'errors', group: '运行与排错', title: '错误与恢复', summary: '依据真实错误响应修正请求并重试。',
     searchText: 'errors retry request id scopes quota 错误码 重试 权限',
-    content: <><Lead>保留请求 ID、任务 ID 和错误码以便排查。参数、权限、账号状态或配额错误需要先修正；暂态错误使用有上限的退避重试。</Lead><p>以各接口的错误响应为准；不要假定所有兼容接口、OAuth 端点和原生接口使用同一个错误封装。</p></>,
+    content: <><Lead>保留请求 ID、任务 ID 和错误码以便排查。参数、权限、账号状态或配额错误需要先修正；暂态错误使用有上限的退避重试。</Lead><p>以各接口的错误响应为准；不要假定所有兼容接口、OAuth 端点和原生接口使用同一个错误封装。</p><p><a href="#/guide/inventory">原生错误码与实际调用点清单</a> · <a href="#/guide/mcp">OAuth 精确错误分类与恢复</a> · <a href="#/reference">各操作完整错误定义</a></p></>,
   },
   {
     id: 'rate-limits', group: '运行与排错', title: '限速与幂等', summary: '控制请求速率并避免重复任务和扣费。',
@@ -165,13 +168,13 @@ print(client.models.list())`} /><Callout>OpenAPI 是请求与响应类型的唯�
   },
   {
     id: 'mcp', group: 'MCP 与 OAuth', title: 'MCP 连接与授权', summary: '浏览器 OAuth 授权、最小权限与连接撤销。',
-    searchText: 'mcp oauth pkce scopes consent revocation tools streamable http 2026-07-28 授权 工具',
-    content: <><Lead>MCP 入口是 /mcp，使用标准 Streamable HTTP 和 Studio 自有 OAuth。客户端通过发现元数据打开浏览器登录与授权；工具不接受密码登录，也不借用浏览器会话令牌。</Lead><h2 id="oauth-flow">连接流程</h2><Bullet items={['客户端发现受保护资源与授权服务器元数据。', '使用授权码与 PKCE S256，在浏览器中登录并同意所需 scopes。', '令牌绑定客户端、用户、scope 与资源 audience；不能作为任意资源令牌转发。', '在已连接应用中撤销授权，或按 OAuth 撤销流程撤销当前 grant。']} /><h2 id="tools">工具发现与任务</h2><p>使用 tools/list 读取服务器当前工具 schema 与 annotations。工具覆盖身份、余额、模型发现、图片/视频预检与任务、资产访问、上传、分组和项目操作；可见工具与实际执行都受权限约束。生成工具返回任务 ID，后续查询结果，再为资产获取新的访问链接。分片上传返回传输目标，不把大型文件嵌入工具调用。</p><h2 id="versions">协议与限制</h2><p>目标协议为 2026-07-28，并支持服务器所固定官方 SDK 实现的先前版本。具体协商结果以 initialize 返回为准；不要把未知协议版本视为已支持。刷新令牌轮换和重用检测可能撤销整个授权族。账号禁用或授权撤销后调用会失败。</p></>,
+    searchText: developerDetails['mcp.md'],
+    content: <><DetailedGuide source={developerDetails['mcp.md']} /><p><a href="#/reference">API reference：完整请求、响应与错误定义</a></p></>,
   },
   {
     id: 'inventory', group: '开始使用', title: '能力与信任边界', summary: '区分开发者 API、现有浏览器功能、管理端和回调。',
-    searchText: 'inventory capability browser admin callbacks public gallery 功能 清单 边界',
-    content: <><Lead>统一开发者范围包括身份与余额、模型发现、完整预检、异步生成、资产与上传、持久分组和项目管理。并非全部浏览器或管理功能都自动成为开发者工具。</Lead><h2 id="existing">现有产品功能</h2><p>浏览器现有登录与 OIDC、账户管理、积分流水、订阅与收银台、图片与视频创作、媒体资产、公开发布审核、历史记录、画布和提示词优化。管理端管理用户、配置、存储、模型账户与路由、价格、审核、订单和集群。</p><h2 id="boundaries">独立接口</h2><Bullet items={['公开混合媒体摘要：GET /api/public/v1/media，图片/视频统一排序分页，无完整 Prompt；liked/favorited 依赖浏览器身份，匿名过滤为空。详情与访问继续使用原图片/视频接口。公开图库：保留 /api/open/image/v1/gallery/images 与 /api/public/v1/videos 路径族；详情权限仍按原有规则执行。', '支付与供应商回调：保留已有路径及供应商验证机制，不使用开发者 API Key 替代验签。', '浏览器 /api/agent 与管理员 /api/ops 接口：继续使用各自会话与权限。', '集群挑战与加入：属于部署信任机制，不在开发者 API 参考中展示。', '画布、提示词优化、收银台、公开发布审核、批量导出和历史管理不因本次统一 API 自动开放为 MCP 工具。']} /></>,
+    searchText: developerDetails['developer-field-map.md'],
+    content: <><Lead>以下按实际路由、operation 和序列化结构核对字段。完整类型与各操作错误以当前 API reference 为准。</Lead><p><a href="#/reference">打开完整 API reference</a></p><DetailedGuide source={developerDetails['developer-field-map.md']} /></>,
   },
 ]
 

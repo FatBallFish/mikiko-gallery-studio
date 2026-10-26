@@ -2,7 +2,7 @@ import type { Balance, FeatureFlags, UserProfile, UserThemePreference } from '..
 
 export type RouteId = 'landing' | 'login' | 'home' | 'genpic' | 'creative-canvas' | 'gallery' | 'projects' | 'public-gallery' | 'checkout' | 'api-keys' | 'profile' | 'settings' | 'oauth-consent'
 
-export type ToastTone = 'success' | 'error' | 'info'
+export type ToastTone = 'success' | 'warn' | 'error' | 'info'
 
 export type Toast = {
   id: number

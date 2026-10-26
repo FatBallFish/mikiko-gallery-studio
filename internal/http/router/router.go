@@ -148,6 +148,7 @@ func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrig
 		mux.HandleFunc("/api/agent/image/v1/history/tasks/", api.HandleAgentHistoryTaskDetail)
 		mux.HandleFunc("/api/open/v1/asset-access/", api.HandleDeveloperAssetAccess)
 		mux.HandleFunc("/api/open/v1/", api.HandleDeveloperOpen)
+		mux.HandleFunc("GET /api/v1/public/developer-endpoints", api.HandleDeveloperEndpoints)
 		mux.HandleFunc("/mcp", api.HandleDeveloperMCP)
 		mux.HandleFunc("/.well-known/oauth-authorization-server", api.HandleDeveloperOAuth)
 		mux.HandleFunc("/.well-known/oauth-protected-resource", api.HandleDeveloperOAuth)

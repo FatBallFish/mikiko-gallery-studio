@@ -8,7 +8,10 @@ import (
 	"testing"
 	"time"
 
+	billing "github.com/fatballfish/pic-gallery/internal/domain/billing"
+	image "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/service/openplatform"
+	"github.com/fatballfish/pic-gallery/internal/service/videotask"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -23,7 +26,22 @@ func TestAsyncTaskToolsDispatchSharedOperations(t *testing.T) {
 			t.Error("OAuth attribution lost")
 		}
 		operations = append(operations, op)
-		return map[string]any{"task_id": "persisted-task", "status": "queued", "quote_token": "quote"}, nil
+		switch op {
+		case "preflight_image_task":
+			return struct {
+				billing.EstimateResult
+				QuoteToken string    `json:"quote_token"`
+				ExpiresAt  time.Time `json:"expires_at"`
+			}{QuoteToken: "quote", ExpiresAt: time.Now().UTC().Add(time.Minute)}, nil
+		case "preflight_video_task":
+			return videotask.Estimate{QuoteToken: "quote"}, nil
+		case "create_video_task":
+			return map[string]any{"task": videotask.Task{}, "replayed": false}, nil
+		case "get_video_task":
+			return videotask.Task{}, nil
+		default:
+			return image.Task{ID: "persisted-task", Status: "queued"}, nil
+		}
 	})})
 	if err != nil {
 		t.Fatal(err)

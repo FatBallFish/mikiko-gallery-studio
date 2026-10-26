@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -54,6 +55,9 @@ func (s *Service) Client(ctx context.Context, id string) (Client, error) {
 		}
 	}
 	r, e := s.store.Get(ctx, "client:"+id)
+	if e != nil && !errors.Is(e, ErrNotFound) {
+		return Client{}, e
+	}
 	if e == nil {
 		var c cachedClient
 		if json.Unmarshal(r.Payload, &c) == nil && (c.Expires == 0 || c.Expires > time.Now().Unix()) {
@@ -143,7 +147,10 @@ func publicAddress(ip netip.Addr) bool {
 	return true
 }
 func (s *Service) Register(ctx context.Context, c Client) (Client, error) {
-	if !s.cfg.EnableRegistration || validateClient(c) != nil {
+	if !s.cfg.EnableRegistration {
+		return Client{}, ErrRegistrationDisabled
+	}
+	if validateClient(c) != nil {
 		return Client{}, ErrInvalid
 	}
 	if e := s.reserveRegistration(ctx); e != nil {
@@ -163,16 +170,34 @@ func (s *Service) Register(ctx context.Context, c Client) (Client, error) {
 	return c, nil
 }
 
-// A durable CAS counter bounds registration across processes and restarts.
+// A single durable CAS record bounds registrations across processes and restarts.
+// The fixed window permits a burst of 10 registrations per minute, then recovers.
+// Use a new record ID so the historical lifetime counter cannot lock out clients.
+const registrationWindow = time.Minute
+const registrationBurst = 10
+
+type RateLimitError struct{ RetryAfter time.Duration }
+
+func (e *RateLimitError) Error() string { return "OAuth registration rate limit exceeded" }
+
 func (s *Service) reserveRegistration(ctx context.Context) error {
+	now := time.Now
+	if s.cfg.RegistrationNow != nil {
+		now = s.cfg.RegistrationNow
+	}
+	return s.reserveRegistrationAt(ctx, now())
+}
+
+func (s *Service) reserveRegistrationAt(ctx context.Context, now time.Time) error {
 	type limit struct {
 		Count int
-		Next  int64
+		Reset int64
 	}
+	const id = "registration-rate-v2"
 	for i := 0; i < 12; i++ {
-		r, e := s.store.Get(ctx, "registration-limit")
+		r, e := s.store.Get(ctx, id)
 		if errors.Is(e, ErrNotFound) {
-			e = s.store.Create(ctx, document("registration-limit", "limit", 0, limit{}))
+			e = s.store.Create(ctx, document(id, "limit", 0, limit{}))
 			if e == nil || errors.Is(e, ErrConflict) {
 				continue
 			}
@@ -182,14 +207,16 @@ func (s *Service) reserveRegistration(ctx context.Context) error {
 			return e
 		}
 		var v limit
-		if json.Unmarshal(r.Payload, &v) != nil {
-			return ErrInvalid
+		if e := json.Unmarshal(r.Payload, &v); e != nil {
+			return fmt.Errorf("decode registration rate limit: %w", e)
 		}
-		if v.Count >= 100 || v.Next > time.Now().Unix() {
-			return ErrInvalid
+		if v.Reset <= now.UnixNano() {
+			v = limit{Reset: now.Add(registrationWindow).UnixNano()}
+		}
+		if v.Count >= registrationBurst {
+			return &RateLimitError{RetryAfter: time.Unix(0, v.Reset).Sub(now)}
 		}
 		v.Count++
-		v.Next = time.Now().Add(time.Minute).Unix()
 		e = s.save(ctx, r, v)
 		if errors.Is(e, ErrConflict) {
 			continue

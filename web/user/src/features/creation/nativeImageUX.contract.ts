@@ -49,9 +49,19 @@ assert.equal(canvasReferenceMarksModelChanged(seedream.model, qwen), true, 'conf
 assert.ok(editor.includes('canvasReferenceMarksModelChanged(marks.model, profile)'))
 assert.ok(editor.includes('asset_id: original.id') && editor.includes('native_options: undefined, ui_reference_marks: undefined'))
 
-assert.ok(controls.includes('nativeLayerUnavailableReason(profile, references.length, layerPriceReady, layerUnavailableReason)'), 'layer entry must display the shared specific reason')
+assert.ok(controls.includes('nativeLayerUnavailableReason(profile, referenceCount, layerPriceReady, layerUnavailableReason)'), 'layer entry must display the shared specific reason')
 assert.ok(consoleSource.includes('layerUnavailableReason={model?.native_image_layer_unavailable_reason}'), 'canvas entry must use task-scoped layer reason')
 assert.ok(consoleSource.includes('nativeLayerUnavailableReason(model?.native_image_profile, references.length, model?.native_image_layer_pricing_confirmed === true, model?.native_image_layer_unavailable_reason)'), 'canvas generation blocking must use the same reason')
 const workspace = readFileSync(new URL('../../pages/WorkspacePage.tsx', import.meta.url), 'utf8')
 assert.ok(workspace.includes('layerUnavailableReason={editModel?.native_image_layer_unavailable_reason}'), 'workspace entry must use editing task reason')
 assert.ok(workspace.includes('nativeLayerUnavailableReason(selectedModel?.native_image_profile, editRefs.length, selectedModel?.native_image_layer_pricing_confirmed === true, selectedModel?.native_image_layer_unavailable_reason)'), 'workspace generation blocking must use selected task reason')
+
+for (const references of [0, 1, 2]) {
+  assert.equal(userNativeImageFields({ operation: 'layer_decomposition' }, seedream, references).operation, 'layer_decomposition', 'layer choice survives reference changes')
+  assert.equal(userNativeImageFields({ operation: 'layer_decomposition' }, qwen, references).operation, 'layer_decomposition', 'unsupported model keeps explicit mode for validation')
+}
+assert.equal(userNativeImageFields({ operation: 'layer_decomposition' }, undefined, 0).operation, 'layer_decomposition', 'capability loading must not reset mode')
+assert.ok(controls.includes("variant === 'canvas'"))
+assert.ok(!controls.includes('references.length !== 1'))
+assert.ok(workspace.includes("multiple={nativeDraft.operation !== 'layer_decomposition'}"))
+assert.ok(consoleSource.includes("disabled={locked || draft.operation === 'layer_decomposition'}"))

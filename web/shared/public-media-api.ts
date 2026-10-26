@@ -5,6 +5,7 @@ import { toImageResult } from './user-api'
 export type PublicFeedVideo = {
   id: string; title: string; media_type: 'video'; status: 'private' | 'pending_review' | 'approved' | 'rejected'
   video_url: string; poster_url: string; width?: number; height?: number; duration_ms?: number; published_at?: string; created_at: string
+  like_count?: number; favorite_count?: number; liked_by_viewer?: boolean; favorited_by_viewer?: boolean; download_url?: string
 }
 export type PublicMediaItem = { media_type: 'image'; id: string; image: ImageResult } | { media_type: 'video'; id: string; video: PublicFeedVideo }
 export const publicMediaApi = {

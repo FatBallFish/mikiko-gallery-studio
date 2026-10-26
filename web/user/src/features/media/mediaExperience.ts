@@ -38,6 +38,7 @@ export type MediaFilterValues = {
   sourceType: string
   groupName: string
   status: string
+  visibilityStatus?: MediaAssetFilters['visibility_status']
   keyword: string
   sort: string
 }
@@ -75,6 +76,13 @@ export function createMediaProjectScope(initialProjectID: string) {
   }
 }
 
+export function mediaAssetMetadata(asset: Pick<import('../../../../shared/api-types').MediaAsset, 'width' | 'height' | 'duration_ms' | 'media_type' | 'container' | 'mime_type'>) {
+  const dimensions = asset.width && asset.height ? `${asset.width}×${asset.height}` : ''
+  const format = asset.container?.toUpperCase() || asset.mime_type.split('/')[1]?.toUpperCase() || asset.mime_type
+  const duration = asset.duration_ms != null && asset.duration_ms > 0 ? `${Math.round(asset.duration_ms / 100) / 10} 秒` : ''
+  return [dimensions, format, duration].filter(Boolean).join(' · ')
+}
+
 export function buildMediaAssetQuery(projectID: string, filters: MediaFilterValues, cursor?: string): MediaAssetFilters {
   const [requestedSortBy = 'created_at', sortOrder = 'desc'] = filters.sort.split(':')
   const supportedSortFields = new Set<NonNullable<MediaAssetFilters['sort_by']>>(['created_at', 'updated_at', 'name', 'file_size_bytes', 'duration_ms'])
@@ -87,6 +95,7 @@ export function buildMediaAssetQuery(projectID: string, filters: MediaFilterValu
     source_type: filters.sourceType,
     group_name: filters.groupName,
     status: filters.status,
+    visibility_status: filters.visibilityStatus || undefined,
     keyword: filters.keyword.trim(),
     sort_by: sortBy,
     sort_order: sortOrder === 'asc' ? 'asc' : 'desc',

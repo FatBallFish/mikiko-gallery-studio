@@ -99,7 +99,6 @@ export function apiKeyScopeLabel(scope: string) {
   return scopeLabels[scope] ?? scope
 }
 
-const OPEN_API_BASE_URL_LABEL = 'https://api.example.com'
 
 export function maskToken(value: string | null | undefined, head = 6, tail = 4) {
   if (!value) return '-'
@@ -112,22 +111,16 @@ export function maskSecretPreview(value?: string | null) {
   return maskToken(value)
 }
 
-export function apiKeyQuickstart(key: Pick<ApiKey, 'access_key' | 'secret_preview'> | null) {
+export function apiKeyQuickstart(key: Pick<ApiKey, 'access_key' | 'secret_preview'> | null, restBase?: string) {
   const secret = '$STUDIO_API_KEY'
   const accessKey = key?.access_key ? maskToken(key.access_key) : 'ak_live_xxx'
   return {
     title: apiKeyPageLabels.quickstartCodeTitle,
     copyLabel: apiKeyPageLabels.copyCode,
     visibleCredentials: { accessKey, secretKey: secret },
-    code: `curl ${OPEN_API_BASE_URL_LABEL}/v1/images/generations \\
-  -H "Authorization: Bearer ${secret}" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "prompt": "A futuristic creative workspace with neon lights",
-    "model": "plus",
-    "n": 1,
-    "size": "1024x1024"
-  }'`,
+    code: `# STUDIO_API_KEY 从环境变量注入；不复制一次性 Secret
+curl "${restBase || '$STUDIO_REST_BASE'}/image-models" \\
+  -H "Authorization: Bearer ${secret}"`,
   }
 }
 

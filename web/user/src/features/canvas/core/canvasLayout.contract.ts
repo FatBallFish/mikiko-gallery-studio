@@ -1,4 +1,5 @@
 import { autoLayoutCanvasNodes, computeCanvasBounds, fitCanvasViewport, minimapGeometry, nextCanvasNodePosition, visibleCanvasNodeIDs } from './canvasLayout'
+import { createCanvasStore } from '../store/canvasStore'
 import type { CanvasDocument } from './types'
 
 const document: CanvasDocument = {
@@ -74,3 +75,31 @@ const thirdNode = { id: 'new-image', type: 'image' as const, position: thirdPlac
 if (overlaps(firstNode, secondNode) || overlaps(firstNode, thirdNode) || overlaps(secondNode, thirdNode)) {
   throw new Error(`successive toolbar nodes must use distinct non-overlapping positions: ${JSON.stringify([firstNode, secondNode, thirdNode])}`)
 }
+
+// Single-node focus uses screen-space insets and centers after applying zoom limits.
+const beforeFocus = JSON.stringify(document)
+for (const screen of [{ width: 1200, height: 800 }, { width: 390, height: 640 }, { width: 1024, height: 420 }]) {
+  for (const size of [{ width: 20, height: 10 }, { width: 320, height: 240 }, { width: 8000, height: 6000 }, { width: 100000, height: 200000 }]) {
+    const bottom = Math.min(440, Math.max(0, screen.height - 160)) + 36
+    const bounds = { x: -730, y: 246, ...size }
+    const focused = fitCanvasViewport(bounds, screen, 32, { minZoom: 0.000001, maxZoom: 1.25, insets: { bottom } })
+    const left = bounds.x * focused.zoom + focused.x
+    const top = bounds.y * focused.zoom + focused.y
+    const right = left + bounds.width * focused.zoom
+    const lower = top + bounds.height * focused.zoom
+    const near = (actual: number, expected: number) => Math.abs(actual - expected) < 0.000001
+    if (focused.zoom > 1.25 || focused.zoom <= 0) throw new Error('single-node focus must cap magnification and allow large nodes to fit')
+    if (left < 32 - 0.000001 || right > screen.width - 32 + 0.000001 || top < 32 - 0.000001 || lower > screen.height - bottom - 32 + 0.000001) throw new Error(`focused node must fit within margins above console: ${JSON.stringify({ screen, size, focused })}`)
+    if (!near((left + right) / 2, screen.width / 2) || !near((top + lower) / 2, (screen.height - bottom) / 2)) throw new Error('focus must recenter after clamping zoom')
+  }
+}
+const asymmetricFocus = fitCanvasViewport({ x: 100, y: -200, width: 10, height: 20 }, { width: 1000, height: 800 }, 32, { maxZoom: 1, insets: { left: 100, right: 200, top: 50, bottom: 150 } })
+if (asymmetricFocus.x + 105 !== 450 || asymmetricFocus.y - 190 !== 350 || asymmetricFocus.zoom !== 1) throw new Error('asymmetric visible regions must retain their actual screen center at the zoom cap')
+if (JSON.stringify(document) !== beforeFocus) throw new Error('focus must preserve node positions, sizes, edges and document viewport')
+const focusStore = createCanvasStore({ ...document, groups: [{ id: 'group', label: 'Group', node_ids: ['prompt', 'generator'] }] }, 7)
+focusStore.getState().select(['prompt'])
+focusStore.getState().moveSelected({ x: 20, y: 10 })
+const beforeCommand = focusStore.getState().command
+focusStore.getState().setViewport(fitCanvasViewport(computeCanvasBounds([beforeCommand.present.nodes[0]]), { width: 1200, height: 800 }, 32, { maxZoom: 1.25 }))
+const afterCommand = focusStore.getState().command
+if (afterCommand.present.nodes !== beforeCommand.present.nodes || afterCommand.present.edges !== beforeCommand.present.edges || afterCommand.present.groups !== beforeCommand.present.groups || afterCommand.past !== beforeCommand.past || afterCommand.future !== beforeCommand.future) throw new Error('focus must only update viewport, preserving graph data and movement history')

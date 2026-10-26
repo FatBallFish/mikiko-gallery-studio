@@ -17,18 +17,23 @@ const (
 )
 
 type Video struct {
-	ID          uuid.UUID  `json:"id"`
-	Title       string     `json:"title"`
-	MediaType   string     `json:"media_type"`
-	Status      string     `json:"status"`
-	Prompt      string     `json:"prompt,omitempty"`
-	VideoURL    string     `json:"video_url"`
-	PosterURL   string     `json:"poster_url"`
-	Width       *int       `json:"width,omitempty"`
-	Height      *int       `json:"height,omitempty"`
-	DurationMS  *int64     `json:"duration_ms,omitempty"`
-	PublishedAt *time.Time `json:"published_at,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
+	LikeCount         int        `json:"like_count"`
+	FavoriteCount     int        `json:"favorite_count"`
+	LikedByViewer     bool       `json:"liked_by_viewer"`
+	FavoritedByViewer bool       `json:"favorited_by_viewer"`
+	DownloadURL       string     `json:"download_url"`
+	ID                uuid.UUID  `json:"id"`
+	Title             string     `json:"title"`
+	MediaType         string     `json:"media_type"`
+	Status            string     `json:"status"`
+	Prompt            string     `json:"prompt,omitempty"`
+	VideoURL          string     `json:"video_url"`
+	PosterURL         string     `json:"poster_url"`
+	Width             *int       `json:"width,omitempty"`
+	Height            *int       `json:"height,omitempty"`
+	DurationMS        *int64     `json:"duration_ms,omitempty"`
+	PublishedAt       *time.Time `json:"published_at,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
 }
 type Record struct {
 	Video
@@ -139,4 +144,64 @@ func (s *Service) Open(ctx context.Context, id uuid.UUID, poster, admin bool) (m
 		purpose = mediaasset.AccessPurposePoster
 	}
 	return s.media.OpenContent(ctx, v.OwnerID, id, purpose)
+}
+
+// InteractionStore extends publication stores without requiring review-only adapters
+// to implement viewer-specific operations.
+type InteractionStore interface {
+	GetForViewer(context.Context, uuid.UUID, int64) (Record, error)
+	SetInteraction(context.Context, uuid.UUID, int64, string, bool) (Record, error)
+	ListPublic(context.Context, int64, bool, bool, string, int, int) (ReviewPage, error)
+}
+
+func (s *Service) GetForViewer(ctx context.Context, id uuid.UUID, viewer int64) (Record, error) {
+	if _, err := s.Get(ctx, id, false); err != nil {
+		return Record{}, err
+	}
+	if store, ok := s.store.(InteractionStore); ok {
+		return store.GetForViewer(ctx, id, viewer)
+	}
+	return s.Get(ctx, id, false)
+}
+func (s *Service) SetInteraction(ctx context.Context, id uuid.UUID, viewer int64, kind string, active bool) (Record, error) {
+	if viewer <= 0 {
+		return Record{}, errs.New(401, errs.CodeUnauthorized, "login required")
+	}
+	if kind != "like" && kind != "favorite" {
+		return Record{}, errs.BadRequest("invalid video interaction")
+	}
+	store, ok := s.store.(InteractionStore)
+	if !ok {
+		return Record{}, errs.Internal("video interactions unavailable")
+	}
+	return store.SetInteraction(ctx, id, viewer, kind, active)
+}
+func (s *Service) ListPublic(ctx context.Context, viewer int64, liked, favorited bool, sort string, page, size int) (ReviewPage, error) {
+	if (liked || favorited) && viewer <= 0 {
+		return ReviewPage{}, errs.New(401, errs.CodeUnauthorized, "login required")
+	}
+	if sort != "" && sort != "latest" && sort != "hot" {
+		return ReviewPage{}, errs.BadRequest("invalid sort")
+	}
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 {
+		size = 20
+	}
+	if size > 100 {
+		size = 100
+	}
+	if store, ok := s.store.(InteractionStore); ok {
+		return store.ListPublic(ctx, viewer, liked, favorited, sort, page, size)
+	}
+	return s.List(ctx, Approved, page, size, false)
+}
+func (s *Service) OpenDownloadRange(ctx context.Context, id uuid.UUID, value string, metadataOnly bool) (mediaasset.RangedContentStream, string, error) {
+	v, err := s.Get(ctx, id, false)
+	if err != nil {
+		return mediaasset.RangedContentStream{}, "", err
+	}
+	stream, err := s.media.OpenContentRange(ctx, v.OwnerID, id, mediaasset.AccessPurposeDownload, value, metadataOnly)
+	return stream, v.Title, err
 }

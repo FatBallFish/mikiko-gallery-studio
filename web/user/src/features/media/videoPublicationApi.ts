@@ -4,6 +4,7 @@ export type PublicVideo = {
   id: string; title: string; media_type: 'video'; status: 'private' | 'pending_review' | 'approved' | 'rejected'
   prompt?: string; video_url: string; poster_url: string; width?: number; height?: number
   duration_ms?: number; published_at?: string; created_at: string
+  like_count?: number; favorite_count?: number; liked_by_viewer?: boolean; favorited_by_viewer?: boolean; download_url?: string
 }
 export type VideoPublication = PublicVideo & { review_reason?: string }
 export type PublicVideoPage = { items: PublicVideo[]; total: number; page: number; page_size: number }
