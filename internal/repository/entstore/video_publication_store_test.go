@@ -2,6 +2,7 @@ package entstore
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/service/mediaasset"
 	"github.com/fatballfish/pic-gallery/internal/service/videopublication"
 	"github.com/fatballfish/pic-gallery/internal/storage"
+	"github.com/fatballfish/pic-gallery/pkg/errs"
 	"github.com/google/uuid"
 )
 
@@ -23,6 +25,17 @@ func TestVideoPublicationLifecycle(t *testing.T) {
 	if e = client.Schema.Create(ctx); e != nil {
 		t.Fatal(e)
 	}
+	testVideoPublicationLifecycle(t, client)
+}
+
+func TestVideoPublicationLifecyclePostgres(t *testing.T) {
+	_, _, client, _ := openProjectTaskPostgres(t)
+	testVideoPublicationLifecycle(t, client)
+}
+
+func testVideoPublicationLifecycle(t *testing.T, client *repoent.Client) {
+	t.Helper()
+	ctx := t.Context()
 	p, e := client.Project.Create().SetUserID(44).SetName("Secret project").SetNameKey("secret").Save(ctx)
 	if e != nil {
 		t.Fatal(e)
@@ -67,19 +80,33 @@ func TestVideoPublicationLifecycle(t *testing.T) {
 			if e != nil || page.Total != 0 {
 				t.Fatalf("pending listed %+v %v", page, e)
 			}
-			rejected, e := service.Review(ctx, asset.ID, "rejected", "copyright")
-			if e != nil || rejected.ReviewReason != "copyright" {
+			rejected, e := service.Review(ctx, asset.ID, "rejected", "  copyright  ")
+			if e != nil || rejected.Status != videopublication.Rejected || rejected.PublishedAt != nil || rejected.ReviewReason != "copyright" || rejected.Version != pending.Version+1 {
 				t.Fatalf("reject %+v %v", rejected, e)
 			}
-			if _, e = service.Review(ctx, asset.ID, "approved", ""); e == nil {
-				t.Fatal("stale review approved")
+			for _, decision := range []string{"approved", "rejected"} {
+				_, e = service.Review(ctx, asset.ID, decision, "copyright")
+				var appErr *errs.Error
+				if !errors.As(e, &appErr) || appErr.StatusCode != 409 || appErr.Code != errs.CodeConflict {
+					t.Fatalf("stale %s: want 409, got %v", decision, e)
+				}
+			}
+			if _, e = service.Get(ctx, asset.ID, false); e == nil {
+				t.Fatal("rejected detail exposed")
 			}
 			if _, e = service.Submit(ctx, 44, asset.ID); e != nil {
 				t.Fatal(e)
 			}
 			approved, e := service.Review(ctx, asset.ID, "approved", "")
-			if e != nil || approved.PublishedAt == nil || approved.ReviewReason != "" {
+			if e != nil || approved.Status != videopublication.Approved || approved.PublishedAt == nil || approved.ReviewReason != "" || approved.Version != rejected.Version+2 {
 				t.Fatalf("approve %+v %v", approved, e)
+			}
+			for _, decision := range []string{"approved", "rejected"} {
+				_, e = service.Review(ctx, asset.ID, decision, "copyright")
+				var appErr *errs.Error
+				if !errors.As(e, &appErr) || appErr.StatusCode != 409 {
+					t.Fatalf("repeat %s: want 409, got %v", decision, e)
+				}
 			}
 			for _, poster := range []bool{true, false} {
 				stream, e := service.Open(ctx, asset.ID, poster, false)

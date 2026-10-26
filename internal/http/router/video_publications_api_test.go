@@ -1,31 +1,73 @@
 package router
 
 import (
+	"database/sql"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
 	"strings"
 	"testing"
 
 	"entgo.io/ent/dialect"
+	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
 	domainadminconfig "github.com/fatballfish/pic-gallery/internal/domain/adminconfig"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
+	adminauthservice "github.com/fatballfish/pic-gallery/internal/service/adminauth"
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
 	"github.com/fatballfish/pic-gallery/internal/service/mediaasset"
 	"github.com/fatballfish/pic-gallery/internal/service/videopublication"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 func TestVideoPublicationAnonymousHTTPAccess(t *testing.T) {
+	testVideoPublicationHTTPAccess(t, "")
+}
+
+func TestVideoPublicationAdminHTTPPostgres(t *testing.T) {
+	databaseURL := strings.TrimSpace(os.Getenv("PIC_GALLERY_TEST_POSTGRES_URL"))
+	if databaseURL == "" {
+		t.Skip("set PIC_GALLERY_TEST_POSTGRES_URL to run PostgreSQL video moderation integration")
+	}
+	admin, err := sql.Open("postgres", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = admin.Close() })
+	schema := "video_publication_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if _, err := admin.ExecContext(t.Context(), "CREATE SCHEMA "+pq.QuoteIdentifier(schema)); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = admin.Exec("DROP SCHEMA IF EXISTS " + pq.QuoteIdentifier(schema) + " CASCADE") })
+	parsed, err := url.Parse(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := parsed.Query()
+	query.Set("search_path", schema)
+	parsed.RawQuery = query.Encode()
+	testVideoPublicationHTTPAccess(t, parsed.String())
+}
+
+func testVideoPublicationHTTPAccess(t *testing.T, databaseURL string) {
+	t.Helper()
 	ctx := t.Context()
 	auth, owner := loginTestUser(t, "public-video-owner@example.com")
 	claims, e := auth.ParseAccessToken(owner.AccessToken)
 	if e != nil {
 		t.Fatal(e)
 	}
-	client, e := repoent.Open(dialect.SQLite, "file:publication-http-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	driver := dialect.Postgres
+	if databaseURL == "" {
+		driver = dialect.SQLite
+		databaseURL = "file:publication-http-" + uuid.NewString() + "?mode=memory&cache=shared&_fk=1"
+	}
+	client, e := repoent.Open(driver, databaseURL)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -54,9 +96,15 @@ func TestVideoPublicationAnonymousHTTPAccess(t *testing.T) {
 	service := videopublication.NewService(entstore.NewVideoPublicationStore(client), media)
 	cfg := taskAPIConfig("http://provider.invalid")
 	adminConfig := adminconfigservice.NewService(cfg)
-	api := handlers.NewAPIWithRuntimeServices(cfg, auth, nil, nil, adminConfig, nil)
+	adminStore := entstore.NewAdminAuthStore(client)
+	if _, e = adminStore.CreateAdmin(ctx, domainadminauth.AdminUser{Email: "admin-users@example.com", PasswordHash: adminauthservice.HashPasswordForTest("password", "salt"), Role: "super_admin", Status: "active"}); e != nil {
+		t.Fatal(e)
+	}
+	adminAuth := adminauthservice.NewService(cfg.Auth, adminStore)
+	api := handlers.NewAPIWithCompletionServices(cfg, auth, nil, nil, adminConfig, nil, nil, adminAuth, nil)
 	api.SetVideoPublications(service)
 	handler := NewWithAPI(api)
+	adminToken := loginAdminForUserTest(t, handler)
 	request := func(method, path, rangeValue string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, nil)
 		if rangeValue != "" {
@@ -82,9 +130,51 @@ func TestVideoPublicationAnonymousHTTPAccess(t *testing.T) {
 	if w := request("POST", "/api/ops/admin/v1/video-reviews/"+asset.ID.String()+":approve", ""); w.Code != 401 {
 		t.Fatalf("anonymous moderate=%d", w.Code)
 	}
-	if _, e = service.Review(ctx, asset.ID, "approved", ""); e != nil {
-		t.Fatal(e)
+	reviewPath := "/api/ops/admin/v1/video-reviews/" + asset.ID.String()
+	moderate := func(action, body string, want int) *httptest.ResponseRecorder {
+		t.Helper()
+		w := authenticatedMediaRequest(t, handler, adminToken, "POST", reviewPath+":"+action, body, nil)
+		if w.Code != want {
+			t.Fatalf("admin %s: want %d, got %d %s", action, want, w.Code, w.Body.String())
+		}
+		return w
 	}
+	for _, action := range []string{"approve", "reject"} {
+		if w := request("POST", reviewPath+":"+action, ""); w.Code != 401 {
+			t.Fatalf("anonymous %s=%d", action, w.Code)
+		}
+	}
+	if w := authenticatedMediaRequest(t, handler, owner.AccessToken, "POST", reviewPath+":approve", `{}`, nil); w.Code != 401 && w.Code != 403 {
+		t.Fatalf("owner moderate=%d", w.Code)
+	}
+	moderate("reject", `{"reason":"  "}`, 400)
+	rejected := moderate("reject", `{"reason":"  copyright  "}`, 200)
+	var decision struct {
+		Data videopublication.Record `json:"data"`
+	}
+	if e = json.Unmarshal(rejected.Body.Bytes(), &decision); e != nil || decision.Data.Status != "rejected" || decision.Data.ReviewReason != "copyright" || decision.Data.PublishedAt != nil {
+		t.Fatalf("rejected response=%s err=%v", rejected.Body.String(), e)
+	}
+	moderate("reject", `{"reason":"copyright"}`, 409)
+	moderate("approve", `{}`, 409)
+	for _, suffix := range []string{"", "/video", "/poster"} {
+		if w := request("GET", base+suffix, ""); w.Code != 404 {
+			t.Fatalf("rejected %s=%d", suffix, w.Code)
+		}
+	}
+	if w := request("GET", "/api/public/v1/videos", ""); w.Code != 200 || strings.Contains(w.Body.String(), asset.ID.String()) {
+		t.Fatalf("rejected listed=%d %s", w.Code, w.Body.String())
+	}
+	if w := authenticatedMediaRequest(t, handler, owner.AccessToken, "POST", "/api/agent/media/v1/video-publications/"+asset.ID.String(), "", nil); w.Code != 200 {
+		t.Fatalf("resubmit=%d %s", w.Code, w.Body.String())
+	}
+	approved := moderate("approve", `{}`, 200)
+	decision.Data = videopublication.Record{}
+	if e = json.Unmarshal(approved.Body.Bytes(), &decision); e != nil || decision.Data.Status != "approved" || decision.Data.PublishedAt == nil || decision.Data.ReviewReason != "" {
+		t.Fatalf("approved response=%s err=%v", approved.Body.String(), e)
+	}
+	moderate("approve", `{}`, 409)
+	moderate("reject", `{"reason":"copyright"}`, 409)
 	for _, test := range []struct {
 		method, suffix, rangeValue, body string
 		status                           int

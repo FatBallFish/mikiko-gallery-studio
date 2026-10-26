@@ -539,17 +539,16 @@ export function MediaAssetsPage() {
       >
         <section className="u-grid u-grid--gallery" aria-busy={loading} aria-label="资产列表">
           {items.map((asset) => (
-            <div key={asset.id}>
             <MediaAssetCard
+              key={asset.id}
               asset={asset}
               selected={selected.has(asset.id)}
               selectionMode={selected.size > 0}
               onSelect={selectCard}
               onOpen={openCard}
               onRetry={(item) => void userApi.retryMediaAssetProcessing(item.id).then(patchAsset).catch((caught) => app.notify('error', caught instanceof Error ? caught.message : '重试处理失败'))}
+              footer={asset.media_type === 'video' && asset.status === 'ready' ? <VideoPublicationControls key={`${asset.id}:${asset.visibility_status}`} assetID={asset.id} onChanged={() => setRefreshKey((value) => value + 1)} /> : undefined}
             />
-            {asset.media_type === 'video' && asset.status === 'ready' ? <div data-media-selection-control><VideoPublicationControls key={`${asset.id}:${asset.visibility_status}`} assetID={asset.id} onChanged={() => setRefreshKey((value) => value + 1)} /></div> : null}
-            </div>
           ))}
         </section>
       </div>

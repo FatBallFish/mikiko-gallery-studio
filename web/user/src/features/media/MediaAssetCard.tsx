@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { AudioLines, Check, FileImage, Film, LoaderCircle, Pause, Play, RotateCcw } from 'lucide-react'
 import type { MediaAccessProjection, MediaAsset } from '../../../../shared/api-types'
 import { cn } from '../../../../shared/classnames'
@@ -13,6 +13,7 @@ type Props = {
   onSelect?: (asset: MediaAsset) => void
   onOpen?: (asset: MediaAsset) => void
   onRetry?: (asset: MediaAsset) => void
+  footer?: ReactNode
 }
 
 const mediaTypeLabels = { image: '图片', video: '视频', audio: '音频' } as const
@@ -75,7 +76,7 @@ function mediaStatusBadge(asset: MediaAsset) {
   return null
 }
 
-export function MediaAssetCard({ asset, selected = false, selectionMode = false, onSelect, onOpen, onRetry }: Props) {
+export function MediaAssetCard({ asset, selected = false, selectionMode = false, onSelect, onOpen, onRetry, footer }: Props) {
   const app = useApp()
   const imagePreview = useImagePreview(asset)
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -171,8 +172,6 @@ export function MediaAssetCard({ asset, selected = false, selectionMode = false,
     <article
       data-media-asset-id={asset.id}
       className={cn('u-card gl-card', selected && 'is-selected')}
-      onMouseEnter={beginHover}
-      onMouseLeave={endHover}
     >
       {onSelect ? (
         <button
@@ -187,7 +186,7 @@ export function MediaAssetCard({ asset, selected = false, selectionMode = false,
           {selected ? <Check size={13} strokeWidth={2.5} aria-hidden="true" /> : null}
         </button>
       ) : null}
-      <button className="u-card__media gl-card__stage" type="button" onClick={open} aria-label={`${selectionMode ? (selected ? '取消选择' : '选择') : '预览'} ${asset.name}`}>
+      <button className="u-card__media gl-card__stage" type="button" onMouseEnter={beginHover} onMouseLeave={endHover} onClick={open} aria-label={`${selectionMode ? (selected ? '取消选择' : '选择') : '预览'} ${asset.name}`}>
         {asset.media_type === 'image' && imagePreview.access?.url ? <img key={`${imagePreview.purpose}:${imagePreview.access.url}`} src={userApi.mediaAssetUrl(imagePreview.access.url, app.session?.token)} alt="" loading="lazy" draggable={false} onError={() => void imagePreview.refreshOnce()} /> : null}
         {asset.media_type === 'video' && !hoverURL && posterURL ? <img src={userApi.mediaAssetUrl(posterURL, app.session?.token)} alt="" loading="lazy" draggable={false} /> : null}
         {asset.media_type === 'video' && hoverURL ? <video ref={videoRef} src={userApi.mediaAssetUrl(hoverURL, app.session?.token)} muted loop autoPlay playsInline preload="metadata" draggable={false} onError={() => void refreshHoverOnce()} /> : null}
@@ -232,6 +231,7 @@ export function MediaAssetCard({ asset, selected = false, selectionMode = false,
           <span>{formatDate(asset.created_at)}</span>
         </div>
       </div>
+      {footer ? <footer className="gl-card__footer" data-media-selection-control>{footer}</footer> : null}
       {audioURL ? (
         <audio
           ref={audioRef}

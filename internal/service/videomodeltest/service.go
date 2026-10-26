@@ -307,7 +307,7 @@ func toProviderRequest(id string, req Request) videoprovider.Request {
 	return videoprovider.Request{
 		TaskID: id, ItemID: id, AttemptID: id, IdempotencyKey: "video-model-test-" + id,
 		TaskType: req.TaskType, Prompt: req.Prompt, DurationSeconds: req.DurationSeconds,
-		Resolution: req.Resolution, AspectRatio: req.AspectRatio, GenerateAudio: req.GenerateAudio,
+		Resolution: req.Resolution, AspectRatio: req.AspectRatio, GenerateAudio: req.GenerateAudio, OutputFormat: "mp4",
 		Inputs: inputs,
 	}
 }

@@ -87,9 +87,11 @@ func (s *VideoPublicationStore) Transition(ctx context.Context, id uuid.UUID, us
 		}
 	}
 	p := append(videoPublicationPredicates(), mediaasset.IDEQ(id), mediaasset.VisibilityStatusEQ(v.Status), mediaasset.VersionEQ(v.Version))
-	update := s.client.MediaAsset.Update().Where(p...).SetVisibilityStatus(next).SetPublicationReviewReason(strings.TrimSpace(reason)).AddVersion(1).ClearPublishedAt()
+	update := s.client.MediaAsset.Update().Where(p...).SetVisibilityStatus(next).SetPublicationReviewReason(strings.TrimSpace(reason)).AddVersion(1)
 	if next == videopublication.Approved {
 		update.SetPublishedAt(time.Now().UTC())
+	} else {
+		update.ClearPublishedAt()
 	}
 	count, e := update.Save(ctx)
 	if e != nil {
