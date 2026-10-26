@@ -11,6 +11,7 @@ import (
 type ReferenceAsset struct {
 	ID                  string              `json:"id"`
 	Name                string              `json:"name"`
+	DisplayName         string              `json:"display_name,omitempty"`
 	APIKeyID            *int64              `json:"-"`
 	UploadSource        string              `json:"-"`
 	Status              string              `json:"status"`

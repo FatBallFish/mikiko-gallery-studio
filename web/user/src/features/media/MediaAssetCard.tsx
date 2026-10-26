@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
-import { AudioLines, Check, FileImage, Film, LoaderCircle, Play, RotateCcw } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { AudioLines, Check, FileImage, Film, LoaderCircle, Pause, Play, RotateCcw } from 'lucide-react'
 import type { MediaAccessProjection, MediaAsset } from '../../../../shared/api-types'
+import { cn } from '../../../../shared/classnames'
 import { userApi } from '../../../../shared/user-api'
+import { formatDate, useApp } from '../../components'
 import { canHoverPreview, mediaAudioCoordinator, mediaHoverScheduler } from './mediaExperience'
 
 type Props = {
@@ -11,7 +13,10 @@ type Props = {
   onSelect?: (asset: MediaAsset) => void
   onOpen?: (asset: MediaAsset) => void
   onRetry?: (asset: MediaAsset) => void
+  footer?: ReactNode
 }
+
+const mediaTypeLabels = { image: '图片', video: '视频', audio: '音频' } as const
 
 function useImagePreview(asset: MediaAsset) {
   const [access, setAccess] = useState<MediaAccessProjection | null>(null)
@@ -52,7 +57,27 @@ function useImagePreview(asset: MediaAsset) {
   }
 }
 
-export function MediaAssetCard({ asset, selected = false, selectionMode = false, onSelect, onOpen, onRetry }: Props) {
+function mediaFormat(asset: MediaAsset) {
+  return asset.container?.toUpperCase() || asset.mime_type.split('/')[1]?.toUpperCase() || asset.mime_type
+}
+
+function mediaDimensions(asset: MediaAsset) {
+  if (asset.width && asset.height) return `${asset.width}×${asset.height}`
+  if (asset.duration_ms) {
+    const seconds = Math.round(asset.duration_ms / 100) / 10
+    return `${seconds} 秒`
+  }
+  return ''
+}
+
+function mediaStatusBadge(asset: MediaAsset) {
+  if (asset.status === 'processing' || asset.status === 'ready_original') return { label: '处理中', tone: 'u-status--warn' }
+  if (asset.status === 'failed') return { label: '失败', tone: 'u-status--bad' }
+  return null
+}
+
+export function MediaAssetCard({ asset, selected = false, selectionMode = false, onSelect, onOpen, onRetry, footer }: Props) {
+  const app = useApp()
   const imagePreview = useImagePreview(asset)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -64,6 +89,7 @@ export function MediaAssetCard({ asset, selected = false, selectionMode = false,
   const [audioURL, setAudioURL] = useState('')
   const [posterURL, setPosterURL] = useState('')
   const [waveformURL, setWaveformURL] = useState('')
+  const [audioPlaying, setAudioPlaying] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -135,37 +161,88 @@ export function MediaAssetCard({ asset, selected = false, selectionMode = false,
     }
   }
 
+  const statusBadge = mediaStatusBadge(asset)
+  const dimensions = mediaDimensions(asset)
+  const format = mediaFormat(asset)
+  const typeLabel = mediaTypeLabels[asset.media_type] ?? '文件'
+  const meta = [asset.group_name, dimensions, format].filter(Boolean).join(' · ')
+  const hasPreview = Boolean(imagePreview.access?.url || posterURL || hoverURL || waveformURL)
+
   return (
-    <article data-media-asset-id={asset.id} className={`media-asset-card${selected ? ' is-selected' : ''}`} onMouseEnter={beginHover} onMouseLeave={endHover}>
-      {onSelect && !selectionMode ? <button data-media-selection-control className="media-asset-select" type="button" aria-label={`${selected ? '取消选择' : '选择'} ${asset.name}`} title={selected ? '取消选择' : '选择'} onClick={() => onSelect(asset)}><Check size={15} /></button> : null}
-      <button className="media-asset-stage" type="button" onClick={open} aria-label={`${selectionMode ? '选择' : '预览'} ${asset.name}`}>
-        {asset.media_type === 'image' && imagePreview.access?.url ? <img key={`${imagePreview.purpose}:${imagePreview.access.url}`} src={imagePreview.access.url} alt="" loading="lazy" draggable={false} onError={() => void imagePreview.refreshOnce()} /> : null}
-        {asset.media_type === 'video' && !hoverURL && posterURL ? <img src={posterURL} alt="" loading="lazy" draggable={false} /> : null}
-        {asset.media_type === 'video' && hoverURL ? <video ref={videoRef} src={hoverURL} muted loop autoPlay playsInline preload="metadata" draggable={false} onError={() => void refreshHoverOnce()} /> : null}
-        {asset.media_type === 'audio' && waveformURL ? <img src={waveformURL} alt="" loading="lazy" draggable={false} /> : null}
-        {!imagePreview.access?.url && !posterURL && !hoverURL && !waveformURL ? (
-          <span className={`media-asset-placeholder${asset.media_type === 'audio' ? ' is-audio' : ''}`} aria-hidden="true">
+    <article
+      data-media-asset-id={asset.id}
+      className={cn('u-card gl-card', selected && 'is-selected')}
+    >
+      {onSelect ? (
+        <button
+          data-media-selection-control
+          className="gl-check"
+          type="button"
+          aria-label={`${selected ? '取消选择' : '选择'} ${asset.name}`}
+          aria-pressed={selected}
+          title={selected ? '取消选择' : '选择'}
+          onClick={() => onSelect(asset)}
+        >
+          {selected ? <Check size={13} strokeWidth={2.5} aria-hidden="true" /> : null}
+        </button>
+      ) : null}
+      <button className="u-card__media gl-card__stage" type="button" onMouseEnter={beginHover} onMouseLeave={endHover} onClick={open} aria-label={`${selectionMode ? (selected ? '取消选择' : '选择') : '预览'} ${asset.name}`}>
+        {asset.media_type === 'image' && imagePreview.access?.url ? <img key={`${imagePreview.purpose}:${imagePreview.access.url}`} src={userApi.mediaAssetUrl(imagePreview.access.url, app.session?.token)} alt="" loading="lazy" draggable={false} onError={() => void imagePreview.refreshOnce()} /> : null}
+        {asset.media_type === 'video' && !hoverURL && posterURL ? <img src={userApi.mediaAssetUrl(posterURL, app.session?.token)} alt="" loading="lazy" draggable={false} /> : null}
+        {asset.media_type === 'video' && hoverURL ? <video ref={videoRef} src={userApi.mediaAssetUrl(hoverURL, app.session?.token)} muted loop autoPlay playsInline preload="metadata" draggable={false} onError={() => void refreshHoverOnce()} /> : null}
+        {asset.media_type === 'audio' && waveformURL ? <img src={userApi.mediaAssetUrl(waveformURL, app.session?.token)} alt="" loading="lazy" draggable={false} /> : null}
+        {!hasPreview ? (
+          <span className={cn('gl-card__placeholder', asset.media_type === 'audio' && 'is-audio')} aria-hidden="true">
             {asset.status === 'processing' || asset.status === 'ready_original' ? <LoaderCircle className="animate-spin" /> : asset.media_type === 'video' ? <Film /> : asset.media_type === 'audio' ? <AudioLines /> : <FileImage />}
-            {asset.media_type === 'audio' ? <span className="media-audio-waveform">{Array.from({ length: 24 }, (_, index) => <i key={index} />)}</span> : null}
+            {asset.media_type === 'audio' ? <span className="gl-card__wave">{Array.from({ length: 24 }, (_, index) => <i key={index} />)}</span> : null}
           </span>
         ) : null}
-        {selected ? <span className="media-asset-check"><Check size={15} /></span> : null}
-        {asset.media_type === 'video' && !hoverURL ? <span className="media-asset-play"><Play size={16} fill="currentColor" /></span> : null}
-      </button>
-      <div className="media-asset-meta">
-        <div className="min-w-0">
-          <strong title={asset.name}>{asset.name}</strong>
-          <span>{asset.media_type.toUpperCase()} · {formatBytes(asset.file_size_bytes)}</span>
-        </div>
-        {asset.media_type === 'audio' && asset.status === 'ready' ? (
-          <button data-media-selection-control className="media-asset-audio" type="button" onClick={() => void toggleAudio()} aria-label={`播放 ${asset.name}`} title="播放">
-            <Play size={15} fill="currentColor" />
-          </button>
+        <span className="u-card__tag">{typeLabel}</span>
+        {asset.media_type === 'video' && !hoverURL ? <span className="u-play"><span><Play size={18} fill="currentColor" aria-hidden="true" /></span></span> : null}
+        {statusBadge ? (
+          <span className="gl-status">
+            <span className="u-chip"><span className={cn('u-status', statusBadge.tone)}><span className="u-dot" aria-hidden="true" />{statusBadge.label}</span></span>
+          </span>
         ) : null}
-        {asset.status === 'failed' && onRetry ? <button data-media-selection-control className="media-asset-audio" type="button" onClick={() => onRetry(asset)} aria-label="重试处理" title="重试处理"><RotateCcw size={15} /></button> : null}
+      </button>
+      <div className="u-card__body">
+        <div className="gl-card__head">
+          <div className="u-card__title" title={asset.name}>{asset.name}</div>
+          {asset.media_type === 'audio' && asset.status === 'ready' ? (
+            <button
+              data-media-selection-control
+              className="gl-card__action"
+              type="button"
+              onClick={() => void toggleAudio()}
+              aria-label={`${audioPlaying ? '暂停' : '播放'} ${asset.name}`}
+              title={audioPlaying ? '暂停' : '播放'}
+            >
+              {audioPlaying ? <Pause size={14} fill="currentColor" aria-hidden="true" /> : <Play size={14} fill="currentColor" aria-hidden="true" />}
+            </button>
+          ) : null}
+          {asset.status === 'failed' && onRetry ? (
+            <button data-media-selection-control className="gl-card__action" type="button" onClick={() => onRetry(asset)} aria-label="重试处理" title="重试处理">
+              <RotateCcw size={14} aria-hidden="true" />
+            </button>
+          ) : null}
+        </div>
+        <div className="u-card__meta gl-card__meta">
+          <span title={meta}>{meta || typeLabel}</span>
+          <span>{formatDate(asset.created_at)}</span>
+        </div>
       </div>
-      {asset.group_name ? <span className="media-asset-group">{asset.group_name}</span> : null}
-      {audioURL ? <audio ref={audioRef} src={audioURL} preload="metadata" onError={() => void refreshAudioOnce()} onPlay={() => mediaAudioCoordinator.activate(asset.id, () => audioRef.current?.pause())} onEnded={() => mediaAudioCoordinator.release(asset.id)} /> : null}
+      {footer ? <footer className="gl-card__footer" data-media-selection-control>{footer}</footer> : null}
+      {audioURL ? (
+        <audio
+          ref={audioRef}
+          src={userApi.mediaAssetUrl(audioURL, app.session?.token)}
+          preload="metadata"
+          onError={() => void refreshAudioOnce()}
+          onPlay={() => { setAudioPlaying(true); mediaAudioCoordinator.activate(asset.id, () => audioRef.current?.pause()) }}
+          onPause={() => setAudioPlaying(false)}
+          onEnded={() => { setAudioPlaying(false); mediaAudioCoordinator.release(asset.id) }}
+        />
+      ) : null}
     </article>
   )
 }

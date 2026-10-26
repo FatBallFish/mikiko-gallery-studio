@@ -15,6 +15,9 @@ type APIKeyQuotaReservation func(*sql.Selector)
 // AdminUser is the predicate function for adminuser builders.
 type AdminUser func(*sql.Selector)
 
+// AssetGroup is the predicate function for assetgroup builders.
+type AssetGroup func(*sql.Selector)
+
 // AuditLog is the predicate function for auditlog builders.
 type AuditLog func(*sql.Selector)
 
@@ -80,6 +83,9 @@ type ModelProvider func(*sql.Selector)
 
 // ModelRoute is the predicate function for modelroute builders.
 type ModelRoute func(*sql.Selector)
+
+// OAuthRecord is the predicate function for oauthrecord builders.
+type OAuthRecord func(*sql.Selector)
 
 // ObjectDeletionJob is the predicate function for objectdeletionjob builders.
 type ObjectDeletionJob func(*sql.Selector)

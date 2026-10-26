@@ -39,6 +39,7 @@ const changes: Array<[string, EstimateRequest]> = [
   ['ratio', { ...ratioPayload, aspect_ratio: '16:9' }],
   ['count', { ...ratioPayload, image_count: 3 }],
   ['reference', { ...ratioPayload, reference_asset_ids: ['ref-a', 'ref-b'] }],
+  ['replace reference at same count', { ...ratioPayload, reference_asset_ids: ['ref-b'] }],
 ]
 
 for (const [label, payload] of changes) {
@@ -48,6 +49,12 @@ for (const [label, payload] of changes) {
 }
 
 const estimate = estimateFixture()
+const orderedKey = workspaceEstimateKey({ ...ratioPayload, reference_asset_ids: ['ref-a', 'ref-b'] })
+const reorderedKey = workspaceEstimateKey({ ...ratioPayload, reference_asset_ids: ['ref-b', 'ref-a'] })
+if (orderedKey === reorderedKey) throw new Error('reference order must invalidate token estimates because free input images apply in order')
+const reordered = currentWorkspaceEstimate(reorderedKey, { key: orderedKey, estimate, error: '' })
+if (reordered.estimate !== null || !reordered.pending) throw new Error('reordered references must hide the stale quote immediately')
+
 const matching = currentWorkspaceEstimate(baseKey, { key: baseKey, estimate, error: '' })
 if (matching.estimate !== estimate || matching.error || matching.pending) {
   throw new Error(`matching estimate should be current, got ${JSON.stringify(matching)}`)

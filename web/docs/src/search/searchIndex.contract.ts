@@ -1,7 +1,7 @@
 import { guides } from '../content/guides'
 import { buildSearchIndex, searchDocs } from './searchIndex'
 
-const required = ['quickstart', 'authentication', 'native-api', 'openai-compatible', 'image-editing', 'reference-images', 'task-polling', 'capabilities', 'estimates', 'errors', 'rate-limits', 'troubleshooting']
+const required = ['quickstart', 'authentication', 'native-api', 'openai-compatible', 'image-editing', 'reference-images', 'task-polling', 'capabilities', 'estimates', 'errors', 'rate-limits', 'troubleshooting', 'migration', 'sdk-examples', 'mcp', 'inventory']
 if (required.some((id) => !guides.some((guide) => guide.id === id))) {
   throw new Error('documentation guide coverage is incomplete')
 }

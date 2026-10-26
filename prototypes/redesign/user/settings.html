@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>外观偏好 — Mikiko Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Manrope:wght@300..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/user.css">
+<style>
+  .st-themes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .st-theme { position: relative; display: grid; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 13px; background: transparent; text-align: left; transition: all var(--t-fast); }
+  .st-theme:hover { border-color: var(--line-2); }
+  .st-theme.is-active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .st-theme__preview { aspect-ratio: 16/9; border-radius: 8px; border: 1px solid var(--line); background: #08090d; position: relative; overflow: hidden; }
+  .st-theme__preview--light { background: #f5f3ee; }
+  .st-theme__preview::before { content: ""; position: absolute; left: 10%; top: 14%; width: 22%; height: 72%; border-radius: 5px; background: rgba(217,168,106,.35); }
+  .st-theme__preview::after { content: ""; position: absolute; left: 38%; top: 14%; right: 8%; height: 10%; border-radius: 4px; background: rgba(255,255,255,.14); box-shadow: 0 22px 0 rgba(255,255,255,.09), 0 44px 0 rgba(255,255,255,.06); }
+  .st-theme__preview--light::after { background: rgba(34,29,22,.13); box-shadow: 0 22px 0 rgba(34,29,22,.08), 0 44px 0 rgba(34,29,22,.05); }
+  .st-accents { display: flex; flex-wrap: wrap; gap: 9px; margin-bottom: 16px; }
+  .st-accent { display: grid; gap: 7px; justify-items: center; width: 82px; padding: 10px 6px; border: 1px solid var(--line); border-radius: 11px; background: transparent; color: var(--ink-3); font-size: 10.5px; transition: all var(--t-fast); }
+  .st-accent i { width: 26px; height: 26px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(255,255,255,.2); }
+  .st-accent.is-active { border-color: var(--accent-line); color: var(--ink); background: var(--surface); }
+  .st-demo { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 14px; border: 1px dashed var(--line-2); border-radius: 11px; }
+</style>
+</head>
+<body data-site="user" data-page="settings">
+<div class="u-shell"><div class="u-main">
+  <div class="u-content">
+    <div class="u-settings u-settings--single">
+      <div class="u-settings__stack">
+        <div class="u-page-head" style="margin:0">
+          <div class="u-page-head__copy">
+            <span class="u-eyebrow">Appearance</span>
+            <h1 class="u-h1" style="font-size:38px">外观偏好</h1>
+            <p class="u-sub">主题与强调色即时生效，并同步到账户。系统默认跟随设备，也可以固定为浅色或深色。</p>
+          </div>
+        </div>
+
+        <div class="u-plate u-plate--pad">
+          <div class="u-panel-title"><h3>明暗主题</h3><span>即时生效</span></div>
+          <div class="st-themes">
+            <button class="st-theme is-active" type="button" onclick="setTheme('dark',this)">
+              <span class="st-theme__preview"></span>
+              <span style="display:flex;align-items:center;justify-content:space-between"><strong style="font-size:12.5px">深色 · Luminous</strong><span class="u-status u-status--ok"><span class="u-dot"></span>当前</span></span>
+              <span class="u-meta">深底暖白，适合夜间与图像评审。</span>
+            </button>
+            <button class="st-theme" type="button" onclick="setTheme('light',this)">
+              <span class="st-theme__preview st-theme__preview--light"></span>
+              <span style="display:flex;align-items:center;justify-content:space-between"><strong style="font-size:12.5px">浅色 · Paper</strong><span class="u-meta">切换</span></span>
+              <span class="u-meta">暖灰纸张底，适合白天与文档阅读。</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="u-plate u-plate--pad">
+          <div class="u-panel-title"><h3>强调色</h3><span>单一强调</span></div>
+          <div class="st-accents">
+            <button class="st-accent is-active" type="button"><i style="background:#d9a86a"></i>琥珀</button>
+            <button class="st-accent" type="button"><i style="background:#9c90ff"></i>紫罗兰</button>
+            <button class="st-accent" type="button"><i style="background:#62c3a2"></i>翡翠</button>
+            <button class="st-accent" type="button"><i style="background:#e18a63"></i>珊瑚</button>
+          </div>
+          <div class="st-demo">
+            <button class="u-btn u-btn--primary u-btn--sm" type="button">主操作</button>
+            <button class="u-btn u-btn--sm" type="button">次操作</button>
+            <span class="u-chip u-chip--accent">选中态</span>
+            <span class="u-status u-status--ok"><span class="u-dot"></span>运行正常</span>
+            <span class="u-meta">实时预览</span>
+          </div>
+        </div>
+
+        <div class="u-plate u-plate--pad">
+          <div class="u-panel-title"><h3>动效</h3><span>可关闭</span></div>
+          <div style="display:grid;gap:12px">
+            <label class="u-switch"><input type="checkbox" checked><span class="u-switch__track"></span>启用页面与卡片过渡动效</label>
+            <label class="u-switch"><input type="checkbox" checked><span class="u-switch__track"></span>视频缩略图悬停自动播放</label>
+            <label class="u-switch"><input type="checkbox"><span class="u-switch__track"></span>减少背景光晕与颗粒</label>
+          </div>
+                  </div>
+      </div>
+    </div>
+  </div>
+</div></div>
+<script src="../assets/shell.js"></script>
+<script>
+  function setTheme(mode, btn) {
+    document.body.dataset.theme = mode;
+    localStorage.setItem('mikiko-proto-theme-user', mode);
+    document.querySelectorAll('.st-theme').forEach(b => b.classList.remove('is-active'));
+    btn.classList.add('is-active');
+    Mikiko.toast(mode === 'dark' ? '已切换到深色主题' : '已切换到浅色主题', 'ok');
+  }
+</script>
+</body>
+</html>

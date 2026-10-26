@@ -87,8 +87,8 @@ for (const marker of ['reference_bindings:', 'prompt_variables:', '<PromptVariab
 }
 
 const historySource = readFileSync(new URL('./workspaceCreationDraft.ts', import.meta.url), 'utf8')
-if (!historySource.includes('reference_asset_ids: []')) {
-  throw new Error('history reuse must start without reference assets')
+if (!historySource.includes('reference_asset_ids: snapshot.reference_asset_ids ?? []') || !historySource.includes('reference_asset_ids: draft.reference_asset_ids ?? []')) {
+  throw new Error('history reuse must preserve the source reference assets')
 }
 
 const appSource = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8')

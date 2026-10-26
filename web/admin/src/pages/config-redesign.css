@@ -1,0 +1,343 @@
+/* Configuration pages — shared refinements on top of the Command Deck skin.
+   Only tokens and prototype classes; no page-specific visual language. */
+
+.cfg-checklist {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--a-line);
+  border-radius: 8px;
+  background: var(--a-surface);
+}
+
+/* Multi-select options stay left-aligned with a fixed checkbox column and
+   a shrinkable text column so long labels wrap without pushing the control. */
+.a-multiselect .a-multiselect__options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 6px;
+  align-items: start;
+}
+
+.a-multiselect .a-multiselect__options label {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 8px;
+  text-align: left;
+  line-height: 1.45;
+}
+
+.a-multiselect .a-multiselect__options input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 2px 0 0;
+  justify-self: start;
+}
+
+.a-multiselect .a-multiselect__options label > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.a-multiselect .a-multiselect__value {
+  text-align: left;
+}
+
+/* Account rows live directly on the panel surface: divider lines only. */
+.cfg-metric-value--text {
+  font-family: var(--font-admin);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+.cfg-account-table .a-table {
+  background: transparent;
+}
+
+.cfg-account-table .a-table tbody tr {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.cfg-account-table .a-table tbody td {
+  border-bottom: 1px solid var(--a-line);
+}
+
+.cfg-account-table .a-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* Model test media result: skeleton/progress while waiting, real media after. */
+.cfg-test-media {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.cfg-test-media__frame {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  max-height: 360px;
+  border: 1px solid var(--a-line);
+  border-radius: 10px;
+}
+
+.cfg-test-media__image {
+  display: block;
+  width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+  border: 1px solid var(--a-line);
+  border-radius: 10px;
+  background: var(--a-surface-2);
+}
+
+.cfg-test-media__missing {
+  display: grid;
+  place-items: center;
+  min-height: 220px;
+  padding: 24px;
+  border: 1px dashed var(--a-line-2);
+  border-radius: 10px;
+  background: var(--a-surface-2);
+  color: var(--a-ink-3);
+  font-size: 13px;
+}
+
+.cfg-test-media__idle {
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  min-height: 220px;
+  padding: 24px;
+  border: 1px dashed var(--a-line-2);
+  border-radius: 10px;
+  background: var(--a-surface);
+  color: var(--a-ink-3);
+  text-align: center;
+}
+
+.cfg-test-media__idle svg {
+  width: 28px;
+  height: 28px;
+}
+
+.cfg-test-media__status {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cfg-test-media__status strong {
+  font-size: 13px;
+}
+
+.cfg-test-progress {
+  position: relative;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--a-surface-3);
+}
+
+.cfg-test-progress i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 38%;
+  border-radius: inherit;
+  background: var(--a-accent);
+  animation: cfg-test-progress 1.15s ease-in-out infinite;
+}
+
+.cfg-test-meta,
+.cfg-test-params {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+@keyframes cfg-test-progress {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(280%); }
+}
+
+.cfg-checklist .a-switch {
+  min-height: 28px;
+}
+
+.cfg-savebar-status,
+.cfg-form-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cfg-form-status {
+  padding: 10px 14px;
+  border: 1px solid var(--a-line);
+  border-radius: 8px;
+  background: var(--a-surface-2);
+}
+
+.cfg-scroll-x {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--a-line);
+  border-radius: 9px;
+}
+
+.cfg-scroll-y {
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.cfg-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.cfg-model-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 3px;
+}
+
+.cfg-model-card {
+  min-width: 0;
+}
+
+.cfg-read-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+
+.cfg-read-list > div {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(0, 1.4fr);
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--a-line);
+  font-size: 12.5px;
+}
+
+.cfg-read-list > div:last-child {
+  border-bottom: 0;
+}
+
+.cfg-read-list dt {
+  color: var(--a-ink-3);
+}
+
+.cfg-read-list dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--a-ink);
+  overflow-wrap: anywhere;
+}
+
+.cfg-table-input {
+  min-width: 120px;
+  min-height: 36px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.cfg-narrow-input {
+  max-width: 220px;
+}
+
+.cfg-full-span {
+  grid-column: 1 / -1;
+}
+
+.cfg-secret-note {
+  padding: 10px 12px;
+  border: 1px dashed var(--a-line-2);
+  border-radius: 8px;
+  color: var(--a-ink-3);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.cfg-tab-panel {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.cfg-account-cell {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.cfg-account-cell__logo {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: 8px;
+  background: var(--a-accent-soft);
+  color: var(--a-accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.cfg-empty-inline {
+  padding: 18px;
+  border: 1px dashed var(--a-line-2);
+  border-radius: 10px;
+  background: var(--a-surface);
+  color: var(--a-ink-3);
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .cfg-scroll-y {
+    max-height: none;
+  }
+}
+.cfg-test-media__video {
+  display: block;
+  width: 100%;
+  max-height: 420px;
+  border: 1px solid var(--a-line);
+  border-radius: 10px;
+  background: #000;
+}
+
+/* Native image configuration follows the shared ledger spacing. */
+.cfg-native-pricing { display: grid; gap: 16px; min-width: 0; margin: 0; padding: 18px; border: 1px solid var(--a-line); border-radius: 8px; }
+.cfg-native-pricing legend { padding: 0 8px; font-weight: 600; font-size: 13px; }
+.cfg-tier-group { display: grid; gap: 10px; min-width: 0; }
+.cfg-tier-group h4 { margin: 0; font-size: 13px; }
+.cfg-tier-group > button { justify-self: start; }
+.cfg-tier-scroll { max-width: 100%; overflow-x: auto; }
+.cfg-tier-table { width: 100%; min-width: 620px; border-collapse: collapse; text-align: left; }
+.cfg-tier-table th { color: var(--a-ink-2); font-size: 11px; font-weight: 500; }
+.cfg-tier-table th, .cfg-tier-table td { padding: 8px 6px; border-bottom: 1px solid var(--a-line); }
+.cfg-tier-table td:nth-child(1) { width: 110px; }
+.cfg-tier-table td:nth-child(2) { width: 160px; }
+.cfg-tier-table td:nth-child(4) { width: 130px; }
+.cfg-config-summary { max-height: 240px; overflow: auto; margin: 0; padding: 12px; background: var(--a-surface); border: 1px solid var(--a-line); border-radius: 6px; font: 11px/1.6 var(--font-admin-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .cfg-native-pricing { padding: 12px; } }
+
+.cfg-config-tree { margin: 8px 0; padding-left: 12px; border-left: 1px solid var(--a-line); font-size: 12px; overflow-wrap: anywhere; }
+.cfg-config-tree > div { display: grid; grid-template-columns: minmax(100px, .7fr) minmax(0, 1fr); gap: 12px; padding: 5px 0; }
+.cfg-config-tree dt { color: var(--a-ink-2); }
+.cfg-config-tree dd { margin: 0; min-width: 0; }

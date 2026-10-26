@@ -5,7 +5,7 @@ const source = readFileSync(new URL('./WorkspacePage.tsx', import.meta.url), 'ut
 for (const removed of ['模型选择', '限制词', 'negative_prompt: negative']) {
   if (source.includes(removed)) throw new Error(`creative workspace must remove ${removed}`)
 }
-for (const required of ['模型分组', '<ModelGroupSelect', 'options={availableModels}']) {
+for (const required of ['模型分组', '<ModelGroupSelect', 'options={model && !rawSelectedModel']) {
   if (!source.includes(required)) throw new Error(`creative workspace model group selector must include ${required}`)
 }
 if (source.includes('<select id="workspace-model-group"')) {
@@ -15,22 +15,49 @@ if (source.includes('<select id="workspace-model-group"')) {
 const modelGroupSelectURL = new URL('./ModelGroupSelect.tsx', import.meta.url)
 if (!existsSync(modelGroupSelectURL)) throw new Error('creative workspace must provide the platform-style ModelGroupSelect')
 const modelGroupSelectSource = readFileSync(modelGroupSelectURL, 'utf8')
-for (const required of ['role="listbox"', 'role="option"', 'aria-haspopup="listbox"', 'aria-expanded', '◈', 'description', 'minimum_points']) {
-  if (!modelGroupSelectSource.includes(required)) throw new Error(`model group listbox must implement ${required}`)
+for (const required of ['role="listbox"', 'role="option"', 'aria-haspopup="dialog"', 'aria-expanded', '◈', 'description', 'minimum_points']) {
+  if (!modelGroupSelectSource.includes(required)) throw new Error(`model group dialog must implement ${required}`)
+}
+// Check the JSX relationship rather than unrelated ARIA strings elsewhere in the file.
+const { createRequire } = await import('node:module')
+const ts = createRequire(new URL('../../package.json', import.meta.url))('typescript')
+const pickerAST = ts.createSourceFile('ModelGroupSelect.tsx', modelGroupSelectSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+const elements: any[] = []
+function visitPicker(node: any) {
+  if (ts.isJsxElement(node)) elements.push(node)
+  ts.forEachChild(node, visitPicker)
+}
+visitPicker(pickerAST)
+function attribute(element: any, name: string) {
+  return element.openingElement.attributes.properties.find((item: any) => item.name?.getText(pickerAST) === name)?.initializer?.getText(pickerAST)
+}
+const trigger = elements.find((element) => element.openingElement.tagName.getText(pickerAST) === 'button' && attribute(element, 'aria-haspopup') === '"dialog"')
+const dialog = elements.find((element) => attribute(element, 'role') === '"dialog"')
+if (!trigger || !dialog || !attribute(trigger, 'aria-controls') || attribute(trigger, 'aria-controls') !== attribute(dialog, 'id') || attribute(trigger, 'aria-expanded') !== '{open}') {
+  throw new Error('model trigger must expose open state and aria-controls referencing the dialog id')
+}
+const listboxes = elements.filter((element) => attribute(element, 'role') === '"listbox"')
+if (listboxes.length !== 2 || listboxes.some((listbox) => listbox.pos < dialog.pos || listbox.end > dialog.end || attribute(listbox, 'aria-label') !== '"路由模型"')) {
+  throw new Error('grouped and ungrouped model listboxes must be labelled descendants of the controlled dialog')
+}
+for (const listbox of listboxes) {
+  if (!elements.some((element) => element.pos > listbox.pos && element.end < listbox.end && attribute(element, 'role') === '"option"' && attribute(element, 'aria-selected') === '{item.code === value}')) {
+    throw new Error('each model listbox must contain options exposing the selected route model')
+  }
 }
 
-for (const required of ['className="reference-name-row"', 'title={asset.name}', '<Modal title="重命名资产"']) {
+for (const required of ['className="reference-name-row"', 'title={asset.reference_invalid_reason || asset.display_name || asset.name}', '<Modal title="重命名资产"']) {
   if (!source.includes(required)) throw new Error(`reference asset naming must implement ${required}`)
 }
 if (source.includes('className="reference-name-editor"')) {
   throw new Error('reference asset naming must use the full-size rename dialog instead of the thumbnail editor')
 }
-const modelGroupPosition = source.indexOf('模型分组')
-const referencePosition = source.indexOf('图片编辑来源')
-const promptPosition = source.indexOf('>提示词</label>')
-const sizeModePosition = source.indexOf('>尺寸模式</label>')
-if (!(modelGroupPosition >= 0 && modelGroupPosition < referencePosition && referencePosition < promptPosition && promptPosition < sizeModePosition)) {
-  throw new Error('creative workspace order must be model group, references, prompt, then generation parameters')
+const controlOrder = ['{modelControls}', '{promptControls}', '{referenceControls}', '{sizeControls}', '{qualityControls}', '{countControls}'].map((needle) => source.indexOf(needle))
+if (controlOrder.some((position) => position < 0) || controlOrder.some((position, index) => index > 0 && position < controlOrder[index - 1])) {
+  throw new Error('creative workspace render order must be model, prompt, references, size, quality, count')
+}
+if (!source.includes('<h4>提示词</h4>') || !source.includes('参考图/图片编辑来源')) {
+  throw new Error('creative workspace headings must expose the production labels')
 }
 
 for (const required of [
@@ -63,7 +90,7 @@ for (const required of [
   'data-workspace-compact-generate="true"',
   'data-workspace-full-actions="true"',
   "disabled={busy || editRemainingLimit <= 0}",
-  'limitReferenceSelection',
+  'reservations.reserve',
   'data-workspace-sheet-handle="true"',
   'onPointerDown={handleSheetPointerDown}',
   'onPointerMove={handleSheetPointerMove}',
@@ -75,7 +102,7 @@ for (const required of [
   'workspaceSheetDragOffset',
   'translate3d(0, ${sheetDragOffset}px, 0)',
   '<OverlayPortal>{parameterPanel}</OverlayPortal>',
-  'singleReferenceAddition',
+  'admitReferences([image]',
   'const referenceCount =',
   'const requiredReferencesReady = workspaceRequiredReferencesReady(taskType, referenceCount)',
   '&& requiredReferencesReady',
@@ -85,7 +112,7 @@ for (const required of [
   'markWorkspaceStreamHealthy(generation)',
   'markStreamHealthy()',
   'streamTokenRef.current !== token',
-  'mergeReferenceAssets(items, imported, maxReferenceImages)',
+  'reserved: reservations.pending(request.token)',
   'workspaceOutputOptions(selectedModel)',
   'normalizeWorkspaceOutputParameters',
   '按像素',
@@ -180,7 +207,7 @@ if (promptTemplateStaleSource.includes('setPrompt(')) {
 const historyEditStart = source.indexOf('async function applyAsEditSource')
 const historyEditEnd = source.indexOf('\n  function removeEditAsset', historyEditStart)
 const historyEditSource = source.slice(historyEditStart, historyEditEnd)
-const historyLimitCheck = historyEditSource.indexOf('singleReferenceAddition')
+const historyLimitCheck = historyEditSource.indexOf('admitReferences([image]')
 const historyImport = historyEditSource.indexOf('userApi.importReferenceAssetsFromGallery')
 if (!(historyLimitCheck >= 0 && historyImport > historyLimitCheck)) {
   throw new Error('history edit source must enforce the live reference limit before importing by image ID')
@@ -221,7 +248,7 @@ if (!source.includes('<PromptTemplateEditor') || source.includes('redesign-promp
 }
 for (const required of [
   'function HistoryTaskGalleryModal',
-  '历史创作总览',
+  '历史创作详情',
   'onPreviewImage',
   'setHistoryTaskDialog(null)',
 ]) {
@@ -268,3 +295,7 @@ if (recentHandler.includes('setHistoryTaskDialog(task)')) {
 if (!dialogHandler.includes('setHistoryTaskDialog(task)') || dialogHandler.includes('setSelectedTaskId') || dialogHandler.includes('app.navigate')) {
   throw new Error('multi-image history dialog must not change selected task or hash state')
 }
+
+if (source.includes('setModel(nextModels[0]') || source.includes('firstGalleryReferenceReuse')) throw new Error('reference changes must never select another model')
+if (!source.includes('{compactViewport ? <button')) throw new Error('desktop parameter header must be static')
+if (!source.includes('referenceAssetError(image)')) throw new Error('import dialog must disable incompatible assets')

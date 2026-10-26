@@ -38,6 +38,8 @@ import type {
   ModelRoute,
   ModelAccount,
   ModelAccountModel,
+  VideoModelTest,
+  VideoModelTestRequest,
   ModelAccountModelWriteRequest,
   ModelAccountTestImageRequest,
   ModelAccountTestImageResult,
@@ -245,6 +247,7 @@ export const adminApi = {
     return { ...result, items: result.items.map(toReview) }
   },
   imageReviewUrl: (image_id: string, accessToken?: string | null, projectedURL?: string) => mediaAssetURL(projectedURL || fillPath(API_PATHS.ops.imageReviewImage, { image_id }), accessToken),
+  callRecordImageUrl: (image_id: string, accessToken?: string | null) => mediaAssetURL(fillPath(API_PATHS.ops.callRecordImage, { image_id }), accessToken),
   decideReview: async (image_id: string, decision: 'approve' | 'reject' | 'unpublish', reason = '') => {
     const path = decision === 'approve' ? API_PATHS.ops.imageReviewApprove : decision === 'reject' ? API_PATHS.ops.imageReviewReject : API_PATHS.ops.imageReviewUnpublish
     return toReview(await sharedApiClient.request(path, { method: 'POST', pathParams: { image_id }, body: { reason } }))
@@ -327,6 +330,10 @@ export const adminApi = {
   deleteModelAccountModel: (account_id: string | number, model_id: string | number) => sharedApiClient.request<void>(API_PATHS.ops.modelAccountModelDetail, { method: 'DELETE', pathParams: { account_id, model_id } }),
   testModelAccountImage: (account_id: string | number, input: ModelAccountTestImageRequest) =>
     sharedApiClient.request<ModelAccountTestImageResult>(API_PATHS.ops.modelAccountTestImage, { method: 'POST', pathParams: { account_id }, body: input }),
+  startVideoModelTest: (account_id: string | number, input: VideoModelTestRequest) =>
+    sharedApiClient.request<VideoModelTest>(API_PATHS.ops.modelAccountTestVideo, { method: 'POST', pathParams: { account_id }, body: input }),
+  getVideoModelTest: (test_id: string) =>
+    sharedApiClient.request<VideoModelTest>(API_PATHS.ops.videoModelTest, { pathParams: { test_id } }),
   listTextModelAccounts: async () => (await sharedApiClient.request<{ items: TextModelAccount[] }>(API_PATHS.ops.textModelAccounts)).items ?? [],
   createTextModelAccount: (input: TextModelAccountWriteRequest) => sharedApiClient.request<TextModelAccount>(API_PATHS.ops.textModelAccounts, { method: 'POST', body: input }),
   updateTextModelAccount: (account_id: string | number, input: TextModelAccountWriteRequest) => sharedApiClient.request<TextModelAccount>(API_PATHS.ops.textModelAccountDetail, { method: 'PUT', pathParams: { account_id }, body: input }),

@@ -66,6 +66,7 @@ func NewHandler(config Config) (http.Handler, error) {
 	}
 	target := cloneURL(config.APIURL)
 	proxy := &httputil.ReverseProxy{
+		FlushInterval: -1, // Flush streaming responses without waiting for a proxy buffer.
 		Rewrite: func(request *httputil.ProxyRequest) {
 			request.SetURL(target)
 			request.SetXForwarded()
@@ -284,6 +285,10 @@ func unsafeRequestPath(requestURL *url.URL) bool {
 }
 
 func unsafeDecodedPath(value string) bool {
+	// Discovery is public API traffic; all other hidden paths remain blocked.
+	if isOAuthMetadataPath(value) {
+		return false
+	}
 	if strings.ContainsAny(value, "\\\x00") {
 		return true
 	}
@@ -299,8 +304,21 @@ func unsafeDecodedPath(value string) bool {
 	return false
 }
 
-func isAPIPath(requestPath string) bool {
+func isOAuthMetadataPath(requestPath string) bool {
 	switch requestPath {
+	case "/.well-known/oauth-authorization-server", "/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp":
+		return true
+	}
+	return false
+}
+
+func isAPIPath(requestPath string) bool {
+	if isOAuthMetadataPath(requestPath) {
+		return true
+	}
+	switch requestPath {
+	case "/mcp", "/oauth/authorize", "/oauth/token", "/oauth/revoke", "/oauth/register":
+		return true
 	case "/healthz", "/readyz", "/setup", "/api", "/metrics", "/docs", "/v1", "/files":
 		return true
 	}

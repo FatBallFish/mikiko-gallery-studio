@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/fatballfish/pic-gallery/internal/domain/imagepricing"
 	"hash/fnv"
 	"log/slog"
 	"sort"
@@ -15,10 +16,15 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
+	"github.com/fatballfish/pic-gallery/internal/domain/nativeimage"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
 type ResolveRequest struct {
+	// PreserveNativeOptions is worker-only compatibility for snapshots predating defaults.
+	PreserveNativeOptions     bool
+	Operation                 nativeimage.Operation
+	NativeOptions             *nativeimage.Options
 	AbstractModel             string
 	RouteModelCode            string
 	TaskType                  string
@@ -129,6 +135,42 @@ func (r *Resolver) ListVisibleRouteModels(ctx context.Context, userGroupCodes []
 			taskTypes[price.TaskType] = struct{}{}
 			baseResolution[price.BaseResolution] = struct{}{}
 		}
+
+		if routeModel.ImagePricing != nil {
+			taskTypes = map[string]struct{}{}
+			baseResolution = map[string]struct{}{}
+			prices = nil
+			minimumPoints = ""
+			for _, rule := range routeModel.ImagePricing.Rules {
+				task := ""
+				switch rule.Operation {
+				case "generate":
+					task = "text_to_image"
+				case "edit":
+					task = "image_edit"
+				default:
+					continue
+				}
+				taskTypes[task] = struct{}{}
+				capability := r.visibleRouteModelTaskCapability(routeModel, routing, task)
+				for _, resolution := range capability.BaseResolution {
+					baseResolution[resolution] = struct{}{}
+				}
+			}
+		}
+		if p := nativeRouteProfile(routeModel, routing); p != nil {
+			taskTypes = map[string]struct{}{}
+			for _, op := range p.Operations {
+				if op == nativeimage.OperationGenerate {
+					taskTypes["text_to_image"] = struct{}{}
+				} else if op == nativeimage.OperationEdit {
+					taskTypes["image_edit"] = struct{}{}
+				}
+			}
+			for _, value := range nativePricedResolutions(routeModel, p, "") {
+				baseResolution[value] = struct{}{}
+			}
+		}
 		taskTypeList := sortedSet(taskTypes)
 		autoBaseResolutionByTaskType := make(map[string]string, len(taskTypeList))
 		capabilitiesByTaskType := make(map[string]VisibleRouteModelTaskCapability, len(taskTypeList))
@@ -142,43 +184,55 @@ func (r *Resolver) ListVisibleRouteModels(ctx context.Context, userGroupCodes []
 			capabilitiesByTaskType[taskType] = taskCapability
 		}
 		aggregateCapability := r.visibleRouteModelLimits(routeModel, routing, "")
+		if p := nativeRouteProfile(routeModel, routing); p != nil {
+			aggregateCapability = r.visibleNativeImageCapability(routeModel, routing, p, "")
+		}
 		aggregateCapability.PixelSizes = commonPixelTaskPresets(capabilitiesByTaskType)
 		aggregateCapability.SupportsCustomSize = aggregateCapability.SupportsCustomSize && everyPixelTaskSupportsCustomSize(capabilitiesByTaskType)
 		visible = append(visible, VisibleRouteModel{
-			ID:                           routeModel.ID,
-			Code:                         routeModel.Code,
-			Name:                         routeModel.Name,
-			Description:                  routeModel.Description,
-			TaskTypes:                    taskTypeList,
-			BaseResolution:               sortedSet(baseResolution),
-			AutoBaseResolutionByTaskType: autoBaseResolutionByTaskType,
-			Quality:                      aggregateCapability.Quality,
-			SizeModes:                    aggregateCapability.SizeModes,
-			AspectRatios:                 aggregateCapability.AspectRatios,
-			PixelSizes:                   aggregateCapability.PixelSizes,
-			OutputFormat:                 aggregateCapability.OutputFormat,
-			SupportsOutputCompression:    aggregateCapability.SupportsOutputCompression,
-			SupportsCustomSize:           aggregateCapability.SupportsCustomSize,
-			SupportsCustomRatio:          aggregateCapability.SupportsCustomRatio,
-			SupportedBackgrounds:         aggregateCapability.SupportedBackgrounds,
-			MinWidth:                     aggregateCapability.MinWidth,
-			MaxWidth:                     aggregateCapability.MaxWidth,
-			MinHeight:                    aggregateCapability.MinHeight,
-			MaxHeight:                    aggregateCapability.MaxHeight,
-			Moderation:                   aggregateCapability.Moderation,
-			MaxOutputImageCount:          aggregateCapability.MaxOutputImageCount,
-			MaxReferenceImageCount:       aggregateCapability.MaxReferenceImageCount,
-			CapabilitiesByTaskType:       capabilitiesByTaskType,
-			EffectiveMultiplier:          multiplier.StringFixed(5),
-			MinimumPoints:                minimumPoints,
-			Prices:                       prices,
+			NativeImageLayerUnavailableReason: nativeRouteLayerUnavailableReason(routeModel, routing),
+			NativeImageLayerPricingConfirmed:  nativeRouteLayerPricingConfirmed(routeModel, routing),
+			NativeImageProfile:                nativeRouteProfile(routeModel, routing),
+			ID:                                routeModel.ID,
+			Code:                              routeModel.Code,
+			Name:                              routeModel.Name,
+			Description:                       routeModel.Description,
+			TaskTypes:                         taskTypeList,
+			BaseResolution:                    sortedSet(baseResolution),
+			AutoBaseResolutionByTaskType:      autoBaseResolutionByTaskType,
+			Quality:                           aggregateCapability.Quality,
+			SizeModes:                         aggregateCapability.SizeModes,
+			AspectRatios:                      aggregateCapability.AspectRatios,
+			PixelSizes:                        aggregateCapability.PixelSizes,
+			OutputFormat:                      aggregateCapability.OutputFormat,
+			SupportsOutputCompression:         aggregateCapability.SupportsOutputCompression,
+			SupportsCustomSize:                aggregateCapability.SupportsCustomSize,
+			SupportsCustomRatio:               aggregateCapability.SupportsCustomRatio,
+			SupportedBackgrounds:              aggregateCapability.SupportedBackgrounds,
+			MinWidth:                          aggregateCapability.MinWidth,
+			MaxWidth:                          aggregateCapability.MaxWidth,
+			MinHeight:                         aggregateCapability.MinHeight,
+			MaxHeight:                         aggregateCapability.MaxHeight,
+			Moderation:                        aggregateCapability.Moderation,
+			MaxOutputImageCount:               aggregateCapability.MaxOutputImageCount,
+			MaxReferenceImageCount:            aggregateCapability.MaxReferenceImageCount,
+			CapabilitiesByTaskType:            capabilitiesByTaskType,
+			EffectiveMultiplier:               multiplier.StringFixed(5),
+			MinimumPoints:                     minimumPoints,
+			Prices:                            prices,
 		})
 	}
 	return visible, nil
 }
 
 func (r *Resolver) visibleRouteModelTaskCapability(routeModel RouteModelConfig, routing ModelRoutingSnapshot, taskType string) VisibleRouteModelTaskCapability {
+	if p := nativeRouteProfile(routeModel, routing); p != nil {
+		return r.visibleNativeImageCapability(routeModel, routing, p, taskType)
+	}
 	capability := r.visibleRouteModelLimits(routeModel, routing, taskType)
+	if routeModel.ImagePricing != nil {
+		routing.Prices = unifiedRouteCapabilityPrices(routeModel, taskType, capability)
+	}
 	pricedBaseResolutions := map[string]struct{}{}
 	for _, price := range routing.Prices {
 		if price.Enabled && price.RouteModelID == routeModel.ID && strings.EqualFold(price.TaskType, taskType) {
@@ -191,6 +245,23 @@ func (r *Resolver) visibleRouteModelTaskCapability(routeModel RouteModelConfig, 
 	capability.PixelSizes = pricedPixelSizes
 	capability.SupportsCustomSize = capability.SupportsCustomSize && everyReachablePixelBucketPriced(capability, pricedBaseResolutions)
 	return capability
+}
+
+func (r *Resolver) visibleNativeImageCapability(route RouteModelConfig, routing ModelRoutingSnapshot, p *nativeimage.CapabilityProfile, taskType string) VisibleRouteModelTaskCapability {
+	maxReferences := 0
+	if taskType != "text_to_image" && containsNativeOperation(p.Operations, nativeimage.OperationEdit) {
+		maxReferences = min(p.MaxReferenceImages, r.cfg.GenerationLimits.ReferenceImageMaxCount)
+	}
+	return VisibleRouteModelTaskCapability{NativeImageLayerUnavailableReason: nativeRouteLayerUnavailableReason(route, routing), NativeImageLayerPricingConfirmed: nativeRouteLayerPricingConfirmed(route, routing), NativeImageProfile: p, SizeModes: []string{"auto", "pixel"}, BaseResolution: nativePricedResolutions(route, p, taskType), OutputFormat: p.OutputFormats, Quality: []string{"auto"}, Moderation: []string{"auto"}, MaxOutputImageCount: min(p.MaxOutputImages, r.cfg.GenerationLimits.MaxImageCount), MaxReferenceImageCount: maxReferences, SupportsCustomSize: containsString(p.SizeModes, "dimensions")}
+}
+
+func containsNativeOperation(operations []nativeimage.Operation, operation nativeimage.Operation) bool {
+	for _, value := range operations {
+		if value == operation {
+			return true
+		}
+	}
+	return false
 }
 
 func everyReachablePixelBucketPriced(capability VisibleRouteModelTaskCapability, priced map[string]struct{}) bool {
@@ -336,6 +407,10 @@ func pricedBaseResolutionBuckets(routeModelID int64, taskType string, prices []R
 }
 
 func (r *Resolver) visibleRouteModelLimits(routeModel RouteModelConfig, routing ModelRoutingSnapshot, taskType string) VisibleRouteModelTaskCapability {
+	// An incompatible native fallback set must not inherit generic capabilities.
+	if hasNativeRoute(routeModel, routing) {
+		return VisibleRouteModelTaskCapability{}
+	}
 	candidateByID := map[int64]ProviderCandidate{}
 	for _, candidate := range routing.ProviderModels {
 		candidateByID[candidate.AccountModelID] = candidate
@@ -599,14 +674,15 @@ type ModelRoutingSnapshot struct {
 }
 
 type RouteModelConfig struct {
-	ID          int64
-	Code        string
-	Name        string
-	Description string
-	Visibility  string
-	MediaType   string
-	Enabled     bool
-	SortOrder   int
+	ImagePricing *imagepricing.Config
+	ID           int64
+	Code         string
+	Name         string
+	Description  string
+	Visibility   string
+	MediaType    string
+	Enabled      bool
+	SortOrder    int
 }
 
 func isImageRouteModel(route RouteModelConfig) bool {
@@ -651,6 +727,7 @@ type ModelRoutingSource interface {
 }
 
 type ResolvedRequest struct {
+	NativeOptions          *nativeimage.Options
 	BaseResolution         string
 	ResolvedSize           string
 	RouteModelID           int64
@@ -681,57 +758,63 @@ type CapabilityItem struct {
 }
 
 type VisibleRouteModel struct {
-	ID                           int64                                      `json:"id"`
-	Code                         string                                     `json:"code"`
-	Name                         string                                     `json:"name"`
-	Description                  string                                     `json:"description,omitempty"`
-	IconKey                      string                                     `json:"icon_key,omitempty"`
-	IconSVG                      string                                     `json:"icon_svg,omitempty"`
-	GroupCodes                   []string                                   `json:"group_codes,omitempty"`
-	TaskTypes                    []string                                   `json:"task_types"`
-	BaseResolution               []string                                   `json:"base_resolution"`
-	AutoBaseResolutionByTaskType map[string]string                          `json:"auto_base_resolution_by_task_type"`
-	Quality                      []string                                   `json:"quality"`
-	SizeModes                    []string                                   `json:"size_modes"`
-	AspectRatios                 []string                                   `json:"aspect_ratios"`
-	PixelSizes                   []string                                   `json:"pixel_sizes"`
-	OutputFormat                 []string                                   `json:"output_format"`
-	SupportsOutputCompression    bool                                       `json:"supports_output_compression"`
-	SupportsCustomSize           bool                                       `json:"supports_custom_size"`
-	SupportsCustomRatio          bool                                       `json:"supports_custom_ratio"`
-	SupportedBackgrounds         []string                                   `json:"supported_backgrounds"`
-	MinWidth                     int                                        `json:"min_width,omitempty"`
-	MaxWidth                     int                                        `json:"max_width,omitempty"`
-	MinHeight                    int                                        `json:"min_height,omitempty"`
-	MaxHeight                    int                                        `json:"max_height,omitempty"`
-	Moderation                   []string                                   `json:"moderation"`
-	MaxOutputImageCount          int                                        `json:"max_output_image_count"`
-	MaxReferenceImageCount       int                                        `json:"max_reference_image_count"`
-	CapabilitiesByTaskType       map[string]VisibleRouteModelTaskCapability `json:"capabilities_by_task_type"`
-	EffectiveMultiplier          string                                     `json:"effective_multiplier"`
-	MinimumPoints                string                                     `json:"minimum_points,omitempty"`
-	Prices                       []VisibleRouteModelPrice                   `json:"prices"`
+	NativeImageLayerUnavailableReason string                                     `json:"native_image_layer_unavailable_reason,omitempty"`
+	NativeImageLayerPricingConfirmed  bool                                       `json:"native_image_layer_pricing_confirmed"`
+	NativeImageProfile                *nativeimage.CapabilityProfile             `json:"native_image_profile,omitempty"`
+	ID                                int64                                      `json:"id"`
+	Code                              string                                     `json:"code"`
+	Name                              string                                     `json:"name"`
+	Description                       string                                     `json:"description,omitempty"`
+	IconKey                           string                                     `json:"icon_key,omitempty"`
+	IconSVG                           string                                     `json:"icon_svg,omitempty"`
+	GroupCodes                        []string                                   `json:"group_codes,omitempty"`
+	TaskTypes                         []string                                   `json:"task_types"`
+	BaseResolution                    []string                                   `json:"base_resolution"`
+	AutoBaseResolutionByTaskType      map[string]string                          `json:"auto_base_resolution_by_task_type"`
+	Quality                           []string                                   `json:"quality"`
+	SizeModes                         []string                                   `json:"size_modes"`
+	AspectRatios                      []string                                   `json:"aspect_ratios"`
+	PixelSizes                        []string                                   `json:"pixel_sizes"`
+	OutputFormat                      []string                                   `json:"output_format"`
+	SupportsOutputCompression         bool                                       `json:"supports_output_compression"`
+	SupportsCustomSize                bool                                       `json:"supports_custom_size"`
+	SupportsCustomRatio               bool                                       `json:"supports_custom_ratio"`
+	SupportedBackgrounds              []string                                   `json:"supported_backgrounds"`
+	MinWidth                          int                                        `json:"min_width,omitempty"`
+	MaxWidth                          int                                        `json:"max_width,omitempty"`
+	MinHeight                         int                                        `json:"min_height,omitempty"`
+	MaxHeight                         int                                        `json:"max_height,omitempty"`
+	Moderation                        []string                                   `json:"moderation"`
+	MaxOutputImageCount               int                                        `json:"max_output_image_count"`
+	MaxReferenceImageCount            int                                        `json:"max_reference_image_count"`
+	CapabilitiesByTaskType            map[string]VisibleRouteModelTaskCapability `json:"capabilities_by_task_type"`
+	EffectiveMultiplier               string                                     `json:"effective_multiplier"`
+	MinimumPoints                     string                                     `json:"minimum_points,omitempty"`
+	Prices                            []VisibleRouteModelPrice                   `json:"prices"`
 }
 
 type VisibleRouteModelTaskCapability struct {
-	BaseResolution            []string `json:"base_resolution"`
-	AutoBaseResolution        string   `json:"auto_base_resolution,omitempty"`
-	Quality                   []string `json:"quality"`
-	SizeModes                 []string `json:"size_modes"`
-	AspectRatios              []string `json:"aspect_ratios"`
-	PixelSizes                []string `json:"pixel_sizes"`
-	OutputFormat              []string `json:"output_format"`
-	SupportsOutputCompression bool     `json:"supports_output_compression"`
-	SupportsCustomSize        bool     `json:"supports_custom_size"`
-	SupportsCustomRatio       bool     `json:"supports_custom_ratio"`
-	SupportedBackgrounds      []string `json:"supported_backgrounds"`
-	MinWidth                  int      `json:"min_width,omitempty"`
-	MaxWidth                  int      `json:"max_width,omitempty"`
-	MinHeight                 int      `json:"min_height,omitempty"`
-	MaxHeight                 int      `json:"max_height,omitempty"`
-	Moderation                []string `json:"moderation"`
-	MaxOutputImageCount       int      `json:"max_output_image_count"`
-	MaxReferenceImageCount    int      `json:"max_reference_image_count"`
+	NativeImageLayerUnavailableReason string                         `json:"native_image_layer_unavailable_reason,omitempty"`
+	NativeImageLayerPricingConfirmed  bool                           `json:"native_image_layer_pricing_confirmed"`
+	NativeImageProfile                *nativeimage.CapabilityProfile `json:"native_image_profile,omitempty"`
+	BaseResolution                    []string                       `json:"base_resolution"`
+	AutoBaseResolution                string                         `json:"auto_base_resolution,omitempty"`
+	Quality                           []string                       `json:"quality"`
+	SizeModes                         []string                       `json:"size_modes"`
+	AspectRatios                      []string                       `json:"aspect_ratios"`
+	PixelSizes                        []string                       `json:"pixel_sizes"`
+	OutputFormat                      []string                       `json:"output_format"`
+	SupportsOutputCompression         bool                           `json:"supports_output_compression"`
+	SupportsCustomSize                bool                           `json:"supports_custom_size"`
+	SupportsCustomRatio               bool                           `json:"supports_custom_ratio"`
+	SupportedBackgrounds              []string                       `json:"supported_backgrounds"`
+	MinWidth                          int                            `json:"min_width,omitempty"`
+	MaxWidth                          int                            `json:"max_width,omitempty"`
+	MinHeight                         int                            `json:"min_height,omitempty"`
+	MaxHeight                         int                            `json:"max_height,omitempty"`
+	Moderation                        []string                       `json:"moderation"`
+	MaxOutputImageCount               int                            `json:"max_output_image_count"`
+	MaxReferenceImageCount            int                            `json:"max_reference_image_count"`
 }
 
 type VisibleRouteModelPrice struct {
@@ -975,6 +1058,13 @@ func candidateHealthUsable(status string) bool {
 }
 
 func CandidateSupportsRequest(candidate ProviderCandidate, req ResolveRequest, resolvedBaseResolution string) bool {
+	if IsNativeImageCandidate(candidate) {
+		_, err := nativeCandidateRequest(candidate, req)
+		return candidateHealthUsable(candidate.HealthStatus) && err == nil
+	}
+	if req.Operation != "" && req.Operation != NativeOperation("", req.ReferenceImageCount) || req.NativeOptions != nil {
+		return false
+	}
 	candidate = normalizeProviderCandidate(candidate)
 	if !candidateHealthUsable(candidate.HealthStatus) {
 		return false
@@ -1057,6 +1147,9 @@ func NormalizeCandidateGenerationRequest(candidate ProviderCandidate, req Resolv
 }
 
 func normalizeCandidateGenerationRequest(candidate ProviderCandidate, req ResolveRequest) (NormalizedGenerationRequest, error) {
+	if IsNativeImageCandidate(candidate) {
+		return nativeCandidateRequest(candidate, req)
+	}
 	return NormalizeGenerationRequest(ImageModelCapability{
 		SizeModes: candidate.SizeModes, BaseResolution: candidate.SupportedBaseResolution,
 		SupportedRatios: candidate.SupportedAspectRatios, SupportedPixelSizes: candidate.SupportedPixelSizes,
@@ -1070,6 +1163,9 @@ func normalizeCandidateGenerationRequest(candidate ProviderCandidate, req Resolv
 }
 
 func normalizeProviderCandidate(candidate ProviderCandidate) ProviderCandidate {
+	if IsNativeImageCandidate(candidate) {
+		return candidate
+	}
 	hasConfiguredSizeModes := len(candidate.SizeModes) > 0
 	hasConfiguredRatios := len(candidate.SupportedAspectRatios) > 0
 	hasConfiguredBaseResolutions := len(candidate.SupportedBaseResolution) > 0
@@ -1170,6 +1266,9 @@ func (r *Resolver) resolveRouteContext(ctx context.Context, req ResolveRequest) 
 		RuntimeRoutingApplied: true,
 		EffectiveMultiplier:   multiplier.StringFixed(5),
 	}
+	if routeModel.ImagePricing != nil && !hasNativeRoute(routeModel, routing) {
+		routing.Prices = unifiedRouteCapabilityPrices(routeModel, req.TaskType, r.visibleRouteModelLimits(routeModel, routing, req.TaskType))
+	}
 	visibleCapability := r.visibleRouteModelTaskCapability(routeModel, routing, req.TaskType)
 	visibleCapability.AutoBaseResolution, _ = resolveAutoRouteBaseResolution(routeModel, req.TaskType, r.cfg.Billing.AutoBaseResolutionDefaultByGroup, routing.Prices)
 	capabilityVersion, err := r.routeCapabilityVersion(routeModel, routing, req.TaskType, matchedGroups, visibleCapability)
@@ -1177,6 +1276,12 @@ func (r *Resolver) resolveRouteContext(ctx context.Context, req ResolveRequest) 
 		return partial, err
 	}
 	partial.CapabilityVersion = capabilityVersion
+	if hasNativeRoute(routeModel, routing) {
+		if expected := strings.TrimSpace(req.ExpectedCapabilityVersion); expected != "" && expected != capabilityVersion {
+			return partial, errs.New(409, CodeCapabilityChanged, "model capability changed")
+		}
+		return r.resolveNativeRoute(req, routeModel, routing, partial)
+	}
 	if expected := strings.TrimSpace(req.ExpectedCapabilityVersion); expected != "" && expected != capabilityVersion {
 		return partial, errs.New(409, CodeCapabilityChanged, "model capability changed; refresh the estimate and try again")
 	}
@@ -1299,31 +1404,32 @@ func candidateWithTrustedSizeCapability(candidate ProviderCandidate, req Resolve
 }
 
 type capabilityVersionCandidate struct {
-	AccountModelID         int64    `json:"account_model_id"`
-	Provider               string   `json:"provider"`
-	ModelCode              string   `json:"model_code"`
-	Priority               int      `json:"priority"`
-	Weight                 int      `json:"weight"`
-	FallbackOrder          int      `json:"fallback_order"`
-	BaseResolution         []string `json:"base_resolution"`
-	SizeModes              []string `json:"size_modes"`
-	AspectRatios           []string `json:"aspect_ratios"`
-	PixelSizes             []string `json:"pixel_sizes"`
-	Quality                []string `json:"quality"`
-	OutputFormat           []string `json:"output_format"`
-	Backgrounds            []string `json:"backgrounds"`
-	Moderation             []string `json:"moderation"`
-	SupportsCustomRatio    bool     `json:"supports_custom_ratio"`
-	SupportsCustomSize     bool     `json:"supports_custom_size"`
-	SupportsCompression    bool     `json:"supports_compression"`
-	SupportsImageInput     bool     `json:"supports_image_input"`
-	SupportsMask           bool     `json:"supports_mask"`
-	MinWidth               int      `json:"min_width"`
-	MaxWidth               int      `json:"max_width"`
-	MinHeight              int      `json:"min_height"`
-	MaxHeight              int      `json:"max_height"`
-	MaxImageCount          int      `json:"max_image_count"`
-	MaxReferenceImageCount int      `json:"max_reference_image_count"`
+	NativeImage            *NativeImageConfig `json:"native_image,omitempty"`
+	AccountModelID         int64              `json:"account_model_id"`
+	Provider               string             `json:"provider"`
+	ModelCode              string             `json:"model_code"`
+	Priority               int                `json:"priority"`
+	Weight                 int                `json:"weight"`
+	FallbackOrder          int                `json:"fallback_order"`
+	BaseResolution         []string           `json:"base_resolution"`
+	SizeModes              []string           `json:"size_modes"`
+	AspectRatios           []string           `json:"aspect_ratios"`
+	PixelSizes             []string           `json:"pixel_sizes"`
+	Quality                []string           `json:"quality"`
+	OutputFormat           []string           `json:"output_format"`
+	Backgrounds            []string           `json:"backgrounds"`
+	Moderation             []string           `json:"moderation"`
+	SupportsCustomRatio    bool               `json:"supports_custom_ratio"`
+	SupportsCustomSize     bool               `json:"supports_custom_size"`
+	SupportsCompression    bool               `json:"supports_compression"`
+	SupportsImageInput     bool               `json:"supports_image_input"`
+	SupportsMask           bool               `json:"supports_mask"`
+	MinWidth               int                `json:"min_width"`
+	MaxWidth               int                `json:"max_width"`
+	MinHeight              int                `json:"min_height"`
+	MaxHeight              int                `json:"max_height"`
+	MaxImageCount          int                `json:"max_image_count"`
+	MaxReferenceImageCount int                `json:"max_reference_image_count"`
 }
 
 type capabilityVersionPrice struct {
@@ -1350,7 +1456,14 @@ func (r *Resolver) routeCapabilityVersion(routeModel RouteModelConfig, routing M
 		if len(candidate.SupportedTaskTypes) > 0 && !containsString(candidate.SupportedTaskTypes, taskType) {
 			continue
 		}
+		var nativeCfg *NativeImageConfig
+		if IsNativeImageCandidate(candidate) {
+			if cfg, e := NativeConfig(candidate); e == nil {
+				nativeCfg = &cfg
+			}
+		}
 		candidates = append(candidates, capabilityVersionCandidate{
+			NativeImage:    nativeCfg,
 			AccountModelID: candidate.AccountModelID,
 			Provider:       strings.ToLower(strings.TrimSpace(candidate.Provider)), ModelCode: strings.TrimSpace(candidate.ModelCode),
 			Priority: route.Priority, Weight: route.Weight, FallbackOrder: route.FallbackOrder,
@@ -1395,6 +1508,7 @@ func (r *Resolver) routeCapabilityVersion(routeModel RouteModelConfig, routing M
 		return false
 	})
 	projection := struct {
+		ImagePricing   *imagepricing.Config            `json:"image_pricing,omitempty"`
 		RouteCode      string                          `json:"route_code"`
 		TaskType       string                          `json:"task_type"`
 		Capability     VisibleRouteModelTaskCapability `json:"capability"`
@@ -1402,10 +1516,13 @@ func (r *Resolver) routeCapabilityVersion(routeModel RouteModelConfig, routing M
 		Prices         []capabilityVersionPrice        `json:"prices"`
 		Multiplier     string                          `json:"multiplier"`
 		TaskMultiplier string                          `json:"task_multiplier"`
+		CNYPerPoint    string                          `json:"cny_per_point,omitempty"`
 	}{
-		RouteCode: strings.ToLower(strings.TrimSpace(routeModel.Code)), TaskType: strings.ToLower(strings.TrimSpace(taskType)),
+		ImagePricing: routeModel.ImagePricing,
+		RouteCode:    strings.ToLower(strings.TrimSpace(routeModel.Code)), TaskType: strings.ToLower(strings.TrimSpace(taskType)),
 		Capability: capability, Candidates: candidates, Prices: prices, Multiplier: multiplier.String(),
 		TaskMultiplier: canonicalDecimal(defaultTaskMultiplier(r.cfg.Billing.TaskMultipliers[taskType])),
+		CNYPerPoint:    nativeCapabilityCNYPerPoint(routeModel, routing, r.cfg.Billing.CNYPerPoint),
 	}
 	payload, err := json.Marshal(projection)
 	if err != nil {

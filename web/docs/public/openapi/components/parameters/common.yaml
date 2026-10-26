@@ -123,11 +123,22 @@ components:
     ReferenceImageCount:
       name: reference_image_count
       in: query
+      description: Count-only per-image estimates remain supported. When reference_asset_ids are provided, an explicit count must equal the number of IDs. Pixel-token estimates with references require reference_asset_ids; dimensions come from server asset metadata.
       required: false
       schema:
         type: integer
         minimum: 0
         maximum: 4
+    ReferenceAssetIDs:
+      name: reference_asset_ids
+      in: query
+      required: false
+      description: Reference asset IDs, supplied as repeated parameters or comma-separated values. The server authorizes assets and reads trusted dimensions; client-supplied dimensions are not accepted. Required for pixel-token estimates containing reference images. An explicit reference_image_count must match the number of IDs.
+      style: form
+      explode: true
+      schema:
+        type: array
+        items: { type: string }
     TaskType:
       name: task_type
       in: query

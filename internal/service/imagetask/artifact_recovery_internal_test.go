@@ -19,6 +19,54 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/storage"
 )
 
+func TestArtifactRecoveryPersistsProgressBeforeDownload(t *testing.T) {
+	svc, store, _, providerCalls, now := newArtifactRecoveryTestService(t, 1)
+	ctx := context.Background()
+	created, err := svc.CreateTask(ctx, artifactRecoveryCreateRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, ok, err := svc.AcquireNextTask(ctx, "worker", time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("claim: ok=%v err=%v", ok, err)
+	}
+	pending, err := svc.ExecuteLeasedTask(ctx, claimed, "worker", []string{"openrouter"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	*now = pending.Task.ArtifactRecovery.NextRetryAt.Add(time.Millisecond)
+	reclaimed, ok, err := svc.AcquireNextTask(ctx, "worker", time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("reclaim: ok=%v err=%v", ok, err)
+	}
+	// Simulate a legacy claim so execution must durably correct its progress.
+	reclaimed.ProgressStage = domainimagetask.ProgressStageProvider
+	reclaimed.ProgressMessage = "provider"
+	if err := store.Save(ctx, reclaimed); err != nil {
+		t.Fatal(err)
+	}
+	transport := svc.httpClient.Transport
+	downloads := 0
+	svc.SetHTTPClient(&http.Client{Transport: artifactRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		downloads++
+		loaded, err := store.GetByID(ctx, created.UserID, created.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if loaded.ProgressStage != domainimagetask.ProgressStagePersisting || loaded.ProgressMessage != "正在恢复并保存生成结果" {
+			t.Fatalf("stored recovery progress before download = %q %q", loaded.ProgressStage, loaded.ProgressMessage)
+		}
+		return transport.RoundTrip(req)
+	})})
+	result, err := svc.ExecuteLeasedTask(ctx, reclaimed, "worker", []string{"openrouter"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if downloads != 1 || *providerCalls != 1 || result.Task.Status != domainimagetask.StatusSucceeded {
+		t.Fatalf("recovery: downloads=%d provider calls=%d status=%s", downloads, *providerCalls, result.Task.Status)
+	}
+}
+
 func TestArtifactRecoveryRetriesThreeTimesWithoutSecondProviderCall(t *testing.T) {
 	svc, store, backend, providerCalls, now := newArtifactRecoveryTestService(t, 3)
 	billing := &trackingArtifactBilling{}

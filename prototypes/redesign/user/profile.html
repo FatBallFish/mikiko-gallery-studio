@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>个人资料 — Mikiko Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Manrope:wght@300..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/user.css">
+<style>
+  .pf-balance { position: relative; overflow: hidden; display: grid; gap: 16px; padding: 26px; border: 1px solid var(--accent-line); border-radius: 20px; background: radial-gradient(520px 260px at 88% -10%, rgba(217,168,106,.2), transparent 65%), var(--surface); }
+  .pf-balance__value { font-family: var(--font-mono); font-size: 52px; font-weight: 300; letter-spacing: -.045em; line-height: 1; }
+  .pf-buckets { display: grid; gap: 8px; }
+  .pf-bucket { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; font-size: 12px; }
+  .pf-bucket span { color: var(--ink-3); }
+  .pf-bucket b { font-family: var(--font-mono); font-weight: 500; }
+  .pf-profile { display: flex; align-items: center; gap: 16px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+  .pf-avatar { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 18px; background: linear-gradient(145deg, rgba(217,168,106,.4), rgba(156,144,255,.28)); font-family: var(--font-display); font-size: 26px; }
+  .pf-ledger { display: grid; }
+  .pf-ledger__row { display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+  .pf-ledger__row:last-child { border-bottom: 0; }
+  .pf-ledger__amount { font-family: var(--font-mono); font-size: 13px; font-weight: 500; }
+  .pf-ledger__amount.is-plus { color: var(--accent); }
+</style>
+</head>
+<body data-site="user" data-page="profile">
+<div class="u-shell"><div class="u-main">
+  <div class="u-content">
+    <div class="u-settings u-settings--single">
+      <div class="u-settings__stack">
+        <div class="u-page-head" style="margin:0">
+          <div class="u-page-head__copy">
+            <span class="u-eyebrow">Account</span>
+            <h1 class="u-h1" style="font-size:38px">个人资料</h1>
+            <p class="u-sub">账户信息、积分与流水。积分流水按余额桶拆分，到期时间与任务来源都可追溯。</p>
+          </div>
+        </div>
+
+        <div class="u-split">
+          <div class="pf-balance">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+              <div style="display:grid;gap:4px">
+                <span class="u-eyebrow">Available Points</span>
+                <div class="pf-balance__value" style="font-size:30px;line-height:1.2" data-points="4820.50">4,820.50</div>
+                <span class="u-meta">冻结 32 积分 · 体验额度 200 积分</span>
+              </div>
+              <span class="u-chip u-chip--accent">Plus 分组 ×1.0</span>
+            </div>
+            <div style="display:flex;gap:8px">
+              <a class="u-btn u-btn--primary u-btn--sm" href="checkout.html">充值</a>
+              <a class="u-btn u-btn--sm" href="checkout.html">兑换码</a>
+            </div>
+            <div class="pf-buckets">
+              <div class="pf-bucket"><b>体验额度</b><span>2026-11-01 到期</span><b data-points="200.00">200.00</b></div>
+              <div class="pf-bucket"><b>充值余额</b><span>不过期</span><b data-points="4120.50">4,120.50</b></div>
+              <div class="pf-bucket"><b>订阅额度</b><span>2026-11-20 到期</span><b data-points="500.00">500.00</b></div>
+            </div>
+          </div>
+
+          <div class="u-plate u-plate--pad">
+            <div class="u-panel-title"><h3>资料</h3><span>可编辑</span></div>
+            <div class="pf-profile">
+              <div class="pf-avatar">林</div>
+              <div style="display:grid;gap:3px;min-width:0">
+                <strong style="font-size:15px">林知远</strong>
+                <span class="u-meta">lin.zhiyuan@studio.moe</span>
+                <span class="u-chip u-chip--mono" style="align-self:start;margin-top:2px">UID 10241</span>
+              </div>
+            </div>
+            <div style="display:grid;gap:13px;margin-top:16px">
+              <label class="u-field"><span class="u-label">显示昵称</span><input class="u-input" value="林知远"></label>
+              <label class="u-field"><span class="u-label">签名</span><textarea class="u-textarea" style="min-height:74px">做安静的图像，不急着解释。</textarea></label>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="u-btn u-btn--primary u-btn--sm" type="button" data-toast="资料已保存" data-tone="ok">保存资料</button>
+                <button class="u-btn u-btn--sm" type="button" data-open="#password">修改密码</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="u-plate u-plate--pad">
+          <div class="u-panel-title"><h3>积分流水</h3><span>最近 6 条</span></div>
+          <div class="pf-ledger">
+            <div class="pf-ledger__row"><div style="display:grid;gap:2px"><strong style="font-size:12.5px">生成扣费 · plus-image</strong><span class="u-meta">充值余额 · task_8f21c4e0 · 10-22 18:42</span></div><span class="u-meta">-24.00</span><span class="pf-ledger__amount" data-points="4820.50">4,820.50</span></div>
+            <div class="pf-ledger__row"><div style="display:grid;gap:2px"><strong style="font-size:12.5px">充值到账 · 创作者包</strong><span class="u-meta">充值余额 · MK202610220918 · 10-22 09:18</span></div><span class="u-meta" style="color:var(--accent)">+5,200.00</span><span class="pf-ledger__amount is-plus" data-points="4844.50">4,844.50</span></div>
+            <div class="pf-ledger__row"><div style="display:grid;gap:2px"><strong style="font-size:12.5px">生成预冻结 · 视频任务</strong><span class="u-meta">充值余额 · vtask_4d19b2 · 10-22 19:06</span></div><span class="u-meta">-52.00</span><span class="pf-ledger__amount" data-points="-356.00">-356.00</span></div>
+            <div class="pf-ledger__row"><div style="display:grid;gap:2px"><strong style="font-size:12.5px">冻结退回 · 任务失败</strong><span class="u-meta">充值余额 · vtask_11a0c9 · 10-21 21:14</span></div><span class="u-meta" style="color:var(--accent)">+52.00</span><span class="pf-ledger__amount is-plus" data-points="4896.00">4,896.00</span></div>
+            <div class="pf-ledger__row"><div style="display:grid;gap:2px"><strong style="font-size:12.5px">兑换码到账</strong><span class="u-meta">赠送额度 · REDEEM-7Q4M-2KX9 · 10-18 14:02</span></div><span class="u-meta" style="color:var(--accent)">+1,000.00</span><span class="pf-ledger__amount is-plus" data-points="1000.00">1,000.00</span></div>
+            <div class="pf-ledger__row"><div style="display:grid;gap:2px"><strong style="font-size:12.5px">体验额度发放</strong><span class="u-meta">体验额度 · 2026-11-01 到期 · 10-01 00:00</span></div><span class="u-meta" style="color:var(--accent)">+200.00</span><span class="pf-ledger__amount is-plus" data-points="200.00">200.00</span></div>
+          </div>
+          <div style="display:flex;justify-content:center;margin-top:14px"><button class="u-btn u-btn--sm" type="button" data-toast="已加载更多流水">加载更多</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<div class="u-backdrop"></div>
+<div class="u-modal" id="password" role="dialog" aria-modal="true" aria-label="修改密码">
+  <div class="u-modal__head">
+    <div><h2 class="u-h2" style="font-size:22px">修改密码</h2><p class="u-sub" style="font-size:12.5px;margin-top:4px">修改成功后需要重新登录。</p></div>
+    <button class="u-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </div>
+  <div style="display:grid;gap:13px">
+    <label class="u-field"><span class="u-label">邮箱验证码</span><div style="display:flex;gap:8px"><input class="u-input" placeholder="6 位数字"><button class="u-btn" type="button" data-toast="验证码已发送">发送</button></div></label>
+    <label class="u-field"><span class="u-label">新密码</span><input class="u-input" type="password" placeholder="至少 8 位"></label>
+    <label class="u-field"><span class="u-label">确认新密码</span><input class="u-input" type="password"></label>
+    <div style="display:flex;justify-content:flex-end;gap:8px">
+      <button class="u-btn" type="button" data-close>取消</button>
+      <button class="u-btn u-btn--primary" type="button" data-close data-toast="密码已修改，请重新登录" data-tone="ok">确认修改</button>
+    </div>
+  </div>
+</div>
+<script src="../assets/shell.js"></script>
+</body>
+</html>

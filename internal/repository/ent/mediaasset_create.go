@@ -106,6 +106,20 @@ func (_c *MediaAssetCreate) SetNameKey(v string) *MediaAssetCreate {
 	return _c
 }
 
+// SetGroupID sets the "group_id" field.
+func (_c *MediaAssetCreate) SetGroupID(v uuid.UUID) *MediaAssetCreate {
+	_c.mutation.SetGroupID(v)
+	return _c
+}
+
+// SetNillableGroupID sets the "group_id" field if the given value is not nil.
+func (_c *MediaAssetCreate) SetNillableGroupID(v *uuid.UUID) *MediaAssetCreate {
+	if v != nil {
+		_c.SetGroupID(*v)
+	}
+	return _c
+}
+
 // SetGroupName sets the "group_name" field.
 func (_c *MediaAssetCreate) SetGroupName(v string) *MediaAssetCreate {
 	_c.mutation.SetGroupName(v)
@@ -156,6 +170,34 @@ func (_c *MediaAssetCreate) SetVisibilityStatus(v string) *MediaAssetCreate {
 func (_c *MediaAssetCreate) SetNillableVisibilityStatus(v *string) *MediaAssetCreate {
 	if v != nil {
 		_c.SetVisibilityStatus(*v)
+	}
+	return _c
+}
+
+// SetPublicationReviewReason sets the "publication_review_reason" field.
+func (_c *MediaAssetCreate) SetPublicationReviewReason(v string) *MediaAssetCreate {
+	_c.mutation.SetPublicationReviewReason(v)
+	return _c
+}
+
+// SetNillablePublicationReviewReason sets the "publication_review_reason" field if the given value is not nil.
+func (_c *MediaAssetCreate) SetNillablePublicationReviewReason(v *string) *MediaAssetCreate {
+	if v != nil {
+		_c.SetPublicationReviewReason(*v)
+	}
+	return _c
+}
+
+// SetPublishedAt sets the "published_at" field.
+func (_c *MediaAssetCreate) SetPublishedAt(v time.Time) *MediaAssetCreate {
+	_c.mutation.SetPublishedAt(v)
+	return _c
+}
+
+// SetNillablePublishedAt sets the "published_at" field if the given value is not nil.
+func (_c *MediaAssetCreate) SetNillablePublishedAt(v *time.Time) *MediaAssetCreate {
+	if v != nil {
+		_c.SetPublishedAt(*v)
 	}
 	return _c
 }
@@ -598,6 +640,10 @@ func (_c *MediaAssetCreate) defaults() {
 		v := mediaasset.DefaultVisibilityStatus
 		_c.mutation.SetVisibilityStatus(v)
 	}
+	if _, ok := _c.mutation.PublicationReviewReason(); !ok {
+		v := mediaasset.DefaultPublicationReviewReason
+		_c.mutation.SetPublicationReviewReason(v)
+	}
 	if _, ok := _c.mutation.StorageDriver(); !ok {
 		v := mediaasset.DefaultStorageDriver
 		_c.mutation.SetStorageDriver(v)
@@ -701,6 +747,9 @@ func (_c *MediaAssetCreate) check() error {
 		if err := mediaasset.VisibilityStatusValidator(v); err != nil {
 			return &ValidationError{Name: "visibility_status", err: fmt.Errorf(`ent: validator failed for field "MediaAsset.visibility_status": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.PublicationReviewReason(); !ok {
+		return &ValidationError{Name: "publication_review_reason", err: errors.New(`ent: missing required field "MediaAsset.publication_review_reason"`)}
 	}
 	if _, ok := _c.mutation.StorageDriver(); !ok {
 		return &ValidationError{Name: "storage_driver", err: errors.New(`ent: missing required field "MediaAsset.storage_driver"`)}
@@ -853,6 +902,10 @@ func (_c *MediaAssetCreate) createSpec() (*MediaAsset, *sqlgraph.CreateSpec) {
 		_spec.SetField(mediaasset.FieldNameKey, field.TypeString, value)
 		_node.NameKey = value
 	}
+	if value, ok := _c.mutation.GroupID(); ok {
+		_spec.SetField(mediaasset.FieldGroupID, field.TypeUUID, value)
+		_node.GroupID = &value
+	}
 	if value, ok := _c.mutation.GroupName(); ok {
 		_spec.SetField(mediaasset.FieldGroupName, field.TypeString, value)
 		_node.GroupName = value
@@ -872,6 +925,14 @@ func (_c *MediaAssetCreate) createSpec() (*MediaAsset, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.VisibilityStatus(); ok {
 		_spec.SetField(mediaasset.FieldVisibilityStatus, field.TypeString, value)
 		_node.VisibilityStatus = value
+	}
+	if value, ok := _c.mutation.PublicationReviewReason(); ok {
+		_spec.SetField(mediaasset.FieldPublicationReviewReason, field.TypeString, value)
+		_node.PublicationReviewReason = value
+	}
+	if value, ok := _c.mutation.PublishedAt(); ok {
+		_spec.SetField(mediaasset.FieldPublishedAt, field.TypeTime, value)
+		_node.PublishedAt = &value
 	}
 	if value, ok := _c.mutation.StorageConfigID(); ok {
 		_spec.SetField(mediaasset.FieldStorageConfigID, field.TypeUUID, value)

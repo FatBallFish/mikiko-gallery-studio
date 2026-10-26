@@ -11,7 +11,9 @@ export function oidcAuthorizeHref(returnToURL: string): string {
 // Falls back to home for direct visits on the login route.
 export function targetURLAfterLogin(route: RouteId | undefined, imageId?: string, taskId?: string): string {
   const target = route && route !== 'login' ? route : 'home'
-  return `${window.location.origin}${window.location.pathname}#${userHashForRoute(target, { imageId, taskId })}`
+  const oauthRequest = target === 'oauth-consent' ? new URLSearchParams(window.location.search).get('oauth_request') : null
+  const search = oauthRequest ? `?oauth_request=${encodeURIComponent(oauthRequest)}` : ''
+  return `${window.location.origin}${window.location.pathname}${search}#${userHashForRoute(target, { imageId, taskId })}`
 }
 
 // Defense in depth: the backend already sanitizes return_to; never follow a

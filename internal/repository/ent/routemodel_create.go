@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/fatballfish/pic-gallery/internal/domain/imagepricing"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodel"
 )
 
@@ -59,6 +60,12 @@ func (_c *RouteModelCreate) SetNillableDeletedAt(v *time.Time) *RouteModelCreate
 	if v != nil {
 		_c.SetDeletedAt(*v)
 	}
+	return _c
+}
+
+// SetImagePricing sets the "image_pricing" field.
+func (_c *RouteModelCreate) SetImagePricing(v *imagepricing.Config) *RouteModelCreate {
+	_c.mutation.SetImagePricing(v)
 	return _c
 }
 
@@ -347,6 +354,10 @@ func (_c *RouteModelCreate) createSpec() (*RouteModel, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.DeletedAt(); ok {
 		_spec.SetField(routemodel.FieldDeletedAt, field.TypeTime, value)
 		_node.DeletedAt = &value
+	}
+	if value, ok := _c.mutation.ImagePricing(); ok {
+		_spec.SetField(routemodel.FieldImagePricing, field.TypeJSON, value)
+		_node.ImagePricing = value
 	}
 	if value, ok := _c.mutation.Code(); ok {
 		_spec.SetField(routemodel.FieldCode, field.TypeString, value)

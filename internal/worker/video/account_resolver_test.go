@@ -9,7 +9,9 @@ import (
 )
 
 func TestExecutionAccountResolverUsesExactAttemptAccountAndModel(t *testing.T) {
+	disabled := false
 	store := &executionAccountStoreStub{account: ExecutionAccount{
+		ArtifactAllowedHosts: []string{"cdn.example.com"}, ArtifactHostsEnabled: &disabled,
 		RouteCandidateID: 41, AccountModelID: 42, ModelAccountID: 43, ProviderCode: "seedance", BaseURL: "https://ark.example.test",
 		APIKey: "secret", ModelCode: "seedance-2-5", CallbackURL: "https://app.example.test/callback", CallbackSecret: "callback-secret", Timeout: 45 * time.Second,
 	}}
@@ -24,6 +26,9 @@ func TestExecutionAccountResolverUsesExactAttemptAccountAndModel(t *testing.T) {
 	ref := ProviderRef{RouteCandidateID: 41, AccountModelID: 42, ModelAccountID: 43, ProviderCode: "seedance", ModelCode: "seedance-2-5"}
 
 	got, err := resolver.Resolve(t.Context(), ref)
+	if got.ArtifactHostsEnabled == nil || *got.ArtifactHostsEnabled || len(got.ArtifactAllowedHosts) != 1 || got.ArtifactAllowedHosts[0] != "cdn.example.com" {
+		t.Fatalf("policy not propagated: %#v", got)
+	}
 	if err != nil || got.Provider != provider || store.last != ref {
 		t.Fatalf("Resolve() execution=%#v ref=%#v err=%v", got, store.last, err)
 	}

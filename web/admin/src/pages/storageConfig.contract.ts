@@ -11,7 +11,7 @@ import {
 } from './storageActivation'
 const storagePageSource = readFileSync(new URL('./StorageConfigPage.tsx', import.meta.url), 'utf8')
 
-for (const editorContract of ['InlineFeedback', 'data-admin-storage-editor', 'data-storage-section=', 'sticky bottom-0', 'editorState', 'const editorLocked = saving || probing || refreshing || activationPhase', 'disabled={editorLocked}', 'aria-busy={editorLocked}']) {
+for (const editorContract of ['InlineFeedback', 'data-admin-storage-editor', 'FormSection', 'editorState', 'const editorLocked = saving || probing || refreshing || Boolean(activationID)', 'disabled={editorLocked}', 'aria-busy={editorLocked}']) {
   if (!storagePageSource.includes(editorContract)) {
     throw new Error(`storage configuration should implement grouped editor state with ${editorContract}`)
   }
@@ -23,13 +23,13 @@ for (const state of ['pristine', 'dirty', 'validating', 'saving', 'saved', 'fail
   }
 }
 
-for (const leaveContract of ['onDirtyChange?: (dirty: boolean) => void', 'onBusyChange?: (busy: boolean) => void', 'onBusyChange?.(editorLocked)', "addEventListener('beforeunload'", 'window.confirm']) {
+for (const leaveContract of ['onDirtyChange?: (dirty: boolean) => void', 'onBusyChange?: (busy: boolean) => void', 'onBusyChange?.(saving || probing || Boolean(activationID))', "addEventListener('beforeunload'", 'window.confirm']) {
   if (!storagePageSource.includes(leaveContract)) {
     throw new Error(`storage editor should protect dirty navigation with ${leaveContract}`)
   }
 }
 
-for (const operationLabel of ['测试草稿连接', '探测已保存配置', '设为默认']) {
+for (const operationLabel of ['测试草稿连接', '探测已保存配置', '设置默认', '探测连接']) {
   if (!storagePageSource.includes(operationLabel)) {
     throw new Error(`storage actions should remain semantically distinct with ${operationLabel}`)
   }
@@ -40,7 +40,7 @@ for (const corsGuide of ['浏览器直传 CORS', 'PUT', 'ETag', '自动切换兼
 }
 
 for (const namespaceContract of [
-  'const namespaceLocked = Boolean(draft.id)',
+  'const namespaceLocked = Boolean(draft?.id)',
   'disabled={namespaceLocked}',
   '对象地址创建后不可修改；迁移时请新建配置、验证后切换默认写入。',
 ]) {
@@ -50,9 +50,9 @@ for (const namespaceContract of [
 }
 
 for (const concurrencyContract of [
-  'saving || probing || refreshing || activationPhase',
-  'saving || probing || refreshing || isDirty || activationPhase',
-  '正在刷新配置列表与已保存基线',
+  'saving || probing || refreshing || Boolean(activationID)',
+  'saving || probing || isDirty',
+  'editorLocked',
 ]) {
   if (!storagePageSource.includes(concurrencyContract)) {
     throw new Error(`storage mutations must stay mutually exclusive with ${concurrencyContract}`)
@@ -67,11 +67,11 @@ if (!storagePageSource.includes('当前配置有未保存修改，请先保存�
   throw new Error('persisted read-only mutation must not discard a dirty storage draft')
 }
 
-if (!storagePageSource.includes("selectedID ? items.find((item) => item.id === selectedID) ?? null : null")) {
+if (!storagePageSource.includes("draft?.id ? items.find((item) => item.id === draft.id) ?? null : null")) {
   throw new Error('a new storage draft must not inherit secret or status context from the first saved config')
 }
 
-for (const listStateContract of ['last_probe', 'is_default', 'item.status', 'dirty={']) {
+for (const listStateContract of ['last_probe', 'is_default', 'item.status', 'storageProbeBadge']) {
   if (!storagePageSource.includes(listStateContract)) {
     throw new Error(`storage object list should expose operational state with ${listStateContract}`)
   }

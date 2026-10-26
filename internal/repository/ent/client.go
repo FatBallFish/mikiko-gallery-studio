@@ -19,6 +19,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/adminuser"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikey"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikeyquotareservation"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/assetgroup"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/auditlog"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/canvasgenerationrun"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clusterchallenge"
@@ -41,6 +42,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelroute"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/oauthrecord"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectdeletionjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectreconcilecheckpoint"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectstorageconfig"
@@ -98,6 +100,8 @@ type Client struct {
 	APIKeyQuotaReservation *APIKeyQuotaReservationClient
 	// AdminUser is the client for interacting with the AdminUser builders.
 	AdminUser *AdminUserClient
+	// AssetGroup is the client for interacting with the AssetGroup builders.
+	AssetGroup *AssetGroupClient
 	// AuditLog is the client for interacting with the AuditLog builders.
 	AuditLog *AuditLogClient
 	// CanvasGenerationRun is the client for interacting with the CanvasGenerationRun builders.
@@ -142,6 +146,8 @@ type Client struct {
 	ModelProvider *ModelProviderClient
 	// ModelRoute is the client for interacting with the ModelRoute builders.
 	ModelRoute *ModelRouteClient
+	// OAuthRecord is the client for interacting with the OAuthRecord builders.
+	OAuthRecord *OAuthRecordClient
 	// ObjectDeletionJob is the client for interacting with the ObjectDeletionJob builders.
 	ObjectDeletionJob *ObjectDeletionJobClient
 	// ObjectReconcileCheckpoint is the client for interacting with the ObjectReconcileCheckpoint builders.
@@ -244,6 +250,7 @@ func (c *Client) init() {
 	c.APIKey = NewAPIKeyClient(c.config)
 	c.APIKeyQuotaReservation = NewAPIKeyQuotaReservationClient(c.config)
 	c.AdminUser = NewAdminUserClient(c.config)
+	c.AssetGroup = NewAssetGroupClient(c.config)
 	c.AuditLog = NewAuditLogClient(c.config)
 	c.CanvasGenerationRun = NewCanvasGenerationRunClient(c.config)
 	c.ClusterChallenge = NewClusterChallengeClient(c.config)
@@ -266,6 +273,7 @@ func (c *Client) init() {
 	c.ModelAccountModel = NewModelAccountModelClient(c.config)
 	c.ModelProvider = NewModelProviderClient(c.config)
 	c.ModelRoute = NewModelRouteClient(c.config)
+	c.OAuthRecord = NewOAuthRecordClient(c.config)
 	c.ObjectDeletionJob = NewObjectDeletionJobClient(c.config)
 	c.ObjectReconcileCheckpoint = NewObjectReconcileCheckpointClient(c.config)
 	c.ObjectStorageConfig = NewObjectStorageConfigClient(c.config)
@@ -405,6 +413,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		APIKey:                      NewAPIKeyClient(cfg),
 		APIKeyQuotaReservation:      NewAPIKeyQuotaReservationClient(cfg),
 		AdminUser:                   NewAdminUserClient(cfg),
+		AssetGroup:                  NewAssetGroupClient(cfg),
 		AuditLog:                    NewAuditLogClient(cfg),
 		CanvasGenerationRun:         NewCanvasGenerationRunClient(cfg),
 		ClusterChallenge:            NewClusterChallengeClient(cfg),
@@ -427,6 +436,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ModelAccountModel:           NewModelAccountModelClient(cfg),
 		ModelProvider:               NewModelProviderClient(cfg),
 		ModelRoute:                  NewModelRouteClient(cfg),
+		OAuthRecord:                 NewOAuthRecordClient(cfg),
 		ObjectDeletionJob:           NewObjectDeletionJobClient(cfg),
 		ObjectReconcileCheckpoint:   NewObjectReconcileCheckpointClient(cfg),
 		ObjectStorageConfig:         NewObjectStorageConfigClient(cfg),
@@ -493,6 +503,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		APIKey:                      NewAPIKeyClient(cfg),
 		APIKeyQuotaReservation:      NewAPIKeyQuotaReservationClient(cfg),
 		AdminUser:                   NewAdminUserClient(cfg),
+		AssetGroup:                  NewAssetGroupClient(cfg),
 		AuditLog:                    NewAuditLogClient(cfg),
 		CanvasGenerationRun:         NewCanvasGenerationRunClient(cfg),
 		ClusterChallenge:            NewClusterChallengeClient(cfg),
@@ -515,6 +526,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ModelAccountModel:           NewModelAccountModelClient(cfg),
 		ModelProvider:               NewModelProviderClient(cfg),
 		ModelRoute:                  NewModelRouteClient(cfg),
+		OAuthRecord:                 NewOAuthRecordClient(cfg),
 		ObjectDeletionJob:           NewObjectDeletionJobClient(cfg),
 		ObjectReconcileCheckpoint:   NewObjectReconcileCheckpointClient(cfg),
 		ObjectStorageConfig:         NewObjectStorageConfigClient(cfg),
@@ -588,25 +600,26 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog,
+		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AssetGroup, c.AuditLog,
 		c.CanvasGenerationRun, c.ClusterChallenge, c.ClusterNode, c.ClusterToken,
 		c.ConfigItem, c.CreativeCanvas, c.CreativeCanvasRevision, c.GalleryExportJob,
 		c.ImageResult, c.ImageTask, c.Installation, c.MediaAsset,
 		c.MediaAssetReference, c.MediaDerivative, c.MediaProcessingJob,
 		c.MediaUploadSession, c.MigrationCheckpoint, c.ModelAccount,
-		c.ModelAccountModel, c.ModelProvider, c.ModelRoute, c.ObjectDeletionJob,
-		c.ObjectReconcileCheckpoint, c.ObjectStorageConfig, c.PaymentOrder,
-		c.PaymentProviderInstance, c.PaymentWebhookEvent, c.PointLedger, c.Project,
-		c.PromptOptimizationRun, c.ProviderErrorPolicy, c.ProviderModel,
-		c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode, c.ReferenceAsset,
-		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelGroup,
-		c.RouteModelGroupMember, c.RouteModelPrice, c.RouteModelVisibilityGroup,
-		c.SecureConfig, c.SubscriptionPlan, c.TextModel, c.TextModelAccount, c.User,
-		c.UserGroup, c.UserGroupMember, c.UserIdentity, c.UserSubscription,
-		c.VideoModelCapability, c.VideoModelRateCard, c.VideoPriceRule,
-		c.VideoPricingStrategy, c.VideoProviderCallbackEvent, c.VideoProviderCostRule,
-		c.VideoRouteConfig, c.VideoTask, c.VideoTaskAttempt, c.VideoTaskInput,
-		c.VideoTaskItem, c.WalletGrant, c.WalletReservationAllocation,
+		c.ModelAccountModel, c.ModelProvider, c.ModelRoute, c.OAuthRecord,
+		c.ObjectDeletionJob, c.ObjectReconcileCheckpoint, c.ObjectStorageConfig,
+		c.PaymentOrder, c.PaymentProviderInstance, c.PaymentWebhookEvent,
+		c.PointLedger, c.Project, c.PromptOptimizationRun, c.ProviderErrorPolicy,
+		c.ProviderModel, c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode,
+		c.ReferenceAsset, c.RefreshSession, c.RouteModel, c.RouteModelCandidate,
+		c.RouteModelGroup, c.RouteModelGroupMember, c.RouteModelPrice,
+		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.TextModel,
+		c.TextModelAccount, c.User, c.UserGroup, c.UserGroupMember, c.UserIdentity,
+		c.UserSubscription, c.VideoModelCapability, c.VideoModelRateCard,
+		c.VideoPriceRule, c.VideoPricingStrategy, c.VideoProviderCallbackEvent,
+		c.VideoProviderCostRule, c.VideoRouteConfig, c.VideoTask, c.VideoTaskAttempt,
+		c.VideoTaskInput, c.VideoTaskItem, c.WalletGrant,
+		c.WalletReservationAllocation,
 	} {
 		n.Use(hooks...)
 	}
@@ -616,25 +629,26 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog,
+		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AssetGroup, c.AuditLog,
 		c.CanvasGenerationRun, c.ClusterChallenge, c.ClusterNode, c.ClusterToken,
 		c.ConfigItem, c.CreativeCanvas, c.CreativeCanvasRevision, c.GalleryExportJob,
 		c.ImageResult, c.ImageTask, c.Installation, c.MediaAsset,
 		c.MediaAssetReference, c.MediaDerivative, c.MediaProcessingJob,
 		c.MediaUploadSession, c.MigrationCheckpoint, c.ModelAccount,
-		c.ModelAccountModel, c.ModelProvider, c.ModelRoute, c.ObjectDeletionJob,
-		c.ObjectReconcileCheckpoint, c.ObjectStorageConfig, c.PaymentOrder,
-		c.PaymentProviderInstance, c.PaymentWebhookEvent, c.PointLedger, c.Project,
-		c.PromptOptimizationRun, c.ProviderErrorPolicy, c.ProviderModel,
-		c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode, c.ReferenceAsset,
-		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelGroup,
-		c.RouteModelGroupMember, c.RouteModelPrice, c.RouteModelVisibilityGroup,
-		c.SecureConfig, c.SubscriptionPlan, c.TextModel, c.TextModelAccount, c.User,
-		c.UserGroup, c.UserGroupMember, c.UserIdentity, c.UserSubscription,
-		c.VideoModelCapability, c.VideoModelRateCard, c.VideoPriceRule,
-		c.VideoPricingStrategy, c.VideoProviderCallbackEvent, c.VideoProviderCostRule,
-		c.VideoRouteConfig, c.VideoTask, c.VideoTaskAttempt, c.VideoTaskInput,
-		c.VideoTaskItem, c.WalletGrant, c.WalletReservationAllocation,
+		c.ModelAccountModel, c.ModelProvider, c.ModelRoute, c.OAuthRecord,
+		c.ObjectDeletionJob, c.ObjectReconcileCheckpoint, c.ObjectStorageConfig,
+		c.PaymentOrder, c.PaymentProviderInstance, c.PaymentWebhookEvent,
+		c.PointLedger, c.Project, c.PromptOptimizationRun, c.ProviderErrorPolicy,
+		c.ProviderModel, c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode,
+		c.ReferenceAsset, c.RefreshSession, c.RouteModel, c.RouteModelCandidate,
+		c.RouteModelGroup, c.RouteModelGroupMember, c.RouteModelPrice,
+		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.TextModel,
+		c.TextModelAccount, c.User, c.UserGroup, c.UserGroupMember, c.UserIdentity,
+		c.UserSubscription, c.VideoModelCapability, c.VideoModelRateCard,
+		c.VideoPriceRule, c.VideoPricingStrategy, c.VideoProviderCallbackEvent,
+		c.VideoProviderCostRule, c.VideoRouteConfig, c.VideoTask, c.VideoTaskAttempt,
+		c.VideoTaskInput, c.VideoTaskItem, c.WalletGrant,
+		c.WalletReservationAllocation,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -649,6 +663,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.APIKeyQuotaReservation.mutate(ctx, m)
 	case *AdminUserMutation:
 		return c.AdminUser.mutate(ctx, m)
+	case *AssetGroupMutation:
+		return c.AssetGroup.mutate(ctx, m)
 	case *AuditLogMutation:
 		return c.AuditLog.mutate(ctx, m)
 	case *CanvasGenerationRunMutation:
@@ -693,6 +709,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.ModelProvider.mutate(ctx, m)
 	case *ModelRouteMutation:
 		return c.ModelRoute.mutate(ctx, m)
+	case *OAuthRecordMutation:
+		return c.OAuthRecord.mutate(ctx, m)
 	case *ObjectDeletionJobMutation:
 		return c.ObjectDeletionJob.mutate(ctx, m)
 	case *ObjectReconcileCheckpointMutation:
@@ -1182,6 +1200,139 @@ func (c *AdminUserClient) mutate(ctx context.Context, m *AdminUserMutation) (Val
 		return (&AdminUserDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown AdminUser mutation op: %q", m.Op())
+	}
+}
+
+// AssetGroupClient is a client for the AssetGroup schema.
+type AssetGroupClient struct {
+	config
+}
+
+// NewAssetGroupClient returns a client for the AssetGroup from the given config.
+func NewAssetGroupClient(c config) *AssetGroupClient {
+	return &AssetGroupClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `assetgroup.Hooks(f(g(h())))`.
+func (c *AssetGroupClient) Use(hooks ...Hook) {
+	c.hooks.AssetGroup = append(c.hooks.AssetGroup, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `assetgroup.Intercept(f(g(h())))`.
+func (c *AssetGroupClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AssetGroup = append(c.inters.AssetGroup, interceptors...)
+}
+
+// Create returns a builder for creating a AssetGroup entity.
+func (c *AssetGroupClient) Create() *AssetGroupCreate {
+	mutation := newAssetGroupMutation(c.config, OpCreate)
+	return &AssetGroupCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AssetGroup entities.
+func (c *AssetGroupClient) CreateBulk(builders ...*AssetGroupCreate) *AssetGroupCreateBulk {
+	return &AssetGroupCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AssetGroupClient) MapCreateBulk(slice any, setFunc func(*AssetGroupCreate, int)) *AssetGroupCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AssetGroupCreateBulk{err: fmt.Errorf("calling to AssetGroupClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AssetGroupCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AssetGroupCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AssetGroup.
+func (c *AssetGroupClient) Update() *AssetGroupUpdate {
+	mutation := newAssetGroupMutation(c.config, OpUpdate)
+	return &AssetGroupUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AssetGroupClient) UpdateOne(_m *AssetGroup) *AssetGroupUpdateOne {
+	mutation := newAssetGroupMutation(c.config, OpUpdateOne, withAssetGroup(_m))
+	return &AssetGroupUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AssetGroupClient) UpdateOneID(id uuid.UUID) *AssetGroupUpdateOne {
+	mutation := newAssetGroupMutation(c.config, OpUpdateOne, withAssetGroupID(id))
+	return &AssetGroupUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AssetGroup.
+func (c *AssetGroupClient) Delete() *AssetGroupDelete {
+	mutation := newAssetGroupMutation(c.config, OpDelete)
+	return &AssetGroupDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AssetGroupClient) DeleteOne(_m *AssetGroup) *AssetGroupDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AssetGroupClient) DeleteOneID(id uuid.UUID) *AssetGroupDeleteOne {
+	builder := c.Delete().Where(assetgroup.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AssetGroupDeleteOne{builder}
+}
+
+// Query returns a query builder for AssetGroup.
+func (c *AssetGroupClient) Query() *AssetGroupQuery {
+	return &AssetGroupQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAssetGroup},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AssetGroup entity by its id.
+func (c *AssetGroupClient) Get(ctx context.Context, id uuid.UUID) (*AssetGroup, error) {
+	return c.Query().Where(assetgroup.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AssetGroupClient) GetX(ctx context.Context, id uuid.UUID) *AssetGroup {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *AssetGroupClient) Hooks() []Hook {
+	return c.hooks.AssetGroup
+}
+
+// Interceptors returns the client interceptors.
+func (c *AssetGroupClient) Interceptors() []Interceptor {
+	return c.inters.AssetGroup
+}
+
+func (c *AssetGroupClient) mutate(ctx context.Context, m *AssetGroupMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AssetGroupCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AssetGroupUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AssetGroupUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AssetGroupDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AssetGroup mutation op: %q", m.Op())
 	}
 }
 
@@ -4348,6 +4499,139 @@ func (c *ModelRouteClient) mutate(ctx context.Context, m *ModelRouteMutation) (V
 		return (&ModelRouteDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown ModelRoute mutation op: %q", m.Op())
+	}
+}
+
+// OAuthRecordClient is a client for the OAuthRecord schema.
+type OAuthRecordClient struct {
+	config
+}
+
+// NewOAuthRecordClient returns a client for the OAuthRecord from the given config.
+func NewOAuthRecordClient(c config) *OAuthRecordClient {
+	return &OAuthRecordClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `oauthrecord.Hooks(f(g(h())))`.
+func (c *OAuthRecordClient) Use(hooks ...Hook) {
+	c.hooks.OAuthRecord = append(c.hooks.OAuthRecord, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `oauthrecord.Intercept(f(g(h())))`.
+func (c *OAuthRecordClient) Intercept(interceptors ...Interceptor) {
+	c.inters.OAuthRecord = append(c.inters.OAuthRecord, interceptors...)
+}
+
+// Create returns a builder for creating a OAuthRecord entity.
+func (c *OAuthRecordClient) Create() *OAuthRecordCreate {
+	mutation := newOAuthRecordMutation(c.config, OpCreate)
+	return &OAuthRecordCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of OAuthRecord entities.
+func (c *OAuthRecordClient) CreateBulk(builders ...*OAuthRecordCreate) *OAuthRecordCreateBulk {
+	return &OAuthRecordCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *OAuthRecordClient) MapCreateBulk(slice any, setFunc func(*OAuthRecordCreate, int)) *OAuthRecordCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &OAuthRecordCreateBulk{err: fmt.Errorf("calling to OAuthRecordClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*OAuthRecordCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &OAuthRecordCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for OAuthRecord.
+func (c *OAuthRecordClient) Update() *OAuthRecordUpdate {
+	mutation := newOAuthRecordMutation(c.config, OpUpdate)
+	return &OAuthRecordUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *OAuthRecordClient) UpdateOne(_m *OAuthRecord) *OAuthRecordUpdateOne {
+	mutation := newOAuthRecordMutation(c.config, OpUpdateOne, withOAuthRecord(_m))
+	return &OAuthRecordUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *OAuthRecordClient) UpdateOneID(id string) *OAuthRecordUpdateOne {
+	mutation := newOAuthRecordMutation(c.config, OpUpdateOne, withOAuthRecordID(id))
+	return &OAuthRecordUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for OAuthRecord.
+func (c *OAuthRecordClient) Delete() *OAuthRecordDelete {
+	mutation := newOAuthRecordMutation(c.config, OpDelete)
+	return &OAuthRecordDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *OAuthRecordClient) DeleteOne(_m *OAuthRecord) *OAuthRecordDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *OAuthRecordClient) DeleteOneID(id string) *OAuthRecordDeleteOne {
+	builder := c.Delete().Where(oauthrecord.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &OAuthRecordDeleteOne{builder}
+}
+
+// Query returns a query builder for OAuthRecord.
+func (c *OAuthRecordClient) Query() *OAuthRecordQuery {
+	return &OAuthRecordQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeOAuthRecord},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a OAuthRecord entity by its id.
+func (c *OAuthRecordClient) Get(ctx context.Context, id string) (*OAuthRecord, error) {
+	return c.Query().Where(oauthrecord.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *OAuthRecordClient) GetX(ctx context.Context, id string) *OAuthRecord {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *OAuthRecordClient) Hooks() []Hook {
+	return c.hooks.OAuthRecord
+}
+
+// Interceptors returns the client interceptors.
+func (c *OAuthRecordClient) Interceptors() []Interceptor {
+	return c.inters.OAuthRecord
+}
+
+func (c *OAuthRecordClient) mutate(ctx context.Context, m *OAuthRecordMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&OAuthRecordCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&OAuthRecordUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&OAuthRecordUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&OAuthRecordDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown OAuthRecord mutation op: %q", m.Op())
 	}
 }
 
@@ -10414,41 +10698,43 @@ func (c *WalletReservationAllocationClient) mutate(ctx context.Context, m *Walle
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, CanvasGenerationRun,
-		ClusterChallenge, ClusterNode, ClusterToken, ConfigItem, CreativeCanvas,
-		CreativeCanvasRevision, GalleryExportJob, ImageResult, ImageTask, Installation,
-		MediaAsset, MediaAssetReference, MediaDerivative, MediaProcessingJob,
-		MediaUploadSession, MigrationCheckpoint, ModelAccount, ModelAccountModel,
-		ModelProvider, ModelRoute, ObjectDeletionJob, ObjectReconcileCheckpoint,
-		ObjectStorageConfig, PaymentOrder, PaymentProviderInstance,
-		PaymentWebhookEvent, PointLedger, Project, PromptOptimizationRun,
-		ProviderErrorPolicy, ProviderModel, PublicImageInteraction, PublicImageStat,
-		RedeemCode, ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
-		RouteModelGroup, RouteModelGroupMember, RouteModelPrice,
-		RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan, TextModel,
-		TextModelAccount, User, UserGroup, UserGroupMember, UserIdentity,
-		UserSubscription, VideoModelCapability, VideoModelRateCard, VideoPriceRule,
-		VideoPricingStrategy, VideoProviderCallbackEvent, VideoProviderCostRule,
-		VideoRouteConfig, VideoTask, VideoTaskAttempt, VideoTaskInput, VideoTaskItem,
-		WalletGrant, WalletReservationAllocation []ent.Hook
+		APIKey, APIKeyQuotaReservation, AdminUser, AssetGroup, AuditLog,
+		CanvasGenerationRun, ClusterChallenge, ClusterNode, ClusterToken, ConfigItem,
+		CreativeCanvas, CreativeCanvasRevision, GalleryExportJob, ImageResult,
+		ImageTask, Installation, MediaAsset, MediaAssetReference, MediaDerivative,
+		MediaProcessingJob, MediaUploadSession, MigrationCheckpoint, ModelAccount,
+		ModelAccountModel, ModelProvider, ModelRoute, OAuthRecord, ObjectDeletionJob,
+		ObjectReconcileCheckpoint, ObjectStorageConfig, PaymentOrder,
+		PaymentProviderInstance, PaymentWebhookEvent, PointLedger, Project,
+		PromptOptimizationRun, ProviderErrorPolicy, ProviderModel,
+		PublicImageInteraction, PublicImageStat, RedeemCode, ReferenceAsset,
+		RefreshSession, RouteModel, RouteModelCandidate, RouteModelGroup,
+		RouteModelGroupMember, RouteModelPrice, RouteModelVisibilityGroup,
+		SecureConfig, SubscriptionPlan, TextModel, TextModelAccount, User, UserGroup,
+		UserGroupMember, UserIdentity, UserSubscription, VideoModelCapability,
+		VideoModelRateCard, VideoPriceRule, VideoPricingStrategy,
+		VideoProviderCallbackEvent, VideoProviderCostRule, VideoRouteConfig, VideoTask,
+		VideoTaskAttempt, VideoTaskInput, VideoTaskItem, WalletGrant,
+		WalletReservationAllocation []ent.Hook
 	}
 	inters struct {
-		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, CanvasGenerationRun,
-		ClusterChallenge, ClusterNode, ClusterToken, ConfigItem, CreativeCanvas,
-		CreativeCanvasRevision, GalleryExportJob, ImageResult, ImageTask, Installation,
-		MediaAsset, MediaAssetReference, MediaDerivative, MediaProcessingJob,
-		MediaUploadSession, MigrationCheckpoint, ModelAccount, ModelAccountModel,
-		ModelProvider, ModelRoute, ObjectDeletionJob, ObjectReconcileCheckpoint,
-		ObjectStorageConfig, PaymentOrder, PaymentProviderInstance,
-		PaymentWebhookEvent, PointLedger, Project, PromptOptimizationRun,
-		ProviderErrorPolicy, ProviderModel, PublicImageInteraction, PublicImageStat,
-		RedeemCode, ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
-		RouteModelGroup, RouteModelGroupMember, RouteModelPrice,
-		RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan, TextModel,
-		TextModelAccount, User, UserGroup, UserGroupMember, UserIdentity,
-		UserSubscription, VideoModelCapability, VideoModelRateCard, VideoPriceRule,
-		VideoPricingStrategy, VideoProviderCallbackEvent, VideoProviderCostRule,
-		VideoRouteConfig, VideoTask, VideoTaskAttempt, VideoTaskInput, VideoTaskItem,
-		WalletGrant, WalletReservationAllocation []ent.Interceptor
+		APIKey, APIKeyQuotaReservation, AdminUser, AssetGroup, AuditLog,
+		CanvasGenerationRun, ClusterChallenge, ClusterNode, ClusterToken, ConfigItem,
+		CreativeCanvas, CreativeCanvasRevision, GalleryExportJob, ImageResult,
+		ImageTask, Installation, MediaAsset, MediaAssetReference, MediaDerivative,
+		MediaProcessingJob, MediaUploadSession, MigrationCheckpoint, ModelAccount,
+		ModelAccountModel, ModelProvider, ModelRoute, OAuthRecord, ObjectDeletionJob,
+		ObjectReconcileCheckpoint, ObjectStorageConfig, PaymentOrder,
+		PaymentProviderInstance, PaymentWebhookEvent, PointLedger, Project,
+		PromptOptimizationRun, ProviderErrorPolicy, ProviderModel,
+		PublicImageInteraction, PublicImageStat, RedeemCode, ReferenceAsset,
+		RefreshSession, RouteModel, RouteModelCandidate, RouteModelGroup,
+		RouteModelGroupMember, RouteModelPrice, RouteModelVisibilityGroup,
+		SecureConfig, SubscriptionPlan, TextModel, TextModelAccount, User, UserGroup,
+		UserGroupMember, UserIdentity, UserSubscription, VideoModelCapability,
+		VideoModelRateCard, VideoPriceRule, VideoPricingStrategy,
+		VideoProviderCallbackEvent, VideoProviderCostRule, VideoRouteConfig, VideoTask,
+		VideoTaskAttempt, VideoTaskInput, VideoTaskItem, WalletGrant,
+		WalletReservationAllocation []ent.Interceptor
 	}
 )

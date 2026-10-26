@@ -20,7 +20,7 @@ import (
 const (
 	// CurrentDatabaseSchemaVersion is advanced whenever an application release
 	// requires a database migration before ordinary nodes may start.
-	CurrentDatabaseSchemaVersion = 7
+	CurrentDatabaseSchemaVersion = 10
 
 	// A fixed signed 64-bit key coordinates every explicit migrator for one
 	// PostgreSQL database. Session locks are scoped by database, so installations
@@ -255,11 +255,15 @@ func migrateLocked(ctx context.Context, database *sql.DB, req MigrationRequest) 
 	if err := requireCompletedReferenceAssetNameBackfill(referenceAssetNameProgress); err != nil {
 		return MigrationResult{}, err
 	}
+	groupsBackfilled, err := BackfillAssetGroups(ctx, client)
+	if err != nil {
+		return MigrationResult{}, fmt.Errorf("backfill asset groups: %w", err)
+	}
 	result, err := recordInstallationMigration(ctx, client, req)
 	if err != nil {
 		return MigrationResult{}, err
 	}
-	result.BackfilledRows = backfilled + sizeBoundsBackfilled + projectProgress.UpdatedRows + referenceAssetNameProgress.UpdatedRows
+	result.BackfilledRows = backfilled + sizeBoundsBackfilled + projectProgress.UpdatedRows + referenceAssetNameProgress.UpdatedRows + groupsBackfilled
 	return result, nil
 }
 

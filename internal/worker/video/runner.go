@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
@@ -19,6 +20,7 @@ import (
 	"github.com/google/uuid"
 
 	domainvideo "github.com/fatballfish/pic-gallery/internal/domain/video"
+	applogging "github.com/fatballfish/pic-gallery/internal/logging"
 	providervideo "github.com/fatballfish/pic-gallery/internal/provider/video"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/shopspring/decimal"
@@ -165,6 +167,7 @@ type ProviderResolver interface {
 type ResolvedExecution struct {
 	Provider             providervideo.Provider
 	ArtifactAllowedHosts []string
+	ArtifactHostsEnabled *bool
 }
 
 // Reconciler is an optional provider capability for looking up an uncertain
@@ -306,13 +309,18 @@ func (r *Runner) submit(ctx context.Context, item WorkItem) error {
 	if err != nil {
 		return r.applyFailure(ctx, prepared, "provider_input_unavailable", err.Error(), false)
 	}
+	slog.InfoContext(ctx, "video generation request", videoRequestLogAttrs(prepared, request)...)
 	job, err := provider.Submit(ctx, request)
 	if err != nil {
+		slog.WarnContext(ctx, "video generation submit failed", "task_id", prepared.TaskID, "item_id", prepared.ID,
+			"provider", prepared.ProviderCode, "model_code", prepared.Request.ProviderOptions["model_code"], "error", err.Error())
 		if providerErr, ok := providervideo.AsError(err); ok && providerErr.SubmissionUnknown {
 			return r.apply(ctx, prepared, domainvideo.ItemStateReconciling, "reconciling", "", providervideo.Artifact{}, nextAt(r.options.Now(), r.pollInterval(prepared.Attempt.No)), "", "", false)
 		}
 		return r.applyFailure(ctx, prepared, "provider_submit_failed", err.Error(), false)
 	}
+	slog.InfoContext(ctx, "video generation submitted", "task_id", prepared.TaskID, "item_id", prepared.ID,
+		"provider", prepared.ProviderCode, "job_id", job.ID, "request_id", job.RequestID, "state", string(job.State))
 	return r.applyJob(ctx, prepared, job)
 }
 
@@ -342,8 +350,11 @@ func (r *Runner) poll(ctx context.Context, item WorkItem) error {
 	}
 	status, err := provider.Get(ctx, providervideo.JobRef{ID: item.Attempt.JobID})
 	if err != nil {
+		slog.WarnContext(ctx, "video generation poll failed", "task_id", item.TaskID, "item_id", item.ID,
+			"provider", item.ProviderCode, "job_id", item.Attempt.JobID, "error", err.Error())
 		return r.schedule(ctx, item, item.State, item.Attempt.Status, "provider_poll_failed", err.Error())
 	}
+	logVideoStatus(ctx, item, status)
 	return r.applyStatus(ctx, item, status)
 }
 
@@ -446,10 +457,14 @@ func (r *Runner) persistArtifact(ctx context.Context, item WorkItem) error {
 	if err != nil {
 		return r.handleArtifactFailure(ctx, item, fmt.Errorf("resolve artifact provider account: %w", err))
 	}
-	file, size, sum, mimeType, err := r.downloadArtifact(ctx, item.Artifact, execution.ArtifactAllowedHosts)
+	file, size, sum, mimeType, err := r.downloadArtifact(ctx, item.Artifact, execution.ArtifactAllowedHosts, execution.ArtifactHostsEnabled)
 	if err != nil {
+		slog.WarnContext(ctx, "video artifact download failed", "task_id", item.TaskID, "item_id", item.ID,
+			"artifact_url", applogging.SanitizeURL(item.Artifact.URL), "error", err.Error())
 		return r.handleArtifactFailure(ctx, item, err)
 	}
+	slog.InfoContext(ctx, "video artifact downloaded", "task_id", item.TaskID, "item_id", item.ID,
+		"artifact_url", applogging.SanitizeURL(item.Artifact.URL), "mime_type", mimeType, "size_bytes", size, "sha256", sum)
 	defer func() {
 		name := file.Name()
 		_ = file.Close()
@@ -481,16 +496,22 @@ func (r *Runner) persistArtifact(ctx context.Context, item WorkItem) error {
 	})
 	if err != nil || !committed {
 		_ = writer.Backend.Delete(context.WithoutCancel(ctx), objectKey)
+		slog.WarnContext(ctx, "video artifact commit failed", "task_id", item.TaskID, "item_id", item.ID,
+			"asset_id", assetID, "committed", committed, "error", err)
 		if err != nil && r.options.Observer != nil {
 			r.options.Observer.RecordArtifactTransfer("video", "failed", 0)
 		}
-	} else if r.options.Observer != nil {
-		r.options.Observer.RecordArtifactTransfer("video", "success", size)
+	} else {
+		slog.InfoContext(ctx, "video artifact persisted", "task_id", item.TaskID, "item_id", item.ID,
+			"asset_id", assetID, "object_key", objectKey, "mime_type", mimeType, "size_bytes", size, "sha256", sum)
+		if r.options.Observer != nil {
+			r.options.Observer.RecordArtifactTransfer("video", "success", size)
+		}
 	}
 	return err
 }
 
-func (r *Runner) downloadArtifact(ctx context.Context, artifact providervideo.Artifact, accountHosts []string) (*os.File, int64, string, string, error) {
+func (r *Runner) downloadArtifact(ctx context.Context, artifact providervideo.Artifact, accountHosts []string, enabled ...*bool) (*os.File, int64, string, string, error) {
 	transferCtx, cancel := context.WithTimeout(ctx, r.options.ArtifactTransferTimeout)
 	defer cancel()
 	parsed, err := url.Parse(strings.TrimSpace(artifact.URL))
@@ -498,7 +519,7 @@ func (r *Runner) downloadArtifact(ctx context.Context, artifact providervideo.Ar
 		return nil, 0, "", "", errors.New("artifact URL must use HTTPS and an allowlisted host")
 	}
 	client := *r.httpClient
-	transport, err := r.artifactTransport(accountHosts)
+	transport, err := r.artifactTransport(accountHosts, enabled...)
 	if err != nil {
 		return nil, 0, "", "", err
 	}
@@ -699,12 +720,15 @@ func (r *Runner) allowedArtifactHost(ctx context.Context, host string, accountHo
 	return err == nil
 }
 
-func (r *Runner) resolveArtifactHost(ctx context.Context, host string, accountHosts []string) (net.IP, error) {
+func (r *Runner) resolveArtifactHost(ctx context.Context, host string, accountHosts []string, enabled ...*bool) (net.IP, error) {
 	hostname := strings.TrimSpace(host)
 	if parsedHost, _, err := net.SplitHostPort(hostname); err == nil {
 		hostname = parsedHost
 	}
 	allowedHosts := append(append([]string(nil), accountHosts...), r.options.ArtifactAllowedHosts...)
+	if len(enabled) > 0 && enabled[0] != nil && *enabled[0] {
+		allowedHosts = accountHosts
+	}
 	matched := false
 	for _, allowed := range allowedHosts {
 		if strings.EqualFold(strings.TrimSpace(allowed), host) {
@@ -712,7 +736,15 @@ func (r *Runner) resolveArtifactHost(ctx context.Context, host string, accountHo
 			break
 		}
 	}
-	if !matched {
+	requireHosts := len(allowedHosts) > 0
+	if len(enabled) > 0 && enabled[0] != nil {
+		requireHosts = *enabled[0]
+		// An explicitly enabled empty account list must fail closed even if global hosts exist.
+		if requireHosts && len(accountHosts) == 0 {
+			matched = false
+		}
+	}
+	if requireHosts && !matched {
 		return nil, errors.New("artifact host is not allowlisted")
 	}
 	addresses, err := r.options.ResolveHostIPs(ctx, hostname)
@@ -727,7 +759,7 @@ func (r *Runner) resolveArtifactHost(ctx context.Context, host string, accountHo
 	return append(net.IP(nil), addresses[0]...), nil
 }
 
-func (r *Runner) artifactTransport(accountHosts []string) (http.RoundTripper, error) {
+func (r *Runner) artifactTransport(accountHosts []string, enabled ...*bool) (http.RoundTripper, error) {
 	base := r.httpClient.Transport
 	if base == nil {
 		base = http.DefaultTransport
@@ -736,20 +768,21 @@ func (r *Runner) artifactTransport(accountHosts []string) (http.RoundTripper, er
 	if !ok {
 		return nil, errors.New("artifact HTTP transport cannot enforce address pinning")
 	}
-	return artifactRoundTripper{runner: r, base: transport, accountHosts: append([]string(nil), accountHosts...)}, nil
+	return artifactRoundTripper{runner: r, base: transport, accountHosts: append([]string(nil), accountHosts...), enabled: enabled}, nil
 }
 
 type artifactRoundTripper struct {
 	runner       *Runner
 	base         *http.Transport
 	accountHosts []string
+	enabled      []*bool
 }
 
 func (transport artifactRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
 	if request == nil || request.URL == nil || request.URL.Scheme != "https" {
 		return nil, errors.New("artifact request must use HTTPS")
 	}
-	address, err := transport.runner.resolveArtifactHost(request.Context(), request.URL.Host, transport.accountHosts)
+	address, err := transport.runner.resolveArtifactHost(request.Context(), request.URL.Host, transport.accountHosts, transport.enabled...)
 	if err != nil {
 		return nil, err
 	}
@@ -812,6 +845,52 @@ func providerRequest(item WorkItem) providervideo.Request {
 	request.AttemptID = item.Attempt.ID
 	request.IdempotencyKey = item.Attempt.IdempotencyKey
 	return request
+}
+
+func videoRequestLogAttrs(item WorkItem, request providervideo.Request) []any {
+	inputs := make([]string, 0, len(request.Inputs))
+	for _, input := range request.Inputs {
+		inputs = append(inputs, fmt.Sprintf("%s#%d=%s", input.Role, input.Ordinal, applogging.SanitizeURL(input.URL)))
+	}
+	modelCode, _ := request.ProviderOptions["model_code"].(string)
+	optionKeys := make([]string, 0, len(request.ProviderOptions))
+	for key := range request.ProviderOptions {
+		optionKeys = append(optionKeys, key)
+	}
+	return []any{
+		"task_id", item.TaskID, "item_id", item.ID, "user_id", item.UserID,
+		"provider", item.ProviderCode, "account_model_id", item.Attempt.AccountModelID,
+		"model_account_id", item.Attempt.ModelAccountID, "model_code", modelCode,
+		"task_type", request.TaskType, "prompt", applogging.TruncateText(request.Prompt, 4000),
+		"prompt_chars", len([]rune(request.Prompt)),
+		"duration_seconds", request.DurationSeconds, "resolution", request.Resolution,
+		"aspect_ratio", request.AspectRatio, "generate_audio", request.GenerateAudio,
+		"output_format", request.OutputFormat, "inputs", strings.Join(inputs, "; "),
+		"input_count", len(request.Inputs), "provider_option_keys", optionKeys,
+	}
+}
+
+func logVideoStatus(ctx context.Context, item WorkItem, status providervideo.Status) {
+	artifacts := make([]string, 0, len(status.Artifacts))
+	for _, artifact := range status.Artifacts {
+		artifacts = append(artifacts, fmt.Sprintf("%s mime=%s size=%d sha256=%s", applogging.SanitizeURL(artifact.URL), artifact.MIMEType, artifact.SizeBytes, artifact.SHA256))
+	}
+	attrs := []any{
+		"task_id", item.TaskID, "item_id", item.ID, "provider", item.ProviderCode,
+		"job_id", status.JobID, "state", string(status.State), "artifact_count", len(status.Artifacts),
+		"artifacts", strings.Join(artifacts, "; "), "error_code", status.ErrorCode,
+		"error_message", applogging.TruncateText(status.ErrorMessage, 2000),
+		"usage", applogging.SanitizeJSON(status.Usage, 2000),
+		"provider_raw", applogging.SanitizeJSON(status.Raw, 4000),
+	}
+	switch status.State {
+	case providervideo.StateSucceeded:
+		slog.InfoContext(ctx, "video generation succeeded", attrs...)
+	case providervideo.StateFailed, providervideo.StateCancelled:
+		slog.WarnContext(ctx, "video generation finished with failure", attrs...)
+	default:
+		slog.DebugContext(ctx, "video generation status", attrs...)
+	}
 }
 
 func (r *Runner) signInputs(ctx context.Context, request providervideo.Request) (providervideo.Request, error) {

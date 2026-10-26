@@ -78,6 +78,9 @@ func (a *API) HandleMediaAssets(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) HandleMediaAssetDetail(w http.ResponseWriter, r *http.Request) {
 	user, appErr := a.requireUser(r)
+	if r.Method == http.MethodGet && (strings.HasSuffix(r.URL.Path, "/access") || strings.HasSuffix(r.URL.Path, "/content")) {
+		user, appErr = a.requireUserWithQueryToken(r)
+	}
 	if appErr != nil {
 		httpx.WriteError(w, r, appErr)
 		return

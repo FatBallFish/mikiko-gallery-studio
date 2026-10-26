@@ -1,0 +1,833 @@
+{
+  "run_id": "remediation-7dae362a24764218b48b114ba6be4c1e",
+  "canonical_origin": "http://localhost:5273",
+  "checks": [
+    {
+      "name": "api_ready",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "canonical_login",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "new_api_key",
+      "passed": true,
+      "http_status": 201
+    },
+    {
+      "name": "balance_before",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "original_task_before",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "normal_cancel",
+      "passed": true,
+      "http_status": 202
+    },
+    {
+      "name": "task_after_cancel",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "balance_after_cancel",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "repeat_same_cancel",
+      "passed": true,
+      "http_status": 202
+    },
+    {
+      "name": "balance_after_repeat",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "no_duplicate_refund",
+      "passed": true
+    },
+    {
+      "name": "canonical_oauth_discovery",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "canonical_protected_discovery",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "canonical_discovery_origins",
+      "passed": true
+    },
+    {
+      "name": "oauth_register",
+      "passed": true,
+      "http_status": 201
+    },
+    {
+      "name": "oauth_authorize",
+      "passed": true,
+      "http_status": 303
+    },
+    {
+      "name": "oauth_consent_get",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "oauth_consent_allow",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "oauth_token_exchange",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "mcp_initialize",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "tools/list",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "mcp_balance",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "rest_project_create",
+      "passed": true,
+      "http_status": 201
+    },
+    {
+      "name": "rest_init",
+      "passed": true,
+      "http_status": 201
+    },
+    {
+      "name": "rest_target",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "rest_target_no_original_credentials",
+      "passed": true
+    },
+    {
+      "name": "rest_target_canonical",
+      "passed": true
+    },
+    {
+      "name": "rest_unauthenticated_target_put",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "rest_complete",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "rest_download_access",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "rest_download",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "rest_png_exact_bytes",
+      "passed": true,
+      "bytes": 68,
+      "sha256": "854d3eadd2dcb44518774bf877bd1ed4d3bfdef4afc615a933cae9288136f7f5"
+    },
+    {
+      "name": "mcp_init",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "mcp_target",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "mcp_target_no_original_credentials",
+      "passed": true
+    },
+    {
+      "name": "tools/list",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "tools/list_tool_result",
+      "passed": true
+    },
+    {
+      "name": "mcp_balance_verified",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "mcp_balance_verified_tool_result",
+      "passed": true
+    },
+    {
+      "name": "mcp_verified_init",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "mcp_verified_init_tool_result",
+      "passed": true
+    },
+    {
+      "name": "mcp_verified_target",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "mcp_verified_target_tool_result",
+      "passed": true
+    },
+    {
+      "name": "mcp_verified_target_no_original_credentials",
+      "passed": true
+    },
+    {
+      "name": "mcp_verified_target_canonical",
+      "passed": true
+    },
+    {
+      "name": "mcp_verified_unauthenticated_target_put",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "mcp_verified_complete",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "mcp_verified_complete_tool_result",
+      "passed": true
+    },
+    {
+      "name": "mcp_verified_download_access",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "mcp_verified_download_access_tool_result",
+      "passed": true
+    },
+    {
+      "name": "mcp_verified_download",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "mcp_verified_png_exact_bytes",
+      "passed": true,
+      "bytes": 68,
+      "sha256": "854d3eadd2dcb44518774bf877bd1ed4d3bfdef4afc615a933cae9288136f7f5"
+    },
+    {
+      "name": "video_discovery",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "rest_revoke_init",
+      "passed": true,
+      "http_status": 201
+    },
+    {
+      "name": "rest_revoke_target",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "revoke_new_key",
+      "passed": true,
+      "http_status": 204
+    },
+    {
+      "name": "revoked_key_target_denied",
+      "passed": true,
+      "http_status": 404,
+      "rejection_code": "NOT_FOUND"
+    },
+    {
+      "name": "mcp_revoke_init",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "mcp_revoke_init_tool_result",
+      "passed": true
+    },
+    {
+      "name": "mcp_revoke_target",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "mcp_revoke_target_tool_result",
+      "passed": true
+    },
+    {
+      "name": "oauth_revoke",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "revoked_grant_target_denied",
+      "passed": true,
+      "http_status": 403
+    },
+    {
+      "name": "revoked_oauth_mcp_denied",
+      "passed": true,
+      "http_status": 401
+    },
+    {
+      "name": "cleanup_key_create",
+      "passed": true,
+      "http_status": 201
+    },
+    {
+      "name": "rest_asset_cleanup",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "mcp_asset_cleanup",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "rest_revoke_abort_cleanup",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "mcp_revoke_abort_cleanup",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "temporary_project_cleanup",
+      "passed": false,
+      "http_status": 500,
+      "resolved_by": "project_retest_delete_without_target and project_retest_transfer_delete"
+    },
+    {
+      "name": "cleanup_key_delete",
+      "passed": true,
+      "http_status": 204
+    },
+    {
+      "name": "final_check_key_create",
+      "passed": true,
+      "http_status": 201
+    },
+    {
+      "name": "advertised_preflight_1080p",
+      "passed": true,
+      "http_status": 402,
+      "expected_domain_error": "INSUFFICIENT_BALANCE"
+    },
+    {
+      "name": "advertised_preflight_480p",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "advertised_preflight_resolution_parity",
+      "passed": true,
+      "sample_count": 2
+    },
+    {
+      "name": "final_balance",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "temporary_project_after_cleanup",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "final_check_key_delete",
+      "passed": true,
+      "http_status": 204
+    },
+    {
+      "name": "residual_cleanup_key_create",
+      "passed": true,
+      "http_status": 201
+    },
+    {
+      "name": "residual_assets_list",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "cleanup_owned_keys_list",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "residual_cleanup_key_delete",
+      "passed": true,
+      "http_status": 204
+    },
+    {
+      "name": "final_binary_ready",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "project_retest_new_session",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "project_retest_new_key",
+      "passed": true,
+      "http_status": 201
+    },
+    {
+      "name": "project_retest_get_source",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "project_retest_delete_without_target",
+      "passed": true,
+      "http_status": 409
+    },
+    {
+      "name": "project_not_empty_mapping",
+      "passed": false,
+      "resolved_by": "Case-normalized assertion; actual HTTP409 error.code project_not_empty matches domain error",
+      "test_assertion_case_mismatch": true
+    },
+    {
+      "name": "project_retest_delete_new_key",
+      "passed": true,
+      "http_status": 204
+    },
+    {
+      "name": "final_binary_ready",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "project_retest_new_session",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "project_retest_new_key",
+      "passed": true,
+      "http_status": 201
+    },
+    {
+      "name": "project_retest_get_source",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "project_retest_delete_without_target",
+      "passed": true,
+      "http_status": 409
+    },
+    {
+      "name": "project_not_empty_mapping",
+      "passed": true
+    },
+    {
+      "name": "project_retest_list_defaults",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "project_retest_get_default",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "project_retest_latest_source",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "project_retest_transfer_delete",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "project_retest_target_after",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "project_retest_source_deleted",
+      "passed": true,
+      "http_status": 404
+    },
+    {
+      "name": "project_retest_balance",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "project_retest_balance_528_zero",
+      "passed": true
+    },
+    {
+      "name": "project_retest_delete_new_key",
+      "passed": true,
+      "http_status": 204
+    }
+  ],
+  "constraints": {
+    "paid_generation_created": false,
+    "worker_started": false,
+    "database_modified_directly": false,
+    "historical_bootstrap_executed": false
+  },
+  "limitations": [
+    "Natural capability expiry not waited; live key and OAuth revocation checked. Mikiko UI belongs to main session."
+  ],
+  "balance_before": {
+    "available_points": "270.00000",
+    "frozen_points": "258.00000",
+    "trial_points": "0.00000",
+    "subscription_points": "0.00000",
+    "gift_points": "270.00000",
+    "recharge_points": "0.00000",
+    "buckets": [
+      {
+        "bucket": "gift",
+        "label": "赠送积分",
+        "available_points": "270.00000",
+        "frozen_points": "258.00000",
+        "expire_warning": false,
+        "source_type": "admin_adjust",
+        "sort_order": 3
+      }
+    ],
+    "user_group_multiplier": "1.00000",
+    "cny_per_point": "0.31250"
+  },
+  "cancel_idempotency_key": "remediation-7dae362a24764218b48b114ba6be4c1e-cancel",
+  "cancel_response": {
+    "id": "86764a67-e2da-4367-ba8e-e877e7849753",
+    "project_id": "82fca268-57d6-4d7b-8e0a-b21e8bd14b97",
+    "status": "cancelled",
+    "progress_stage": "completed",
+    "settlement_status": "finalized",
+    "actual_points": "0.00000",
+    "reserved_points": "258.00000"
+  },
+  "task_after_cancel": {
+    "id": "86764a67-e2da-4367-ba8e-e877e7849753",
+    "project_id": "82fca268-57d6-4d7b-8e0a-b21e8bd14b97",
+    "status": "cancelled",
+    "progress_stage": "completed",
+    "settlement_status": "finalized",
+    "actual_points": "0.00000",
+    "reserved_points": "258.00000"
+  },
+  "balance_after_cancel": {
+    "available_points": "528.00000",
+    "frozen_points": "0.00000",
+    "trial_points": "0.00000",
+    "subscription_points": "0.00000",
+    "gift_points": "528.00000",
+    "recharge_points": "0.00000",
+    "buckets": [
+      {
+        "bucket": "gift",
+        "label": "赠送积分",
+        "available_points": "528.00000",
+        "frozen_points": "0.00000",
+        "expire_warning": false,
+        "source_type": "admin_adjust",
+        "sort_order": 3
+      }
+    ],
+    "user_group_multiplier": "1.00000",
+    "cny_per_point": "0.31250"
+  },
+  "balance_after_repeat": {
+    "available_points": "528.00000",
+    "frozen_points": "0.00000",
+    "trial_points": "0.00000",
+    "subscription_points": "0.00000",
+    "gift_points": "528.00000",
+    "recharge_points": "0.00000",
+    "buckets": [
+      {
+        "bucket": "gift",
+        "label": "赠送积分",
+        "available_points": "528.00000",
+        "frozen_points": "0.00000",
+        "expire_warning": false,
+        "source_type": "admin_adjust",
+        "sort_order": 3
+      }
+    ],
+    "user_group_multiplier": "1.00000",
+    "cny_per_point": "0.31250"
+  },
+  "discovery": {
+    "issuer": "http://localhost:5273",
+    "resource": "http://localhost:5273/mcp"
+  },
+  "mcp_tool_count": 35,
+  "rest_upload": {
+    "asset_id": "5aeeb994-db2d-494f-bad2-a47804bf38ec",
+    "upload_id": "41614a44-fe33-4433-b0dd-3c5347068304",
+    "put_without_original_credential": true,
+    "download_exact": true,
+    "bytes": 68
+  },
+  "video_preflight_samples": [
+    {
+      "route_model_code": "wan-3.0-vedio",
+      "combination": {
+        "task_type": "text_to_video",
+        "duration_seconds": 5,
+        "resolution": "1080p",
+        "aspect_ratio": "16:9",
+        "audio_mode": "generated"
+      },
+      "http_status": 402,
+      "result": {
+        "estimated_points": null,
+        "error": {
+          "code": "INSUFFICIENT_BALANCE",
+          "message": "insufficient available points",
+          "chargeable": false,
+          "next_suggestion": "retry later or contact support if the problem persists"
+        }
+      },
+      "resolution_unsupported": false,
+      "expected_balance_error": true
+    },
+    {
+      "route_model_code": "wan-3.0-vedio",
+      "combination": {
+        "task_type": "text_to_video",
+        "duration_seconds": 5,
+        "resolution": "480p",
+        "aspect_ratio": "16:9",
+        "audio_mode": "generated"
+      },
+      "http_status": 200,
+      "result": {
+        "estimated_points": "258.00000",
+        "error": null
+      },
+      "resolution_unsupported": false
+    }
+  ],
+  "cleanup": {
+    "created_ids_only": true,
+    "temporary_project_retained": false,
+    "project_delete_error": "Resolved on final binary: nonempty without target409 project_not_empty; verified default target transfer/delete200",
+    "keys_created_this_run_deleted": true,
+    "oauth_grant_revoked": true,
+    "completed_assets_deleted": true,
+    "temporary_project_observed_counts": {
+      "task_count": 0,
+      "asset_count": 1,
+      "asset_list_items": null,
+      "observation": "Historical before final transfer/delete"
+    },
+    "project_delete_request": {
+      "expected_version": 1,
+      "target_project_id": "9714b638-1b56-4bbc-bd81-3f3a02a9ad21",
+      "idempotency_key": "final-project-966282073e344428bb516578aca98a2c-with-target"
+    },
+    "project_delete_response": {
+      "request": {
+        "expected_version": 1,
+        "target_project_id": "9714b638-1b56-4bbc-bd81-3f3a02a9ad21",
+        "idempotency_key": "final-project-966282073e344428bb516578aca98a2c-with-target"
+      },
+      "http_status": 200,
+      "response": {
+        "project": {
+          "id": "84811e80-1b4a-4c29-952e-d2d6cc02c450",
+          "name": "remediation-7dae362a24764218b48b114ba6be4c1e",
+          "is_default": false,
+          "status": "deleted",
+          "version": 2,
+          "task_count": 0,
+          "asset_count": 0,
+          "created_at": "2026-10-25T05:36:28.123932Z",
+          "updated_at": "2026-10-25T05:45:11.826617Z"
+        },
+        "transferred": {
+          "tasks": 0,
+          "assets": 1
+        }
+      }
+    },
+    "temporary_project_deleted": true,
+    "project_delete_error_resolved": true,
+    "pending_session_disposition": "Transferred to verified default project by normal project delete API; unknown session ID retained; not aborted.",
+    "project_delete_retry_status": 200
+  },
+  "video_discovery_summary": {
+    "advertised_text_to_video_resolutions": [
+      "1080p",
+      "480p"
+    ],
+    "advertises_720p": false,
+    "advertised_audio_modes": [
+      "generated"
+    ]
+  },
+  "final_balance": {
+    "available_points": "528.00000",
+    "frozen_points": "0.00000",
+    "trial_points": "0.00000",
+    "subscription_points": "0.00000",
+    "gift_points": "528.00000",
+    "recharge_points": "0.00000",
+    "buckets": [
+      {
+        "bucket": "gift",
+        "label": "赠送积分",
+        "available_points": "528.00000",
+        "frozen_points": "0.00000",
+        "expire_warning": false,
+        "source_type": "admin_adjust",
+        "sort_order": 3
+      }
+    ],
+    "user_group_multiplier": "1.00000",
+    "cny_per_point": "0.31250"
+  },
+  "refund_verified": true,
+  "mcp_upload": {
+    "asset_id": "9297b497-4030-4de7-b156-1602b2815221",
+    "upload_id": "6b6ffde8-5687-40a0-82d0-5408e7acbbdc",
+    "put_without_original_credential": true,
+    "download_exact": true,
+    "bytes": 68
+  },
+  "overall": "pass",
+  "task_cancel_finalization_verified": true,
+  "remaining_failures": [],
+  "project_cleanup_final_retest": {
+    "binary": "/tmp/e2e-api-mcp-remediated-final",
+    "project_id": "84811e80-1b4a-4c29-952e-d2d6cc02c450",
+    "timestamp": "2026-10-25T05:45:11.325199+00:00",
+    "source_before": {
+      "id": "84811e80-1b4a-4c29-952e-d2d6cc02c450",
+      "version": 1,
+      "is_default": false,
+      "status": "active",
+      "task_count": 0,
+      "asset_count": 1
+    },
+    "without_target": {
+      "request": {
+        "expected_version": 1,
+        "idempotency_key": "final-project-966282073e344428bb516578aca98a2c-without-target"
+      },
+      "http_status": 409,
+      "response": {
+        "error": {
+          "code": "project_not_empty",
+          "message": "project contains assets; choose a transfer target",
+          "chargeable": false,
+          "next_suggestion": "retry later or contact support if the problem persists",
+          "details": {
+            "counts": {
+              "tasks": 0,
+              "assets": 1
+            }
+          }
+        },
+        "meta": {
+          "request_id": "371e2739ebf1742c"
+        }
+      }
+    },
+    "verified_default_target": {
+      "id": "9714b638-1b56-4bbc-bd81-3f3a02a9ad21",
+      "version": 1,
+      "is_default": true,
+      "status": "active",
+      "task_count": 19,
+      "asset_count": 10
+    },
+    "with_target": {
+      "request": {
+        "expected_version": 1,
+        "target_project_id": "9714b638-1b56-4bbc-bd81-3f3a02a9ad21",
+        "idempotency_key": "final-project-966282073e344428bb516578aca98a2c-with-target"
+      },
+      "http_status": 200,
+      "response": {
+        "project": {
+          "id": "84811e80-1b4a-4c29-952e-d2d6cc02c450",
+          "name": "remediation-7dae362a24764218b48b114ba6be4c1e",
+          "is_default": false,
+          "status": "deleted",
+          "version": 2,
+          "task_count": 0,
+          "asset_count": 0,
+          "created_at": "2026-10-25T05:36:28.123932Z",
+          "updated_at": "2026-10-25T05:45:11.826617Z"
+        },
+        "transferred": {
+          "tasks": 0,
+          "assets": 1
+        }
+      }
+    },
+    "target_after": {
+      "id": "9714b638-1b56-4bbc-bd81-3f3a02a9ad21",
+      "version": 1,
+      "is_default": true,
+      "status": "active",
+      "task_count": 19,
+      "asset_count": 11
+    },
+    "balance": {
+      "available_points": "528.00000",
+      "frozen_points": "0.00000"
+    },
+    "pending_session_disposition": "Transferred to verified default project by normal project delete API; unknown session ID retained; not aborted.",
+    "new_key_deleted": true,
+    "wire_error_code": "project_not_empty"
+  }
+}

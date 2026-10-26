@@ -1,0 +1,323 @@
+/* Command Deck token bridge. The prototype admin stylesheet is the
+   authoritative skin; these aliases map the old admin variables used by
+   feature code onto the new token set. */
+
+html[data-site='admin'] {
+  --admin-font-ui: var(--font-admin);
+  --admin-font-mono: var(--font-admin-mono);
+  --admin-type-label: 12px;
+  --admin-type-support: 12.5px;
+  --admin-type-body: 15px;
+  --admin-type-section: 15px;
+  --admin-type-page: 30px;
+  --admin-motion-fast: var(--t-fast);
+  --admin-motion-base: var(--t-base);
+  --admin-motion-slow: var(--t-slow);
+
+  --bg: var(--a-bg);
+  --canvas: var(--a-canvas);
+  --shell: var(--a-canvas);
+  --topbar: color-mix(in srgb, var(--a-canvas) 92%, transparent);
+  --surface: var(--a-surface);
+  --surface-solid: var(--a-surface);
+  --elevated: var(--a-surface-2);
+  --surface-frost: var(--a-surface);
+  --fg: var(--a-ink);
+  --text: var(--a-ink);
+  --muted: var(--a-ink-2);
+  --soft: var(--a-ink-2);
+  --muted-strong: var(--a-ink-2);
+  --dim: var(--a-ink-3);
+  --border: var(--a-line);
+  --line: var(--a-line);
+  --border-strong: var(--a-line-2);
+  --line-strong: var(--a-line-2);
+  --accent: var(--a-accent);
+  --accent-soft: var(--a-accent-soft);
+  --accent-coral: var(--a-danger);
+  --accent-emerald: var(--a-success);
+  --accent-purple: var(--a-accent);
+  --green: var(--a-success);
+  --amber: var(--a-warn);
+  --red: var(--a-danger);
+  --blue: var(--a-info);
+  --yellow: var(--a-warn);
+  --success: var(--a-success);
+  --danger: var(--a-danger);
+  --focus-ring: var(--a-accent);
+  --focus: var(--a-accent);
+  --accent-rgb: 46, 74, 125;
+
+  --pg-radius-xs: 5px;
+  --pg-radius-sm: 6px;
+  --pg-radius-md: 10px;
+  --pg-radius-lg: 14px;
+  --pg-radius-xl: 20px;
+  --pg-topbar-height: var(--a-top-h);
+  --pg-sidebar-admin-width: var(--a-side-w);
+  --pg-shadow-sm: var(--a-shadow-sm);
+  --pg-shadow-md: var(--a-shadow-md);
+  --pg-shadow-lg: var(--a-shadow-lg);
+}
+
+html[data-site='admin'] body {
+  overflow: auto;
+  background: var(--a-bg);
+  color: var(--a-ink);
+  font-family: var(--font-admin);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+html[data-site='admin'] body::before {
+  display: none;
+}
+
+html[data-site='admin'] .a-side-close {
+  display: none;
+  margin-left: auto;
+}
+
+html[data-site='admin'] .a-side-scrim {
+  display: none;
+}
+
+html[data-site='admin'] .a-top__pulse {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--a-line);
+  border-radius: 999px;
+  background: var(--a-surface);
+  color: var(--a-ink-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+html[data-site='admin'] .a-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+html[data-site='admin'] .a-dot.is-ok {
+  color: var(--a-success);
+  box-shadow: 0 0 8px var(--a-success);
+}
+
+html[data-site='admin'] .a-dot.is-warn {
+  color: var(--a-warn);
+  box-shadow: 0 0 8px var(--a-warn);
+}
+
+html[data-site='admin'] .a-top__account {
+  position: relative;
+}
+
+html[data-site='admin'] .a-top__avatar-button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+
+html[data-site='admin'] .a-account-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 70;
+  display: grid;
+  min-width: 240px;
+  padding: 6px;
+  border: 1px solid var(--a-line-2);
+  border-radius: 12px;
+  background: var(--a-surface);
+  box-shadow: var(--a-shadow-lg);
+}
+
+html[data-site='admin'] .a-account-menu__head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px 11px;
+  border-bottom: 1px solid var(--a-line);
+  margin-bottom: 4px;
+}
+
+html[data-site='admin'] .a-account-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--a-ink-2);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+
+html[data-site='admin'] .a-account-menu__item:hover {
+  background: var(--a-surface-2);
+  color: var(--a-ink);
+}
+
+html[data-site='admin'] .a-account-menu__item--danger,
+html[data-site='admin'] .a-account-menu__item--danger:hover {
+  color: var(--a-danger);
+}
+
+@media (max-width: 1080px) {
+  html[data-site='admin'] {
+    --a-side-w: 248px;
+  }
+  html[data-site='admin'] .a-side {
+    z-index: 20;
+    width: min(300px, 86vw);
+    transform: translateX(-105%);
+  }
+  html[data-site='admin'] .a-side.is-open {
+    transform: none;
+  }
+  html[data-site='admin'] .a-main {
+    margin-left: 0;
+  }
+  html[data-site='admin'] .a-side-close {
+    display: grid;
+  }
+  html[data-site='admin'] .a-side-scrim {
+    display: block;
+    z-index: 19;
+  }
+}
+
+html[data-site='admin'] .a-page-stack {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+html[data-site='admin'] .a-panel__head-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--a-ink-3);
+}
+
+html[data-site='admin'] .a-table .is-center {
+  text-align: center;
+}
+
+html[data-site='admin'] .a-table__after td {
+  padding: 0;
+  background: var(--a-surface-2);
+}
+
+html[data-site='admin'] .a-tabs--vertical {
+  display: grid;
+  gap: 2px;
+  overflow: visible;
+  border-bottom: 0;
+}
+
+html[data-site='admin'] .a-tabs--vertical .a-tab {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 38px;
+  padding: 7px 11px;
+  border-radius: 8px;
+  text-align: left;
+}
+
+html[data-site='admin'] .a-tabs--vertical .a-tab::after {
+  display: none;
+}
+
+html[data-site='admin'] .a-tabs--vertical .a-tab.is-active {
+  background: var(--a-surface-2);
+}
+
+html[data-site='admin'] .a-tabs--vertical .a-tab .a-hint {
+  grid-column: 1 / -1;
+}
+
+html[data-site='admin'] .a-seg {
+  display: inline-flex;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid var(--a-line);
+  border-radius: 999px;
+  background: var(--a-surface-2);
+}
+
+html[data-site='admin'] .a-seg__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 31px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--a-ink-3);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+html[data-site='admin'] .a-seg__item:hover {
+  color: var(--a-ink);
+}
+
+html[data-site='admin'] .a-seg__item.is-active {
+  background: var(--a-surface);
+  color: var(--a-ink);
+  box-shadow: var(--a-shadow-sm);
+}
+
+html[data-site='admin'] .a-seg__item:disabled {
+  opacity: 0.45;
+}
+
+html[data-site='admin'] .a-field__error {
+  color: var(--a-danger);
+  font-size: 12px;
+  font-style: normal;
+}
+
+html[data-site='admin'] .a-field > span {
+  color: var(--a-ink-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+html[data-site='admin'] .a-empty--inline {
+  min-height: 140px;
+  padding: 20px;
+}
+
+html[data-site='admin'] .a-toast {
+  text-align: left;
+}
+
+html[data-site='admin'] .a-layer {
+  position: relative;
+  z-index: 70;
+}
+
+html[data-site='admin'] .a-layer--stacked {
+  z-index: 90;
+}
+
+html[data-site='admin'] .a-btn--primary {
+  color: #fff;
+}
+
+html[data-site='admin'][data-theme='dark'] .a-btn--primary {
+  color: #14181d;
+}

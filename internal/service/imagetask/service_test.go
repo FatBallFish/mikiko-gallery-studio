@@ -175,7 +175,7 @@ func (f *fakeAssetLoader) GetManyWithContext(_ context.Context, userID int64, as
 
 func TestCreateTaskResolvesPromptTemplateWithoutExposingVariableValues(t *testing.T) {
 	store := imagetask.NewMemoryStore()
-	assets := &fakeAssetLoader{assets: map[string]domainassets.ReferenceAsset{
+	assets := &fakeAssetLoader{inputs: map[string]provider.ImageInput{"style-id": {Data: []byte("style")}, "subject-id": {Data: []byte("subject")}}, assets: map[string]domainassets.ReferenceAsset{
 		"style-id":   {ID: "style-id", Name: "风格"},
 		"subject-id": {ID: "subject-id", Name: "主体"},
 	}}
@@ -209,7 +209,7 @@ func TestCreateTaskResolvesPromptTemplateWithoutExposingVariableValues(t *testin
 }
 
 func TestCreateTaskRejectsStalePromptReferenceBinding(t *testing.T) {
-	assets := &fakeAssetLoader{assets: map[string]domainassets.ReferenceAsset{"asset-id": {ID: "asset-id", Name: "已改名"}}}
+	assets := &fakeAssetLoader{inputs: map[string]provider.ImageInput{"asset-id": {Data: []byte("reference")}}, assets: map[string]domainassets.ReferenceAsset{"asset-id": {ID: "asset-id", Name: "已改名"}}}
 	svc := imagetask.NewServiceWithProvidersStoreAssetsBillingAndRouter(taskTestConfig(), nil, imagetask.NewMemoryStore(), assets, nil, nil)
 	_, err := svc.CreateTask(t.Context(), domainimagetask.CreateRequest{
 		UserID: 506, AbstractModel: "plus", TaskType: "image_edit", Prompt: "使用 {{@主体}}", SizeMode: "auto", OutputImageCount: 1,
@@ -375,6 +375,59 @@ func TestExecuteMapsGPTImage2CodexSourceToProviderAutoQualityAndCalculatedSize(t
 	}
 	if req.Size != "2880x2880" {
 		t.Fatalf("expected 4K 1:1 calculated size, got %q", req.Size)
+	}
+	if req.SendResponseFormat || req.ResponseFormat != provider.ResponseFormatB64JSON {
+		t.Fatalf("codex source must not forward response_format, got send=%v format=%q", req.SendResponseFormat, req.ResponseFormat)
+	}
+}
+
+func TestExecuteLeasedGPTImage2ImagesSourceForwardsURLResponseFormat(t *testing.T) {
+	cfg := taskTestConfig()
+	captured := make(chan provider.ImageRequest, 1)
+	providers := map[string]provider.ImageProvider{
+		"openai": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			captured <- req
+			return provider.ImageResponse{Created: 1770000031, Data: []provider.ImageResult{{B64JSON: tinyPNGBase64}}}, nil
+		}},
+	}
+	store := imagetask.NewMemoryStore()
+	svc := imagetask.NewServiceWithProvidersAndStore(cfg, providers, store)
+	svc.SetModelRoutingSource(&staticModelRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		ProviderModels: []modelhub.ProviderCandidate{{
+			AccountModelID:     302,
+			ModelAccountID:     202,
+			Provider:           "openai",
+			AdapterType:        "",
+			AuthType:           "api_key",
+			BaseURL:            "https://api.example.test/v1",
+			Credentials:        map[string]string{"api_key": "test-key"},
+			ModelCode:          "gpt-image-2",
+			SupportedTaskTypes: []string{"text_to_image"},
+			HealthStatus:       "enabled",
+			AccountExtra:       map[string]any{"source_mode": "images"},
+		}},
+	}})
+
+	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		UserID:           77,
+		AbstractModel:    "plus",
+		TaskType:         string(provider.TaskTypeTextToImage),
+		Prompt:           "Generate square image",
+		OutputImageCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	leased, ok, err := svc.AcquireNextTask(context.Background(), "worker-1", time.Minute)
+	if err != nil || !ok || leased.ID != created.ID {
+		t.Fatalf("AcquireNextTask ok=%v err=%v task=%#v", ok, err, leased)
+	}
+	if _, err := svc.ExecuteLeasedTask(context.Background(), leased, "worker-1", []string{"openai"}); err != nil {
+		t.Fatalf("ExecuteLeasedTask: %v", err)
+	}
+	req := <-captured
+	if !req.SendResponseFormat || req.ResponseFormat != provider.ResponseFormatURL {
+		t.Fatalf("images source must forward response_format=url, got send=%v format=%q", req.SendResponseFormat, req.ResponseFormat)
 	}
 }
 
@@ -2024,6 +2077,9 @@ func (s *failingSaveStore) Save(ctx context.Context, task domainimagetask.Task) 
 }
 
 func (s *failingSaveStore) SaveIfOwned(ctx context.Context, task domainimagetask.Task, owner string, now time.Time) error {
+	if task.UpstreamStartedAt != nil && task.UpstreamSucceededAt == nil && len(task.Attempts) == 0 && task.ErrorCode == "" {
+		return s.base.SaveIfOwned(ctx, task, owner, now)
+	}
 	s.ownedSnapshots = append(s.ownedSnapshots, task)
 	if s.failSaveIfOwned {
 		s.failSaveIfOwned = false
@@ -2232,6 +2288,11 @@ func (s *raceyTerminalStore) Save(ctx context.Context, task domainimagetask.Task
 }
 
 func (s *raceyTerminalStore) SaveIfOwned(ctx context.Context, task domainimagetask.Task, owner string, now time.Time) error {
+	// The injected conflict targets terminal/checkpoint writes, after the durable
+	// pre-submission marker has succeeded.
+	if task.UpstreamStartedAt != nil && task.UpstreamSucceededAt == nil && len(task.Attempts) == 0 && task.ErrorCode == "" {
+		return s.base.SaveIfOwned(ctx, task, owner, now)
+	}
 	if s.failSaveIfOwned {
 		s.failSaveIfOwned = false
 		if s.failSaveIfOwnedError != nil {
@@ -3214,7 +3275,8 @@ func TestCreateTaskRejectsUnsupportedTypeWithoutPersistingHistory(t *testing.T) 
 func TestRetryTaskCreatesQueuedCopyFromFailedTask(t *testing.T) {
 	cfg := taskTestConfig()
 	store := imagetask.NewMemoryStore()
-	svc := imagetask.NewServiceWithProvidersAndStore(cfg, nil, store)
+	loader := &fakeAssetLoader{inputs: map[string]provider.ImageInput{"asset-a": {Data: []byte("a")}, "asset-b": {Data: []byte("b")}}}
+	svc := imagetask.NewServiceWithProvidersStoreAndAssets(cfg, nil, store, loader)
 	projectSvc := projectservice.NewService(projectservice.NewMemoryStore())
 	project, err := projectSvc.Create(context.Background(), 33, domainproject.CreateRequest{Name: "Retry project"})
 	if err != nil {
@@ -4201,50 +4263,34 @@ func TestExecuteLeasedTaskDoesNotOverwriteReclaimedOwner(t *testing.T) {
 			err    error
 		}{result: result, err: execErr}
 	}()
+	secondOutcome := <-secondDone
+	if secondOutcome.err == nil || secondOutcome.result.Task.Status != domainimagetask.StatusRejected || secondOutcome.result.Task.ErrorCode != "IMAGE_UPSTREAM_SUBMISSION_UNCERTAIN" {
+		t.Fatalf("uncertain submission must stop: %#v %v", secondOutcome.result.Task, secondOutcome.err)
+	}
 	select {
 	case <-secondProviderStarted:
-	case <-time.After(500 * time.Millisecond):
-		t.Fatal("expected reclaimed worker to start provider generation")
+		t.Fatal("reclaimed worker repeated paid provider request")
+	default:
 	}
-
 	close(store.releaseTerminalSave)
-
 	firstOutcome := <-firstDone
-	var conflictErr *errs.Error
-	if firstOutcome.err == nil || !errors.As(firstOutcome.err, &conflictErr) || conflictErr.Code != errs.CodeConflict {
-		t.Fatalf("expected stale worker lease conflict, got result=%#v err=%v", firstOutcome.result, firstOutcome.err)
-	}
-
-	duringReclaim, err := svc.GetByID(context.Background(), 187, created.ID)
-	if err != nil {
-		t.Fatalf("GetByID during reclaim: %v", err)
-	}
-	if duringReclaim.Status != domainimagetask.StatusRunning || duringReclaim.LeaseOwner != "worker-b" || duringReclaim.ProgressStage != domainimagetask.ProgressStageProvider {
-		t.Fatalf("stale worker must not overwrite reclaimed task, got %#v", duringReclaim)
-	}
-
-	close(secondProviderRelease)
-	secondOutcome := <-secondDone
-	if secondOutcome.err != nil {
-		t.Fatalf("second ExecuteLeasedTask: %v", secondOutcome.err)
-	}
-	if secondOutcome.result.Task.Status != domainimagetask.StatusSucceeded {
-		t.Fatalf("expected reclaimed worker to succeed, got %#v", secondOutcome.result.Task)
+	if firstOutcome.err == nil {
+		t.Fatal("stale worker unexpectedly persisted checkpoint")
 	}
 	generateMu.Lock()
 	finalGenerateCalls := generateCalls
 	generateMu.Unlock()
-	if finalGenerateCalls != 2 {
-		t.Fatalf("expected each lease owner to make its own provider call after expiry, got %d", finalGenerateCalls)
+	if finalGenerateCalls != 1 {
+		t.Fatalf("expected one paid call, got %d", finalGenerateCalls)
 	}
-
 	finalTask, err := svc.GetByID(context.Background(), 187, created.ID)
 	if err != nil {
-		t.Fatalf("GetByID final: %v", err)
+		t.Fatal(err)
 	}
-	if finalTask.Status != domainimagetask.StatusSucceeded || len(finalTask.Results) != 1 || finalTask.Results[0].RevisedPrompt != "reclaimed-worker" {
-		t.Fatalf("expected succeeded task after reclaim race recovery, got %#v", finalTask)
+	if finalTask.Status != domainimagetask.StatusRejected || finalTask.BillingDiagnostic == "" {
+		t.Fatalf("missing reconciliation marker: %#v", finalTask)
 	}
+	close(secondProviderRelease)
 }
 
 func TestExecuteLeasedTaskRejectsStaleWorkerAfterReclaim(t *testing.T) {
@@ -4752,7 +4798,7 @@ func TestExecuteLeasedTaskLoadsReferenceAssetsForEdit(t *testing.T) {
 	if result.Task.ID != created.ID {
 		t.Fatalf("expected leased execution to keep task ID %s, got %s", created.ID, result.Task.ID)
 	}
-	if len(loader.calls) != 2 || loader.calls[0] != "asset-a" || loader.calls[1] != "asset-b" {
+	if !reflect.DeepEqual(loader.calls, []string{"asset-a", "asset-b", "asset-a", "asset-b"}) {
 		t.Fatalf("expected loader to read both assets in order, got %#v", loader.calls)
 	}
 }

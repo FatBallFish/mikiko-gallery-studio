@@ -4,6 +4,8 @@ import (
 	"time"
 
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
+	"github.com/fatballfish/pic-gallery/internal/domain/imagepricing"
+	"github.com/fatballfish/pic-gallery/internal/domain/nativeimage"
 	domainproject "github.com/fatballfish/pic-gallery/internal/domain/project"
 	"github.com/fatballfish/pic-gallery/internal/provider"
 )
@@ -36,6 +38,8 @@ const (
 )
 
 type ExecuteRequest struct {
+	Operation           nativeimage.Operation
+	NativeOptions       *nativeimage.Options
 	TaskID              string
 	UserID              int64
 	ProjectID           string
@@ -66,42 +70,47 @@ type ExecuteRequest struct {
 }
 
 type CreateRequest struct {
-	TaskID                string
-	UserID                int64
-	ProjectID             string
-	APIKeyID              int64
-	SourceChannel         string
-	AbstractModel         string
-	RouteModelCode        string
-	TaskType              string
-	Prompt                string
-	PromptVariables       []PromptVariableInput
-	ReferenceBindings     []PromptReferenceInput
-	PromptTemplate        string
-	PromptTemplateVersion int
-	PromptBindingSnapshot PromptBindingSnapshot
-	NegativePrompt        string
-	SizeMode              string
-	RequestedSize         string
-	BaseResolution        string
-	Quality               string
-	OutputFormat          string
-	Background            string
-	OutputCompression     int
-	Moderation            string
-	AspectRatio           string
-	OutputImageCount      int
-	ReferenceImageCount   int
-	ReferenceAssetIDs     []string
-	ReferenceStrength     int
-	Seed                  *int64
-	UserGroupCode         string
-	UserGroupCodes        []string
-	UserGroupMultiplier   string
-	MaskPresent           bool
-	ResponseMode          string
-	SavePolicy            string
-	CapabilityVersion     string
+	TrustedInputDimensions []imagepricing.Dimensions `json:"-"`
+	Operation              nativeimage.Operation
+	NativeOptions          *nativeimage.Options
+	RequestFingerprint     string `json:"-"`
+	TaskID                 string
+	UserID                 int64
+	ProjectID              string
+	APIKeyID               int64
+	SourceChannel          string
+	AbstractModel          string
+	RouteModelCode         string
+	TaskType               string
+	Prompt                 string
+	PromptVariables        []PromptVariableInput
+	ReferenceBindings      []PromptReferenceInput
+	PromptTemplate         string
+	PromptTemplateVersion  int
+	PromptBindingSnapshot  PromptBindingSnapshot
+	NegativePrompt         string
+	SizeMode               string
+	RequestedSize          string
+	BaseResolution         string
+	Quality                string
+	OutputFormat           string
+	Background             string
+	OutputCompression      int
+	Moderation             string
+	AspectRatio            string
+	OutputImageCount       int
+	ReferenceImageCount    int
+	ReferenceAssetIDs      []string
+	MaskAssetID            string `json:"mask_asset_id,omitempty"`
+	ReferenceStrength      int
+	Seed                   *int64
+	UserGroupCode          string
+	UserGroupCodes         []string
+	UserGroupMultiplier    string
+	MaskPresent            bool
+	ResponseMode           string
+	SavePolicy             string
+	CapabilityVersion      string
 }
 
 type RetryRequest struct {
@@ -196,16 +205,22 @@ type ArtifactRecovery struct {
 }
 
 type GenerationSnapshot struct {
-	CapabilityVersion string `json:"capability_version"`
-	SizeMode          string `json:"size_mode"`
-	BaseResolution    string `json:"base_resolution,omitempty"`
-	AspectRatio       string `json:"aspect_ratio,omitempty"`
-	ResolvedSize      string `json:"resolved_size,omitempty"`
-	ResolvedWidth     int    `json:"resolved_width,omitempty"`
-	ResolvedHeight    int    `json:"resolved_height,omitempty"`
+	NativeDefaultsFrozen bool   `json:"native_defaults_frozen,omitempty"`
+	CapabilityVersion    string `json:"capability_version"`
+	SizeMode             string `json:"size_mode"`
+	BaseResolution       string `json:"base_resolution,omitempty"`
+	AspectRatio          string `json:"aspect_ratio,omitempty"`
+	ResolvedSize         string `json:"resolved_size,omitempty"`
+	ResolvedWidth        int    `json:"resolved_width,omitempty"`
+	ResolvedHeight       int    `json:"resolved_height,omitempty"`
 }
 
 type Task struct {
+	UpstreamStartedAt     *time.Time                    `json:"-"`
+	BillingDiagnostic     string                        `json:"-"`
+	Operation             nativeimage.Operation         `json:"operation,omitempty"`
+	NativeOptions         *nativeimage.Options          `json:"native_options,omitempty"`
+	RequestFingerprint    string                        `json:"-"`
 	UserID                int64                         `json:"-"`
 	ProjectID             string                        `json:"project_id"`
 	Project               *domainproject.Snapshot       `json:"project,omitempty"`
@@ -252,6 +267,7 @@ type Task struct {
 	OutputImageCount      int                           `json:"requested_output_image_count"`
 	ReferenceImageCount   int                           `json:"reference_image_count"`
 	ReferenceAssetIDs     []string                      `json:"reference_asset_ids,omitempty"`
+	MaskAssetID           string                        `json:"mask_asset_id,omitempty"`
 	ReferenceStrength     int                           `json:"reference_strength,omitempty"`
 	Seed                  *int64                        `json:"seed,omitempty"`
 	EstimatedPoints       string                        `json:"estimated_points,omitempty"`
@@ -288,6 +304,7 @@ type PromptReferenceBinding struct {
 }
 
 type PromptBindingSnapshot struct {
+	Variables     []PromptVariableInput    `json:"variables,omitempty"`
 	References    []PromptReferenceBinding `json:"references,omitempty"`
 	VariableNames []string                 `json:"variable_names,omitempty"`
 }
@@ -298,6 +315,8 @@ type ExecuteResult struct {
 }
 
 type GalleryImage struct {
+	Name              string                  `json:"name,omitempty"`
+	MediaAssetID      string                  `json:"media_asset_id,omitempty"`
 	ID                string                  `json:"id"`
 	TaskID            string                  `json:"task_id"`
 	UserID            int64                   `json:"user_id,omitempty"`

@@ -170,3 +170,35 @@ func TestValidateDocumentGroups(t *testing.T) {
 		}
 	}
 }
+
+func TestIntegratedNodesEmptyAloneAndMediaReferenceConstraints(t *testing.T) {
+	for _, kind := range []NodeType{NodeTypeImageV2, NodeTypeVideoV2} {
+		node := Node{ID: "new", Type: kind, Size: Size{Width: 80, Height: 1}}
+		doc := DocumentV1{SchemaVersion: 1, Nodes: []Node{node}}
+		if err := ValidateDocument(doc, DefaultLimits()); err != nil {
+			t.Fatal(err)
+		}
+		doc.Nodes[0].Size.Width = 79
+		if err := ValidateDocument(doc, DefaultLimits()); err == nil {
+			t.Fatal("undersized v2 accepted")
+		}
+	}
+	source := Node{ID: "source", Type: NodeTypeImageV2, AssetID: "asset", Size: Size{Width: 80, Height: 80}}
+	target := Node{ID: "target", Type: NodeTypeVideoV2, Size: Size{Width: 80, Height: 80}}
+	doc := DocumentV1{SchemaVersion: 1, Nodes: []Node{source, target}, Edges: []Edge{{ID: "ref", Source: "source", Target: "target", InputRole: InputRoleFirstFrame}}}
+	if err := ValidateDocument(doc, DefaultLimits()); err != nil {
+		t.Fatal(err)
+	}
+	if refs := ExtractAssetReferences(doc); len(refs) != 1 || refs[0] != "asset" {
+		t.Fatalf("refs %#v", refs)
+	}
+	doc.Nodes[0].AssetID = ""
+	if err := ValidateDocument(doc, DefaultLimits()); err == nil {
+		t.Fatal("empty v2 used as media input")
+	}
+	doc.Nodes[0].AssetID = "asset"
+	doc.Edges = append(doc.Edges, Edge{ID: "duplicate", Source: "source", Target: "target", InputRole: InputRoleFirstFrame})
+	if err := ValidateDocument(doc, DefaultLimits()); err == nil {
+		t.Fatal("duplicate first frame accepted")
+	}
+}

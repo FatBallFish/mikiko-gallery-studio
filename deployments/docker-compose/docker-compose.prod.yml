@@ -1,5 +1,12 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "100m"
+    max-file: "5"
+
 services:
   postgres:
+    logging: *default-logging
     profiles: ["full", "postgres"]
     image: postgres:16-alpine
     restart: unless-stopped
@@ -30,6 +37,7 @@ services:
       retries: 20
 
   redis:
+    logging: *default-logging
     profiles: ["full", "redis"]
     image: redis:7-alpine
     restart: unless-stopped
@@ -45,6 +53,7 @@ services:
       retries: 20
 
   rustfs:
+    logging: *default-logging
     profiles: ["full", "rustfs"]
     image: rustfs/rustfs:1.0.1
     restart: unless-stopped
@@ -68,6 +77,7 @@ services:
       retries: 20
 
   rustfs-init:
+    logging: *default-logging
     profiles: ["full", "rustfs"]
     image: amazon/aws-cli:2.37.12
     restart: "no"
@@ -88,6 +98,7 @@ services:
         read_only: true
 
   api:
+    logging: *default-logging
     profiles: ["full", "core", "api"]
     image: ${IMAGE_REGISTRY:-docker.io/fatballfish}/mikiko-gallery-studio-api:${IMAGE_TAG:-latest}
     user: ${MGSCTL_RUNTIME_USER:-picgallery}
@@ -111,6 +122,7 @@ services:
       retries: 20
 
   worker:
+    logging: *default-logging
     profiles: ["full", "core", "worker"]
     image: ${IMAGE_REGISTRY:-docker.io/fatballfish}/mikiko-gallery-studio-worker:${IMAGE_TAG:-latest}
     user: ${MGSCTL_RUNTIME_USER:-picgallery}
@@ -130,6 +142,7 @@ services:
         target: /app/data
 
   user-web:
+    logging: *default-logging
     profiles: ["full", "core", "user-web"]
     image: ${IMAGE_REGISTRY:-docker.io/fatballfish}/mikiko-gallery-studio-user-web:${IMAGE_TAG:-latest}
     restart: unless-stopped
@@ -147,6 +160,7 @@ services:
       retries: 20
 
   admin-web:
+    logging: *default-logging
     profiles: ["full", "core", "admin-web"]
     image: ${IMAGE_REGISTRY:-docker.io/fatballfish}/mikiko-gallery-studio-admin-web:${IMAGE_TAG:-latest}
     restart: unless-stopped
@@ -163,6 +177,7 @@ services:
       retries: 20
 
   docs-web:
+    logging: *default-logging
     profiles: ["full", "core", "docs-web"]
     image: ${IMAGE_REGISTRY:-docker.io/fatballfish}/mikiko-gallery-studio-docs-web:${IMAGE_TAG:-latest}
     restart: unless-stopped
@@ -175,6 +190,7 @@ services:
       retries: 20
 
   gateway:
+    logging: *default-logging
     profiles: ["full", "core", "gateway"]
     image: nginx:1.27-alpine
     restart: unless-stopped
@@ -202,6 +218,7 @@ services:
       retries: 20
 
   monitoring:
+    logging: *default-logging
     profiles: ["monitoring"]
     image: prom/prometheus:v3.0.1
     restart: unless-stopped

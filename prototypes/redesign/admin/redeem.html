@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>兑换码 — Mikiko Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/admin.css">
+<style>
+  .rd-code { padding: 2px 6px; border-radius: 5px; background: var(--a-surface-3); font-family: var(--font-admin-mono); font-size: 11.5px; letter-spacing: .02em; }
+  .rd-progress { display: flex; align-items: center; gap: 8px; }
+  .rd-progress div { width: 70px; height: 5px; border-radius: 3px; background: var(--a-surface-3); overflow: hidden; }
+  .rd-progress i { display: block; height: 100%; background: var(--a-accent); }
+</style>
+</head>
+<body data-site="admin" data-page="redeem" data-title="兑换码">
+<div class="a-shell"><div class="a-main">
+  <main class="a-content">
+    <header class="a-page-head">
+      <div class="a-page-head__copy">
+        <span class="a-kicker">Redeem Codes</span>
+        <h1>兑换码</h1>
+        <p>单码创建或批量生成，核销记录在抽屉中查看。状态与使用进度直接展示，停用不再需要翻二级页面。</p>
+      </div>
+      <div class="a-page-head__actions">
+        <button class="a-btn a-btn--sm" type="button" data-toast="已导出兑换码 CSV">导出</button>
+        <button class="a-btn a-btn--sm" type="button" data-open="#batch-create">批量生成</button>
+        <button class="a-btn a-btn--sm a-btn--primary" type="button" data-open="#code-create">创建兑换码</button>
+      </div>
+    </header>
+
+    <div class="a-metrics" style="margin-bottom:16px">
+      <div class="a-metric"><div class="a-metric__label">兑换码总数</div><div class="a-metric__value">2,480</div><div class="a-metric__foot">可用 1,842</div></div>
+      <div class="a-metric"><div class="a-metric__label">今日核销</div><div class="a-metric__value">42</div><div class="a-metric__foot">发放 86,000 积分</div></div>
+      <div class="a-metric"><div class="a-metric__label">核销率</div><div class="a-metric__value">74.3%</div><div class="a-metric__foot">近 30 天</div></div>
+      <div class="a-metric"><div class="a-metric__label">已停用</div><div class="a-metric__value">128</div><div class="a-metric__foot">占比 5.2%</div></div>
+    </div>
+
+    <section class="a-filters">
+      <div class="a-filters__row">
+        <label class="a-field"><span>兑换码 / 批次</span><div class="a-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="a-input" placeholder="REDEEM-XXXX / batch_..."></div></label>
+        <label class="a-field"><span>状态</span><select class="a-select"><option>全部状态</option><option>可用</option><option>未生效</option><option>已核销</option><option>已过期</option><option>已停用</option></select></label>
+        <label class="a-field"><span>奖励类型</span><select class="a-select"><option>积分</option></select></label>
+        <label class="a-field"><span>创建时间</span><input class="a-input" type="date" value="2026-10-22"></label>
+      </div>
+      <div class="a-filters__foot"><span class="a-filters__result">共 <b>2,480</b> 条 · 第 1 / 124 页</span><div class="a-filters__actions"><button class="a-btn a-btn--sm a-btn--quiet" type="button" data-filter-more>更多筛选</button><button class="a-btn a-btn--sm" type="button" data-toast="已重置筛选">重置</button><button class="a-btn a-btn--sm a-btn--primary" type="button" data-toast="已应用筛选">查询</button></div></div>
+    </section>
+
+    <section class="a-panel a-panel--flush" style="margin-top:16px">
+      <div class="a-panel__head"><div><h2>兑换码列表</h2><p>点击“核销记录”查看领取用户。</p></div><span class="a-hint">按创建时间倒序</span></div>
+      <div class="a-table-wrap">
+        <table class="a-table" style="min-width:1080px">
+          <thead><tr><th>兑换码</th><th class="is-num">奖励</th><th>有效期</th><th>使用情况</th><th>状态</th><th>创建时间</th><th class="is-actions">操作</th></tr></thead>
+          <tbody>
+            <tr><td><div class="a-cell-stack"><strong class="rd-code">REDEEM-7Q4M-2KX9</strong><span>batch_20261022_01 · 单码</span></div></td><td class="is-num">◈ 1,000</td><td class="a-hint">2026-12-31 到期</td><td><div class="rd-progress"><div><i style="width:100%"></i></div><span class="a-num" style="font-size:11.5px">1 / 1</span></div></td><td><span class="a-badge a-badge--ok"><i></i>已核销</span></td><td class="is-muted">10-22 14:02</td><td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#redeem-usage">核销记录</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="更多操作" data-row-ignore>⋯</button></div></td></tr>
+            <tr><td><div class="a-cell-stack"><strong class="rd-code">REDEEM-8H2L-0P4V</strong><span>batch_20261022_01 · 批量 50</span></div></td><td class="is-num">◈ 500</td><td class="a-hint">2026-11-21 到期</td><td><div class="rd-progress"><div><i style="width:32%"></i></div><span class="a-num" style="font-size:11.5px">16 / 50</span></div></td><td><span class="a-badge a-badge--ok"><i></i>可用</span></td><td class="is-muted">10-22 10:30</td><td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#redeem-usage">核销记录</button><button class="a-row-btn" type="button" data-toast="已停用兑换码">停用</button></div></td></tr>
+            <tr><td><div class="a-cell-stack"><strong class="rd-code">REDEEM-3C9N-6T1B</strong><span>batch_20261021_03 · 批量 100</span></div></td><td class="is-num">◈ 1,000</td><td class="a-hint">2026-10-31 到期</td><td><div class="rd-progress"><div><i style="width:68%"></i></div><span class="a-num" style="font-size:11.5px">68 / 100</span></div></td><td><span class="a-badge a-badge--ok"><i></i>可用</span></td><td class="is-muted">10-21 16:12</td><td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#redeem-usage">核销记录</button><button class="a-row-btn" type="button" data-toast="已停用兑换码">停用</button></div></td></tr>
+            <tr><td><div class="a-cell-stack"><strong class="rd-code">REDEEM-5W7R-2Y8C</strong><span>batch_20261020_02 · 批量 200</span></div></td><td class="is-num">◈ 200</td><td class="a-hint">2026-10-20 已过期</td><td><div class="rd-progress"><div><i style="width:54%"></i></div><span class="a-num" style="font-size:11.5px">108 / 200</span></div></td><td><span class="a-badge"><i></i>已过期</span></td><td class="is-muted">10-20 09:00</td><td class="is-actions"><div class="a-row-actions"><button class="a-row-btn" type="button" data-open="#redeem-usage">核销记录</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="更多操作" data-row-ignore>⋯</button></div></td></tr>
+            <tr><td><div class="a-cell-stack"><strong class="rd-code">REDEEM-1A4D-9F6G</strong><span>batch_20261001_01 · 批量 500</span></div></td><td class="is-num">◈ 100</td><td class="a-hint">2026-12-01 到期</td><td><div class="rd-progress"><div><i style="width:9%"></i></div><span class="a-num" style="font-size:11.5px">46 / 500</span></div></td><td><span class="a-badge a-badge--info"><i></i>未生效</span></td><td class="is-muted">10-01 00:00</td><td class="is-actions"><div class="a-row-actions"><button class="a-row-btn" type="button" data-open="#redeem-usage">核销记录</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="更多操作" data-row-ignore>⋯</button></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="a-pager"><div class="a-pager__info">显示 <b>1–20</b>，共 <b>2,480</b> 条</div><div class="a-pager__controls"><button class="a-pager__btn" disabled>‹</button><button class="a-pager__btn is-active">1</button><button class="a-pager__btn">2</button><button class="a-pager__btn">3</button><button class="a-pager__btn">…</button><button class="a-pager__btn">124</button><button class="a-pager__btn">›</button></div><div class="a-pager__size"><span>每页</span><select><option>20</option><option>50</option><option>100</option></select></div></div>
+    </section>
+  </main>
+</div></div>
+
+<div class="a-scrim"></div>
+<aside class="a-drawer" id="code-create" role="dialog" aria-modal="true" aria-label="创建兑换码">
+  <header class="a-drawer__head"><div><h2>创建兑换码</h2><p>单码创建 · 奖励为积分</p></div><div class="a-drawer__spacer"></div><button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button></header>
+  <div class="a-drawer__body">
+    <form class="a-form">
+      <section class="a-form__section">
+        <label class="a-field"><span>兑换码 <span class="a-required">*</span></span><div style="display:flex;gap:8px"><input class="a-input" value="REDEEM-9K2M-4X7Q" style="font-family:var(--font-admin-mono)"><button class="a-btn a-btn--sm" type="button" data-toast="已生成新兑换码">随机生成</button></div><span class="a-hint">仅允许大写字母、数字与连字符。</span></label>
+        <label class="a-field"><span>奖励积分 <span class="a-required">*</span></span><input class="a-input" value="1000" inputmode="numeric"></label>
+        <label class="a-field"><span>有效期</span><input class="a-input" type="date" value="2026-12-31"><span class="a-hint">留空表示永久有效。</span></label>
+        <label class="a-field"><span>每码可核销次数</span><input class="a-input" value="1" inputmode="numeric"></label>
+      </section>
+    </form>
+  </div>
+  <footer class="a-drawer__foot"><button class="a-btn a-btn--sm" type="button" data-close>取消</button><button class="a-btn a-btn--sm a-btn--primary" type="button" data-close data-toast="兑换码已创建" data-tone="ok">创建</button></footer>
+</aside>
+
+<aside class="a-drawer" id="batch-create" role="dialog" aria-modal="true" aria-label="批量生成兑换码">
+  <header class="a-drawer__head"><div><h2>批量生成兑换码</h2><p>生成完成后自动下载 CSV</p></div><div class="a-drawer__spacer"></div><button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button></header>
+  <div class="a-drawer__body">
+    <form class="a-form">
+      <section class="a-form__section">
+        <label class="a-field"><span>数量 <span class="a-required">*</span></span><input class="a-input" value="50" inputmode="numeric"><span class="a-hint">单批最多 100 个。</span></label>
+        <label class="a-field"><span>每个奖励积分</span><input class="a-input" value="500" inputmode="numeric"></label>
+        <div class="a-form__pair">
+          <label class="a-field"><span>有效天数</span><input class="a-input" value="30" inputmode="numeric"></label>
+          <label class="a-field"><span>每码核销次数</span><input class="a-input" value="1" inputmode="numeric"></label>
+        </div>
+        <label class="a-field"><span>批次名称</span><input class="a-input" value="2026-10 创作者活动"></label>
+      </section>
+    </form>
+    <div class="a-banner a-banner--info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg><span>批量兑换码创建后立即进入“可用”状态；未使用的码可随时停用。</span></div>
+  </div>
+  <footer class="a-drawer__foot"><button class="a-btn a-btn--sm" type="button" data-close>取消</button><button class="a-btn a-btn--sm a-btn--primary" type="button" data-close data-toast="已生成 50 个兑换码并开始下载 CSV" data-tone="ok">生成并下载</button></footer>
+</aside>
+
+<aside class="a-drawer" id="redeem-usage" role="dialog" aria-modal="true" aria-label="核销记录">
+  <header class="a-drawer__head"><div><h2>核销记录</h2><p>REDEEM-8H2L-0P4V · 16 / 50</p></div><div class="a-drawer__spacer"></div><span class="a-badge a-badge--ok"><i></i>可用</span><button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button></header>
+  <div class="a-drawer__body">
+    <div class="a-metrics" style="grid-template-columns:repeat(3,1fr)">
+      <div class="a-metric"><div class="a-metric__label">已核销</div><div class="a-metric__value" style="font-size:22px">16</div></div>
+      <div class="a-metric"><div class="a-metric__label">剩余</div><div class="a-metric__value" style="font-size:22px">34</div></div>
+      <div class="a-metric"><div class="a-metric__label">发放积分</div><div class="a-metric__value" style="font-size:22px">8,000</div></div>
+    </div>
+    <div class="a-table-wrap" style="border:1px solid var(--a-line);border-radius:9px">
+      <table class="a-table" style="min-width:620px">
+        <thead><tr><th>用户</th><th>类型</th><th class="is-num">积分</th><th>来源</th><th>时间</th></tr></thead>
+        <tbody>
+          <tr><td><span class="a-cell-entity"><span class="a-cell-entity__avatar">苏</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">苏迟</span><span class="a-cell-entity__meta">suchi@inkroom.cn</span></span></span></td><td>兑换码到账</td><td class="is-num">500.00</td><td class="is-muted">赠送额度</td><td class="is-muted">10-22 17:42</td></tr>
+          <tr><td><span class="a-cell-entity"><span class="a-cell-entity__avatar">陆</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">陆小满</span><span class="a-cell-entity__meta">luxiaoman@mikiko.ai</span></span></span></td><td>兑换码到账</td><td class="is-num">500.00</td><td class="is-muted">赠送额度</td><td class="is-muted">10-22 15:06</td></tr>
+          <tr><td><span class="a-cell-entity"><span class="a-cell-entity__avatar">叶</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">叶青禾</span><span class="a-cell-entity__meta">yeqinghe@studio.moe</span></span></span></td><td>兑换码到账</td><td class="is-num">500.00</td><td class="is-muted">赠送额度</td><td class="is-muted">10-22 12:18</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="a-hint">仅显示最近 20 条核销记录。</div>
+  </div>
+  <footer class="a-drawer__foot"><button class="a-btn a-btn--sm" type="button" data-toast="已导出核销记录">导出记录</button><button class="a-btn a-btn--sm a-btn--primary" type="button" data-close>关闭</button></footer>
+</aside>
+<script src="../assets/shell.js"></script>
+</body>
+</html>

@@ -127,7 +127,7 @@ func (capability Capability) Match(request Request) MatchResult {
 			if !containsFold(inputCapability.MediaTypes, input.MediaType) {
 				return mismatch("inputs."+string(role)+".media_type", "unsupported", "input media type is not supported")
 			}
-			if !containsFold(inputCapability.Formats, input.Format) {
+			if !containsVideoFormat(inputCapability.Formats, input.Format, input.MediaType) {
 				return mismatch("inputs."+string(role)+".format", "unsupported", "input format is not supported")
 			}
 			if inputCapability.MaxBytes > 0 && input.SizeBytes > inputCapability.MaxBytes {
@@ -281,4 +281,63 @@ func containsFold(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func containsVideoFormat(values []string, target, mediaType string) bool {
+	canonical := canonicalVideoFormat(target)
+	if canonical == "" {
+		return false
+	}
+	// MIME types retain their media family. Never accept a video MIME for an
+	// image input, even when both the request and capability contain that MIME.
+	if family, _, isMIME := strings.Cut(canonical, "/"); isMIME && !strings.EqualFold(family, strings.TrimSpace(mediaType)) {
+		return false
+	}
+	for _, value := range values {
+		if canonicalVideoFormat(value) == canonical {
+			return true
+		}
+	}
+	return false
+}
+
+func canonicalVideoFormat(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if index := strings.IndexByte(value, ';'); index >= 0 {
+		value = strings.TrimSpace(value[:index])
+	}
+	// Only known aliases are interchangeable; stripping an arbitrary MIME
+	// prefix would equate unrelated media types such as image/png and video/png.
+	switch value {
+	case "jpg", "jpeg", "image/jpeg", "image/jpg":
+		return "image/jpeg"
+	case "png", "image/png":
+		return "image/png"
+	case "webp", "image/webp":
+		return "image/webp"
+	case "heic", "image/heic":
+		return "image/heic"
+	case "heif", "image/heif":
+		return "image/heif"
+	case "bmp", "image/bmp":
+		return "image/bmp"
+	case "tif", "tiff", "image/tiff":
+		return "image/tiff"
+	case "gif", "image/gif":
+		return "image/gif"
+	case "mp4", "video/mp4":
+		return "video/mp4"
+	case "mov", "video/quicktime":
+		return "video/quicktime"
+	case "webm", "video/webm":
+		return "video/webm"
+	case "mp3", "audio/mpeg", "audio/mp3":
+		return "audio/mpeg"
+	case "m4a", "audio/mp4", "audio/x-m4a":
+		return "audio/mp4"
+	case "wav", "x-wav", "audio/wav", "audio/x-wav", "audio/wave":
+		return "audio/wav"
+	default:
+		return value
+	}
 }

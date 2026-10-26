@@ -6,10 +6,15 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
+	"github.com/fatballfish/pic-gallery/internal/service/capabilities"
+	"github.com/fatballfish/pic-gallery/internal/service/openplatform"
+	"github.com/google/uuid"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -132,21 +137,26 @@ func TestOpenAICompatGenerateUsesCurrentRouteModelConfiguration(t *testing.T) {
 
 func TestOpenAICompatGenerationMapsCurrentGPTImageFieldsToProvider(t *testing.T) {
 	tests := []struct {
-		name string
-		body string
-		want map[string]any
+		name               string
+		omitResponseFormat bool
+		body               string
+		want               map[string]any
 	}{
 		{
 			name: "omitted size and transparent png",
 			body: `{"model":"basic","prompt":"transparent product","background":"transparent","output_format":"png","moderation":"low","n":1}`,
-			want: map[string]any{"background": "transparent", "output_format": "png", "moderation": "low"},
+			want: map[string]any{"background": "transparent", "output_format": "png", "moderation": "low", "response_format": "url"},
 		},
 		{
 			name: "auto size and compressed webp",
 			body: `{"model":"basic","prompt":"transparent webp","size":"auto","background":"transparent","output_format":"webp","output_compression":72,"moderation":"low","n":1}`,
-			want: map[string]any{"background": "transparent", "output_format": "webp", "output_compression": float64(72), "moderation": "low"},
+			want: map[string]any{"background": "transparent", "output_format": "webp", "output_compression": float64(72), "moderation": "low", "response_format": "url"},
 		},
+		{name: "account configured for official parameter omission", omitResponseFormat: true,
+			body: `{"model":"basic","prompt":"official parameters","output_format":"png","n":1}`,
+			want: map[string]any{"output_format": "png"}},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			captured := make(chan map[string]any, 1)
@@ -163,7 +173,7 @@ func TestOpenAICompatGenerationMapsCurrentGPTImageFieldsToProvider(t *testing.T)
 				_, _ = io.WriteString(w, `{"created":1770000044,"data":[{"b64_json":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lqR5DQAAAABJRU5ErkJggg=="}]}`)
 			}))
 			defer upstream.Close()
-			handler, apiSecret := newGPTImageCompatHandler(t, upstream.URL)
+			handler, apiSecret := newGPTImageCompatHandler(t, upstream.URL, tt.omitResponseFormat)
 
 			req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewBufferString(tt.body))
 			req.Header.Set("Authorization", "Bearer "+apiSecret)
@@ -182,7 +192,12 @@ func TestOpenAICompatGenerationMapsCurrentGPTImageFieldsToProvider(t *testing.T)
 					t.Fatalf("payload[%q] = %#v, want %#v: %#v", key, got, want, payload)
 				}
 			}
-			for _, unsupported := range []string{"stream", "partial_images", "response_format"} {
+			if tt.omitResponseFormat {
+				if _, exists := payload["response_format"]; exists {
+					t.Fatalf("official account must omit response_format: %#v", payload)
+				}
+			}
+			for _, unsupported := range []string{"stream", "partial_images"} {
 				if _, exists := payload[unsupported]; exists {
 					t.Fatalf("payload must omit %q: %#v", unsupported, payload)
 				}
@@ -348,9 +363,13 @@ func TestOpenAICompatEditWithMaskRoutesToOpenAI(t *testing.T) {
 	_ = writer.WriteField("quality", "high")
 	_ = writer.WriteField("response_format", "b64_json")
 	imgPart, _ := writer.CreateFormFile("image", "input.png")
-	_, _ = imgPart.Write([]byte("image"))
+	png, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lqR5DQAAAABJRU5ErkJggg==")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = imgPart.Write(png)
 	maskPart, _ := writer.CreateFormFile("mask", "mask.png")
-	_, _ = maskPart.Write([]byte("mask"))
+	_, _ = maskPart.Write(png)
 	_ = writer.Close()
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/edits", body)
@@ -376,7 +395,7 @@ func TestOpenAICompatEditWithMaskRoutesToOpenAI(t *testing.T) {
 	}
 }
 
-func TestOpenAICompatModelsListsConfiguredCompatModels(t *testing.T) {
+func TestOpenAICompatModelsDoesNotAdvertiseStaticAliasesWithoutVisibleCapabilities(t *testing.T) {
 	cfg := compatTestConfig()
 	cfg.Routing.OpenAICompatModelMap = map[string]string{
 		"gpt-image-2":     "plus",
@@ -402,7 +421,7 @@ func TestOpenAICompatModelsListsConfiguredCompatModels(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if resp.Object != "list" || len(resp.Data) != 2 {
+	if resp.Object != "list" || len(resp.Data) != 0 {
 		t.Fatalf("unexpected models response %#v", resp)
 	}
 }
@@ -583,8 +602,10 @@ func newCompatHandlerWithKey(t *testing.T, cfg config.Config, email, balance str
 		t.Fatalf("CreateKey: %v", err)
 	}
 
-	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, imagetaskservice.NewMemoryStore(), nil, billingSvc)
-	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, taskSvc, nil, billingSvc, keySvc)
+	references := assetservice.NewService(cfg.Storage, cfg.GenerationLimits)
+	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, imagetaskservice.NewMemoryStore(), references, billingSvc)
+	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, references, taskSvc, nil, billingSvc, keySvc)
+	wireCompatFixture(t, api, cfg, authSvc, billingSvc, keySvc, taskSvc, references, nil)
 	return apphttp.NewWithAPI(api), created.Secret, billingSvc, user.ID
 }
 
@@ -645,12 +666,14 @@ func newRouteModelCompatHandler(t *testing.T, cfg config.Config, upstreamURL str
 		t.Fatalf("CreateRouteModelPrice: %v", err)
 	}
 
-	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, imagetaskservice.NewMemoryStore(), nil, billingSvc)
-	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, nil, taskSvc, nil, billingSvc, keySvc, nil, nil, nil, nil, nil, modelAdminSvc)
+	references := assetservice.NewService(cfg.Storage, cfg.GenerationLimits)
+	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, imagetaskservice.NewMemoryStore(), references, billingSvc)
+	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, references, taskSvc, nil, billingSvc, keySvc, nil, nil, nil, nil, nil, modelAdminSvc)
+	wireCompatFixture(t, api, cfg, authSvc, billingSvc, keySvc, taskSvc, references, modelAdminSvc)
 	return apphttp.NewWithAPI(api), created.Secret
 }
 
-func newGPTImageCompatHandler(t *testing.T, upstreamURL string) (http.Handler, string) {
+func newGPTImageCompatHandler(t *testing.T, upstreamURL string, omitResponseFormat ...bool) (http.Handler, string) {
 	t.Helper()
 	cfg := compatTestConfig()
 	cfg.Storage.LocalRoot = t.TempDir()
@@ -680,6 +703,7 @@ func newGPTImageCompatHandler(t *testing.T, upstreamURL string) (http.Handler, s
 	modelAdminSvc := modeladminservice.NewServiceWithStore(modeladminservice.NewMemoryStore())
 	account, err := modelAdminSvc.CreateModelAccount(context.Background(), domainmodeladmin.ModelAccountWriteRequest{
 		Name: "GPT Image Account", AdapterType: "openai_compatible", AuthType: "api_key", BaseURL: upstreamURL,
+		Extra:       map[string]any{"gpt_image_response_format": len(omitResponseFormat) == 0 || !omitResponseFormat[0]},
 		Credentials: map[string]string{"api_key": "test-route-key"}, Status: "enabled", ConcurrencyLimit: 1, TimeoutMS: 30000,
 	})
 	if err != nil {
@@ -708,8 +732,10 @@ func newGPTImageCompatHandler(t *testing.T, upstreamURL string) (http.Handler, s
 	if _, err := modelAdminSvc.CreateRouteModelPrice(context.Background(), domainmodeladmin.RouteModelPriceWriteRequest{RouteModelID: routeModel.ID, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "1.00000", ReferenceMultiplier: "1.00000", Enabled: true}); err != nil {
 		t.Fatalf("CreateRouteModelPrice: %v", err)
 	}
-	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, imagetaskservice.NewMemoryStore(), nil, billingSvc)
-	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, nil, taskSvc, nil, billingSvc, keySvc, nil, nil, nil, nil, nil, modelAdminSvc)
+	references := assetservice.NewService(cfg.Storage, cfg.GenerationLimits)
+	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, imagetaskservice.NewMemoryStore(), references, billingSvc)
+	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, references, taskSvc, nil, billingSvc, keySvc, nil, nil, nil, nil, nil, modelAdminSvc)
+	wireCompatFixture(t, api, cfg, authSvc, billingSvc, keySvc, taskSvc, references, modelAdminSvc)
 	return apphttp.NewWithAPI(api), created.Secret
 }
 
@@ -731,4 +757,43 @@ func TestOpenAICompatRejectsMissingAndInvalidBearerKey(t *testing.T) {
 	if invalidRec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected invalid bearer 401, got %d body=%s", invalidRec.Code, invalidRec.Body.String())
 	}
+}
+
+// Tests drive the same lease execution used by the worker, after durable creation.
+// No fixture falls back to invisible synchronous provider execution.
+type compatWorkerFixture struct {
+	shared *openplatform.Service
+	tasks  *imagetaskservice.Service
+	mu     sync.Mutex
+}
+
+func (f *compatWorkerFixture) Execute(ctx context.Context, p openplatform.Principal, op string, in json.RawMessage) (any, error) {
+	value, err := f.shared.Execute(ctx, p, op, in)
+	if err != nil || op != "create_image_task" {
+		return value, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	task, ok, claimErr := f.tasks.AcquireNextTask(ctx, "compat-fixture", time.Minute)
+	if claimErr != nil {
+		return nil, claimErr
+	}
+	if ok {
+		if _, claimErr = f.tasks.ExecuteLeasedTask(ctx, task, "compat-fixture", nil); claimErr != nil {
+			return nil, claimErr
+		}
+	}
+	return value, nil
+}
+func wireCompatFixture(t *testing.T, api *handlers.API, cfg config.Config, authSvc *authservice.Service, billingSvc *billingservice.Service, keySvc *apikeyservice.Service, taskSvc *imagetaskservice.Service, references *assetservice.Service, routing *modeladminservice.Service) {
+	t.Helper()
+	models := capabilities.NewService(cfg)
+	if routing != nil {
+		models.SetModelRoutingSource(routing)
+	}
+	taskSvc.SetAPIKeyUsageManager(keySvc)
+	shared := openplatform.New(openplatform.Dependencies{Auth: authSvc, Billing: billingSvc, Images: taskSvc, ImageModels: models, References: references, APIKeys: keySvc, QuoteKey: []byte("compat-fixture-quote-key-32-bytes-long"), AssetAccess: func(ctx context.Context, p openplatform.Principal, id uuid.UUID, purpose string) (any, error) {
+		return map[string]string{"url": "https://fixture.example/" + id.String()}, nil
+	}})
+	api.SetCompatOperations(&compatWorkerFixture{shared: shared, tasks: taskSvc})
 }

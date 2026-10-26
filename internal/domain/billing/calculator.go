@@ -148,6 +148,25 @@ func parseDecimalWithFallback(value string, fallback decimal.Decimal, label stri
 }
 
 func (c *Calculator) ActualPoints(snapshot PricingSnapshot, successOutputImageCount int) (string, error) {
+
+	if snapshot.RouteImage != nil {
+		if successOutputImageCount <= 0 {
+			return "0.00000", nil
+		}
+		n := snapshot.RouteImage
+		artifacts := make([]NativeImageArtifact, successOutputImageCount)
+		for i := range artifacts {
+			artifacts[i] = NativeImageArtifact{Pixels: n.ReservedPixels}
+		}
+		return RouteImageActualPoints(snapshot, artifacts)
+	}
+	if snapshot.NativeImage != nil {
+		if len(snapshot.NativeImage.Candidates) != 1 {
+			return "", errs.BadRequest("native settlement requires actual account model")
+		}
+		result, err := SettleNativeImage(snapshot, snapshot.NativeImage.Candidates[0].AccountModelID, successOutputImageCount, nil)
+		return result.ActualPoints, err
+	}
 	if successOutputImageCount <= 0 {
 		return decimal.Zero.StringFixed(int32(c.cfg.PointsScale)), nil
 	}

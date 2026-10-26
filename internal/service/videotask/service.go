@@ -37,6 +37,7 @@ type InputRequest struct {
 
 type CreateRequest struct {
 	UserID             int64                   `json:"-"`
+	APIKeyID           int64                   `json:"-"`
 	UserGroupCodes     []string                `json:"-"`
 	ProjectID          uuid.UUID               `json:"project_id"`
 	IdempotencyKey     string                  `json:"-"`
@@ -103,6 +104,29 @@ func (s *Service) Estimate(ctx context.Context, req CreateRequest) (Estimate, er
 	return estimator.Estimate(ctx, req.UserID, EstimateRequest{RouteModelCode: strings.TrimSpace(req.RouteModelCode), UserGroupCodes: append([]string(nil), req.UserGroupCodes...), Video: prepared.video})
 }
 
+// Replay resolves durable idempotency before quote expiry and balance checks.
+func (s *Service) Replay(ctx context.Context, req CreateRequest) (Task, bool, error) {
+	if s == nil || s.store == nil {
+		return Task{}, false, errs.Internal("video task service is unavailable")
+	}
+	if req.UserID <= 0 || strings.TrimSpace(req.IdempotencyKey) == "" {
+		return Task{}, false, errs.BadRequest("user and idempotency key are required")
+	}
+	normalizeEnums(&req)
+	fingerprint, err := createFingerprint(req)
+	if err != nil {
+		return Task{}, false, err
+	}
+	existing, found, err := s.store.FindByIdempotency(ctx, req.UserID, strings.TrimSpace(req.IdempotencyKey))
+	if err != nil || !found {
+		return Task{}, false, err
+	}
+	if existing.RequestFingerprint != fingerprint || existing.APIKeyID != req.APIKeyID {
+		return Task{}, false, ErrIdempotencyConflict
+	}
+	return existing, true, nil
+}
+
 func (s *Service) Create(ctx context.Context, req CreateRequest) (Task, bool, error) {
 	if s == nil || s.store == nil || s.quotes == nil || s.projects == nil || s.assets == nil {
 		return Task{}, false, errs.Internal("video task service is unavailable")
@@ -121,7 +145,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Task, bool, er
 	if existing, found, findErr := s.store.FindByIdempotency(ctx, req.UserID, strings.TrimSpace(req.IdempotencyKey)); findErr != nil {
 		return Task{}, false, findErr
 	} else if found {
-		if existing.RequestFingerprint != fingerprint {
+		if existing.RequestFingerprint != fingerprint || existing.APIKeyID != req.APIKeyID {
 			return Task{}, false, ErrIdempotencyConflict
 		}
 		return existing, true, nil
@@ -135,7 +159,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Task, bool, er
 		return Task{}, false, err
 	}
 	now := s.now().UTC()
-	task := Task{ID: uuid.New(), UserID: req.UserID, ProjectID: req.ProjectID, SourceChannel: defaultSource(req.SourceChannel), SourceCanvasID: req.SourceCanvasID, SourceCanvasNodeID: req.SourceCanvasNodeID, TaskType: req.TaskType, Status: domainvideo.TaskStatusQueued, ProgressStage: "queued", PromptTemplate: prepared.resolved.CanonicalTemplate, ExecutionPrompt: prepared.resolved.Expanded, RouteModelID: verified.RouteModelID, RouteModelCode: strings.TrimSpace(req.RouteModelCode), DurationSeconds: req.DurationSeconds, Resolution: req.Resolution, AspectRatio: req.AspectRatio, GenerateAudio: req.AudioMode == domainvideo.AudioModeGenerated, RequestedOutputCount: req.OutputCount, EstimatedPoints: verified.EstimatedPoints, ReservedPoints: verified.MaxReservedPoints, ActualPoints: "0.00000", SettlementStatus: "reserved", IdempotencyKey: strings.TrimSpace(req.IdempotencyKey), RequestFingerprint: fingerprint, Version: 1, CreatedAt: now, UpdatedAt: now}
+	task := Task{ID: uuid.New(), UserID: req.UserID, APIKeyID: req.APIKeyID, ProjectID: req.ProjectID, SourceChannel: defaultSource(req.SourceChannel), SourceCanvasID: req.SourceCanvasID, SourceCanvasNodeID: req.SourceCanvasNodeID, TaskType: req.TaskType, Status: domainvideo.TaskStatusQueued, ProgressStage: "queued", PromptTemplate: prepared.resolved.CanonicalTemplate, ExecutionPrompt: prepared.resolved.Expanded, RouteModelID: verified.RouteModelID, RouteModelCode: strings.TrimSpace(req.RouteModelCode), DurationSeconds: req.DurationSeconds, Resolution: req.Resolution, AspectRatio: req.AspectRatio, GenerateAudio: req.AudioMode == domainvideo.AudioModeGenerated, RequestedOutputCount: req.OutputCount, EstimatedPoints: verified.EstimatedPoints, ReservedPoints: verified.MaxReservedPoints, ActualPoints: "0.00000", SettlementStatus: "reserved", IdempotencyKey: strings.TrimSpace(req.IdempotencyKey), RequestFingerprint: fingerprint, Version: 1, CreatedAt: now, UpdatedAt: now}
 	task.PromptBindingSnapshot = promptSnapshot(prepared.resolved, req.PromptVariables)
 	task.PricingSnapshot = cloneMap(verified.PricingSnapshot)
 	referenceImages := 0
@@ -157,6 +181,10 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Task, bool, er
 		"route_candidate_id": verified.RouteCandidateID, "account_model_id": verified.AccountModelID, "model_account_id": verified.ModelAccountID,
 		"provider_code": verified.ProviderCode, "model_code": verified.ModelCode,
 		"mapped_resolution": string(verified.MappedResolution),
+	}
+	if req.APIKeyID > 0 {
+		task.RoutingSnapshot["api_key_id"] = req.APIKeyID
+		task.RoutingSnapshot["api_key_quota_reservation_id"] = task.ID.String()
 	}
 	for index := 0; index < req.OutputCount; index++ {
 		task.Items = append(task.Items, Item{ID: uuid.New(), Ordinal: index, Status: domainvideo.ItemStateQueued, Stage: "queued", ActualOutputSeconds: "0.000", ActualPoints: "0.00000", Version: 1})

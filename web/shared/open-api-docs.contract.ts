@@ -4,6 +4,9 @@ const docs = docsFromOpenApi({
   openapi: '3.1.0',
   paths: {
     '/api/agent/ref-path': { $ref: '#/components/pathItems/AgentRefPath' },
+    '/api/open/v1/me': {
+      get: { security: [{ developerBearerAuth: [] }], responses: { '200': { description: 'OK' } } },
+    },
     '/api/open/ref-operation': {
       post: { $ref: '#/components/pathItems/OpenRefOperation/post' },
     },
@@ -36,6 +39,11 @@ const docs = docsFromOpenApi({
     },
   },
 })
+
+const developer = docs.find((item) => item.path === '/api/open/v1/me')
+if (!developer?.requestExample.includes('Authorization: Bearer <your_api_key>') || developer.requestExample.includes('X-Signature')) {
+  throw new Error('developer examples must use only Bearer API Key')
+}
 
 const refPath = docs.find((item) => item.path === '/api/agent/ref-path')
 if (!refPath || refPath.title !== '引用路径查询' || refPath.auth !== 'Authorization required') {

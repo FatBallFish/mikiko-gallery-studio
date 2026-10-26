@@ -74,6 +74,11 @@ func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrig
 		mux.HandleFunc("/api/agent/gallery/v1/images:batch-download", api.HandleAgentGalleryBatch)
 		mux.HandleFunc("/api/agent/gallery/v1/export-jobs/", api.HandleAgentGalleryExportJob)
 		mux.HandleFunc("/api/agent/gallery/v1/images/", api.HandleAgentGalleryImageDetail)
+		mux.HandleFunc("/api/agent/media/v1/groups", api.HandleMediaGroups)
+		mux.HandleFunc("/api/agent/media/v1/video-publications/", api.HandleVideoPublication)
+		mux.HandleFunc("/api/public/v1/media", api.HandlePublicFeed)
+		mux.HandleFunc("/api/public/v1/videos", api.HandlePublicVideos)
+		mux.HandleFunc("/api/public/v1/videos/", api.HandlePublicVideoDetail)
 		mux.HandleFunc("/api/agent/media/v1/assets", api.HandleMediaAssets)
 		mux.HandleFunc("/api/agent/media/v1/assets:batch-group", api.HandleMediaAssetBatch)
 		mux.HandleFunc("/api/agent/media/v1/assets:batch-transfer-project", api.HandleMediaAssetBatch)
@@ -85,6 +90,9 @@ func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrig
 		mux.HandleFunc("/api/agent/media/v1/uploads/", api.HandleMediaUploadDetail)
 		mux.HandleFunc("/api/agent/video/v1/capabilities", api.HandleVideoCapabilities)
 		mux.HandleFunc("/api/agent/video/v1/estimates", api.HandleVideoEstimates)
+		mux.HandleFunc("/api/agent/video/v1/history/tasks", api.HandleVideoTasks)
+		mux.HandleFunc("/api/agent/video/v1/history/tasks/clear-failed", api.HandleVideoHistoryClearFailed)
+		mux.HandleFunc("/api/agent/video/v1/history/tasks/", api.HandleVideoHistoryTaskDetail)
 		mux.HandleFunc("/api/agent/video/v1/tasks", api.HandleVideoTasks)
 		mux.HandleFunc("/api/agent/video/v1/tasks/events", api.HandleVideoTaskEvents)
 		mux.HandleFunc("/api/agent/video/v1/tasks/", api.HandleVideoTaskDetail)
@@ -125,17 +133,31 @@ func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrig
 		})
 		mux.HandleFunc("/api/agent/image/v1/tasks", api.HandleAgentTasks)
 		mux.HandleFunc("/api/agent/image/v1/tasks/events", api.HandleAgentTaskEvents)
-		mux.HandleFunc("/api/agent/image/v1/tasks/", api.HandleAgentTaskDetail)
+		mux.HandleFunc("/api/agent/image/v1/tasks/", func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case strings.HasSuffix(r.URL.Path, "/layers/archive"):
+				api.ImageTaskLayerArchive(w, r)
+			case strings.HasSuffix(r.URL.Path, "/layers"):
+				api.ImageTaskLayers(w, r)
+			default:
+				api.HandleAgentTaskDetail(w, r)
+			}
+		})
+		mux.HandleFunc("/api/agent/image/v1/history/tasks/clear-failed", api.HandleImageHistoryClearFailed)
 		mux.HandleFunc("/api/agent/image/v1/history/tasks", api.HandleAgentHistoryTasks)
 		mux.HandleFunc("/api/agent/image/v1/history/tasks/", api.HandleAgentHistoryTaskDetail)
-		mux.HandleFunc("/api/open/image/v1/reference-assets/uploads", api.HandleOpenReferenceAssetUploadSession)
-		mux.HandleFunc("/api/open/image/v1/reference-assets", api.HandleOpenReferenceAssetMultipartUpload)
-		mux.HandleFunc("/api/open/image/v1/reference-assets/", api.HandleOpenReferenceAssetGet)
-		mux.HandleFunc("/api/open/image/v1/tasks", api.HandleOpenTasks)
-		mux.HandleFunc("/api/open/image/v1/tasks/", api.HandleOpenTaskDetail)
-		mux.HandleFunc("/api/open/image/v1/balance", api.HandleOpenBalance)
-		mux.HandleFunc("/api/open/image/v1/capabilities", api.HandleOpenCapabilities)
-		mux.HandleFunc("/api/open/image/v1/estimate", api.HandleOpenEstimate)
+		mux.HandleFunc("/api/open/v1/asset-access/", api.HandleDeveloperAssetAccess)
+		mux.HandleFunc("/api/open/v1/", api.HandleDeveloperOpen)
+		mux.HandleFunc("/mcp", api.HandleDeveloperMCP)
+		mux.HandleFunc("/.well-known/oauth-authorization-server", api.HandleDeveloperOAuth)
+		mux.HandleFunc("/.well-known/oauth-protected-resource", api.HandleDeveloperOAuth)
+		mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", api.HandleDeveloperOAuth)
+		mux.HandleFunc("/oauth/authorize", api.HandleDeveloperOAuth)
+		mux.HandleFunc("/oauth/token", api.HandleDeveloperOAuth)
+		mux.HandleFunc("/oauth/revoke", api.HandleDeveloperOAuth)
+		mux.HandleFunc("/oauth/register", api.HandleDeveloperOAuth)
+		mux.HandleFunc("/api/v1/oauth/consent", api.HandleDeveloperOAuth)
+		mux.HandleFunc("/api/v1/oauth/connected-apps", api.HandleDeveloperOAuth)
 		mux.HandleFunc("/api/open/image/v1/gallery/images", api.HandleOpenGalleryImages)
 		mux.HandleFunc("/api/open/image/v1/gallery/images/", func(w http.ResponseWriter, r *http.Request) {
 			if strings.HasSuffix(r.URL.Path, "/access") {
@@ -155,6 +177,8 @@ func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrig
 		mux.HandleFunc("/api/ops/admin/v1/cluster/nodes", api.HandleAdminClusterNodes)
 		mux.HandleFunc("/api/ops/admin/v1/cluster/tokens", api.HandleAdminClusterTokens)
 		mux.HandleFunc("/api/ops/admin/v1/cluster/tokens/", api.HandleAdminClusterTokenDetail)
+		mux.HandleFunc("/api/ops/admin/v1/video-reviews", api.HandleAdminVideoReviews)
+		mux.HandleFunc("/api/ops/admin/v1/video-reviews/", api.HandleAdminVideoReviewDetail)
 		mux.HandleFunc("/api/ops/admin/v1/image-reviews", api.HandleAdminImageReviews)
 		mux.HandleFunc("/api/ops/admin/v1/image-reviews/", api.HandleAdminImageReviewDetail)
 		mux.HandleFunc("/api/ops/admin/v1/admin-users", api.HandleAdminSystemUsers)
@@ -168,9 +192,11 @@ func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrig
 		mux.HandleFunc("/api/ops/admin/v1/redeem-codes", api.HandleAdminRedeemCodes)
 		mux.HandleFunc("/api/ops/admin/v1/redeem-codes/", api.HandleAdminRedeemCodeDetail)
 		mux.HandleFunc("/api/ops/admin/v1/call-records", api.HandleAdminCallRecords)
+		mux.HandleFunc("/api/ops/admin/v1/call-records/images/", api.HandleAdminCallRecordImage)
 		mux.HandleFunc("/api/ops/admin/v1/model-accounts", api.HandleAdminModelAccounts)
 		mux.HandleFunc("/api/ops/admin/v1/model-accounts/", api.HandleAdminModelAccountDetail)
 		mux.HandleFunc("/api/ops/admin/v1/model-account-models/", api.HandleAdminVideoModelConfiguration)
+		mux.HandleFunc("/api/ops/admin/v1/video-model-tests/", api.HandleAdminVideoModelTest)
 		mux.HandleFunc("/api/ops/admin/v1/text-model-accounts", api.HandleAdminTextModelAccounts)
 		mux.HandleFunc("/api/ops/admin/v1/text-model-accounts/", api.HandleAdminTextModelAccountDetail)
 		mux.HandleFunc("/api/ops/admin/v1/text-models/", api.HandleAdminTextModelDetail)
@@ -358,6 +384,9 @@ var supplementalNormalTemplateRoutes = map[string]map[string]bool{
 	"/api/agent/gallery/v1/images:batch-download":                  {http.MethodPost: true},
 	"/api/agent/gallery/v1/export-jobs/{job_id}":                   {http.MethodGet: true},
 	"/api/agent/gallery/v1/export-jobs/{job_id}/download":          {http.MethodGet: true},
+	"/api/ops/admin/v1/call-records/images/{image_id}":             {http.MethodGet: true},
+	"/api/ops/admin/v1/model-accounts/{account_id}/test-video":     {http.MethodPost: true},
+	"/api/ops/admin/v1/video-model-tests/{test_id}":                {http.MethodGet: true},
 	"/api/ops/admin/v1/image-reviews/{image_id}:approve":           {http.MethodPost: true},
 	"/api/ops/admin/v1/image-reviews/{image_id}:reject":            {http.MethodPost: true},
 	"/api/ops/admin/v1/image-reviews/{image_id}:unpublish":         {http.MethodPost: true},

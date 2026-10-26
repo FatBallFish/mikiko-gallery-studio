@@ -1,0 +1,177 @@
+/* ============================================================
+   Mikiko Redesign Prototype — shared tokens & reset
+   User side: Luminous Vault (inherited, refined)
+   Admin side: Command Deck (new system, replaces old admin skin)
+   ============================================================ */
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+body { margin: 0; min-height: 100vh; }
+img, svg, video { display: block; max-width: 100%; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+a { color: inherit; text-decoration: none; }
+h1, h2, h3, h4, p, figure, dl, dd { margin: 0; }
+ul, ol { margin: 0; padding: 0; list-style: none; }
+table { border-collapse: collapse; width: 100%; }
+::selection { background: rgba(217, 168, 106, .3); }
+
+:root {
+  --font-display: "Fraunces", "Songti SC", Georgia, serif;
+  --font-ui: "Manrope", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  --font-admin: "Instrument Sans", "PingFang SC", system-ui, sans-serif;
+  --font-admin-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+  --ease-spring: cubic-bezier(.32, .72, 0, 1);
+  --ease-in-out: cubic-bezier(.65, 0, .35, 1);
+  --t-fast: 140ms;
+  --t-base: 220ms;
+  --t-slow: 420ms;
+
+  --r-xs: 6px;
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-xl: 28px;
+  --r-pill: 999px;
+
+  --z-nav: 20;
+  --z-top: 30;
+  --z-menu: 60;
+  --z-overlay: 80;
+  --z-drawer: 90;
+  --z-toast: 120;
+}
+
+/* ---------------- User tokens ---------------- */
+[data-site="user"] {
+  color-scheme: dark;
+  --bg: #08090d;
+  --bg-elev: #0c0e15;
+  --surface: rgba(255, 255, 255, .035);
+  --surface-2: rgba(255, 255, 255, .058);
+  --surface-3: rgba(255, 255, 255, .085);
+  --ink: #f5f0e7;
+  --ink-2: rgba(245, 240, 231, .68);
+  --ink-3: rgba(245, 240, 231, .42);
+  --line: rgba(255, 255, 255, .08);
+  --line-2: rgba(255, 255, 255, .15);
+  --accent: #d9a86a;
+  --accent-deep: #b98547;
+  --accent-ink: #17110a;
+  --accent-soft: rgba(217, 168, 106, .13);
+  --accent-line: rgba(217, 168, 106, .38);
+  --violet: #9c90ff;
+  --emerald: #62c3a2;
+  --coral: #e18a63;
+  --blue: #8ab6f0;
+  --danger: #e07868;
+  --media-bg: #05060a;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
+  --shadow-md: 0 18px 50px rgba(0, 0, 0, .38);
+  --shadow-lg: 0 40px 120px rgba(0, 0, 0, .55);
+  --glow: 0 0 0 1px rgba(217, 168, 106, .22), 0 8px 40px rgba(217, 168, 106, .1);
+  --rail-w: 92px;
+  --top-h: 72px;
+  --content-max: 1640px;
+}
+
+[data-site="user"][data-theme="light"] {
+  color-scheme: light;
+  --bg: #f5f3ee;
+  --bg-elev: #fbf9f5;
+  --surface: rgba(255, 255, 255, .62);
+  --surface-2: rgba(255, 255, 255, .86);
+  --surface-3: rgba(23, 19, 13, .06);
+  --ink: #221d16;
+  --ink-2: rgba(34, 29, 22, .66);
+  --ink-3: rgba(34, 29, 22, .42);
+  --line: rgba(34, 29, 22, .1);
+  --line-2: rgba(34, 29, 22, .18);
+  --accent: #a86f2c;
+  --accent-deep: #8a571c;
+  --accent-ink: #fffaf2;
+  --accent-soft: rgba(168, 111, 44, .1);
+  --accent-line: rgba(168, 111, 44, .3);
+  --violet: #6858d8;
+  --emerald: #237d61;
+  --coral: #b85735;
+  --blue: #2c6ba8;
+  --danger: #b34a3c;
+  --media-bg: #e9e4da;
+  --shadow-sm: 0 1px 2px rgba(60, 45, 25, .06);
+  --shadow-md: 0 18px 50px rgba(60, 45, 25, .12);
+  --shadow-lg: 0 40px 120px rgba(60, 45, 25, .18);
+  --glow: 0 0 0 1px rgba(168, 111, 44, .2), 0 8px 40px rgba(168, 111, 44, .1);
+}
+
+/* ---------------- Admin tokens ---------------- */
+[data-site="admin"] {
+  color-scheme: light;
+  --a-bg: #f2f1ec;
+  --a-canvas: #faf9f6;
+  --a-surface: #ffffff;
+  --a-surface-2: #f6f5f1;
+  --a-surface-3: #eeede8;
+  --a-ink: #16191e;
+  --a-ink-2: #59616d;
+  --a-ink-3: #8b919b;
+  --a-line: rgba(22, 25, 30, .1);
+  --a-line-2: rgba(22, 25, 30, .18);
+  --a-accent: #2e4a7d;
+  --a-accent-soft: #edf1f7;
+  --a-accent-line: rgba(46, 74, 125, .32);
+  --a-success: #2c6b4f;
+  --a-success-soft: #eaf4ee;
+  --a-warn: #8a5a16;
+  --a-warn-soft: #fbf2e2;
+  --a-danger: #a33a32;
+  --a-danger-soft: #fbeceb;
+  --a-info: #2f6b8a;
+  --a-info-soft: #eaf3f7;
+  --a-side-w: 248px;
+  --a-top-h: 68px;
+  --a-content-max: 1560px;
+  --a-shadow-sm: 0 1px 2px rgba(24, 28, 22, .05);
+  --a-shadow-md: 0 14px 40px rgba(24, 28, 22, .1);
+  --a-shadow-lg: 0 32px 90px rgba(24, 28, 22, .18);
+}
+
+[data-site="admin"][data-theme="dark"] {
+  color-scheme: dark;
+  --a-bg: #131519;
+  --a-canvas: #171a1f;
+  --a-surface: #1d2127;
+  --a-surface-2: #22262d;
+  --a-surface-3: #2a2f37;
+  --a-ink: #eef0f2;
+  --a-ink-2: #a7afb9;
+  --a-ink-3: #7c8590;
+  --a-line: rgba(255, 255, 255, .1);
+  --a-line-2: rgba(255, 255, 255, .18);
+  --a-accent: #9db6e4;
+  --a-accent-soft: rgba(157, 182, 228, .12);
+  --a-accent-line: rgba(157, 182, 228, .32);
+  --a-success: #7fc3a2;
+  --a-success-soft: rgba(127, 195, 162, .12);
+  --a-warn: #d9ac63;
+  --a-warn-soft: rgba(217, 172, 99, .12);
+  --a-danger: #e2928a;
+  --a-danger-soft: rgba(226, 146, 138, .12);
+  --a-info: #82b8d4;
+  --a-info-soft: rgba(130, 184, 212, .12);
+  --a-shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
+  --a-shadow-md: 0 14px 40px rgba(0, 0, 0, .4);
+  --a-shadow-lg: 0 32px 90px rgba(0, 0, 0, .55);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

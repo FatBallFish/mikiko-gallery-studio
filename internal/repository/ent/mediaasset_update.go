@@ -143,6 +143,26 @@ func (_u *MediaAssetUpdate) SetNillableNameKey(v *string) *MediaAssetUpdate {
 	return _u
 }
 
+// SetGroupID sets the "group_id" field.
+func (_u *MediaAssetUpdate) SetGroupID(v uuid.UUID) *MediaAssetUpdate {
+	_u.mutation.SetGroupID(v)
+	return _u
+}
+
+// SetNillableGroupID sets the "group_id" field if the given value is not nil.
+func (_u *MediaAssetUpdate) SetNillableGroupID(v *uuid.UUID) *MediaAssetUpdate {
+	if v != nil {
+		_u.SetGroupID(*v)
+	}
+	return _u
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (_u *MediaAssetUpdate) ClearGroupID() *MediaAssetUpdate {
+	_u.mutation.ClearGroupID()
+	return _u
+}
+
 // SetGroupName sets the "group_name" field.
 func (_u *MediaAssetUpdate) SetGroupName(v string) *MediaAssetUpdate {
 	_u.mutation.SetGroupName(v)
@@ -210,6 +230,40 @@ func (_u *MediaAssetUpdate) SetNillableVisibilityStatus(v *string) *MediaAssetUp
 	if v != nil {
 		_u.SetVisibilityStatus(*v)
 	}
+	return _u
+}
+
+// SetPublicationReviewReason sets the "publication_review_reason" field.
+func (_u *MediaAssetUpdate) SetPublicationReviewReason(v string) *MediaAssetUpdate {
+	_u.mutation.SetPublicationReviewReason(v)
+	return _u
+}
+
+// SetNillablePublicationReviewReason sets the "publication_review_reason" field if the given value is not nil.
+func (_u *MediaAssetUpdate) SetNillablePublicationReviewReason(v *string) *MediaAssetUpdate {
+	if v != nil {
+		_u.SetPublicationReviewReason(*v)
+	}
+	return _u
+}
+
+// SetPublishedAt sets the "published_at" field.
+func (_u *MediaAssetUpdate) SetPublishedAt(v time.Time) *MediaAssetUpdate {
+	_u.mutation.SetPublishedAt(v)
+	return _u
+}
+
+// SetNillablePublishedAt sets the "published_at" field if the given value is not nil.
+func (_u *MediaAssetUpdate) SetNillablePublishedAt(v *time.Time) *MediaAssetUpdate {
+	if v != nil {
+		_u.SetPublishedAt(*v)
+	}
+	return _u
+}
+
+// ClearPublishedAt clears the value of the "published_at" field.
+func (_u *MediaAssetUpdate) ClearPublishedAt() *MediaAssetUpdate {
+	_u.mutation.ClearPublishedAt()
 	return _u
 }
 
@@ -1014,6 +1068,12 @@ func (_u *MediaAssetUpdate) sqlSave(ctx context.Context) (_node int, err error) 
 	if value, ok := _u.mutation.NameKey(); ok {
 		_spec.SetField(mediaasset.FieldNameKey, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.GroupID(); ok {
+		_spec.SetField(mediaasset.FieldGroupID, field.TypeUUID, value)
+	}
+	if _u.mutation.GroupIDCleared() {
+		_spec.ClearField(mediaasset.FieldGroupID, field.TypeUUID)
+	}
 	if value, ok := _u.mutation.GroupName(); ok {
 		_spec.SetField(mediaasset.FieldGroupName, field.TypeString, value)
 	}
@@ -1028,6 +1088,15 @@ func (_u *MediaAssetUpdate) sqlSave(ctx context.Context) (_node int, err error) 
 	}
 	if value, ok := _u.mutation.VisibilityStatus(); ok {
 		_spec.SetField(mediaasset.FieldVisibilityStatus, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PublicationReviewReason(); ok {
+		_spec.SetField(mediaasset.FieldPublicationReviewReason, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PublishedAt(); ok {
+		_spec.SetField(mediaasset.FieldPublishedAt, field.TypeTime, value)
+	}
+	if _u.mutation.PublishedAtCleared() {
+		_spec.ClearField(mediaasset.FieldPublishedAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.StorageConfigID(); ok {
 		_spec.SetField(mediaasset.FieldStorageConfigID, field.TypeUUID, value)
@@ -1505,6 +1574,26 @@ func (_u *MediaAssetUpdateOne) SetNillableNameKey(v *string) *MediaAssetUpdateOn
 	return _u
 }
 
+// SetGroupID sets the "group_id" field.
+func (_u *MediaAssetUpdateOne) SetGroupID(v uuid.UUID) *MediaAssetUpdateOne {
+	_u.mutation.SetGroupID(v)
+	return _u
+}
+
+// SetNillableGroupID sets the "group_id" field if the given value is not nil.
+func (_u *MediaAssetUpdateOne) SetNillableGroupID(v *uuid.UUID) *MediaAssetUpdateOne {
+	if v != nil {
+		_u.SetGroupID(*v)
+	}
+	return _u
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (_u *MediaAssetUpdateOne) ClearGroupID() *MediaAssetUpdateOne {
+	_u.mutation.ClearGroupID()
+	return _u
+}
+
 // SetGroupName sets the "group_name" field.
 func (_u *MediaAssetUpdateOne) SetGroupName(v string) *MediaAssetUpdateOne {
 	_u.mutation.SetGroupName(v)
@@ -1572,6 +1661,40 @@ func (_u *MediaAssetUpdateOne) SetNillableVisibilityStatus(v *string) *MediaAsse
 	if v != nil {
 		_u.SetVisibilityStatus(*v)
 	}
+	return _u
+}
+
+// SetPublicationReviewReason sets the "publication_review_reason" field.
+func (_u *MediaAssetUpdateOne) SetPublicationReviewReason(v string) *MediaAssetUpdateOne {
+	_u.mutation.SetPublicationReviewReason(v)
+	return _u
+}
+
+// SetNillablePublicationReviewReason sets the "publication_review_reason" field if the given value is not nil.
+func (_u *MediaAssetUpdateOne) SetNillablePublicationReviewReason(v *string) *MediaAssetUpdateOne {
+	if v != nil {
+		_u.SetPublicationReviewReason(*v)
+	}
+	return _u
+}
+
+// SetPublishedAt sets the "published_at" field.
+func (_u *MediaAssetUpdateOne) SetPublishedAt(v time.Time) *MediaAssetUpdateOne {
+	_u.mutation.SetPublishedAt(v)
+	return _u
+}
+
+// SetNillablePublishedAt sets the "published_at" field if the given value is not nil.
+func (_u *MediaAssetUpdateOne) SetNillablePublishedAt(v *time.Time) *MediaAssetUpdateOne {
+	if v != nil {
+		_u.SetPublishedAt(*v)
+	}
+	return _u
+}
+
+// ClearPublishedAt clears the value of the "published_at" field.
+func (_u *MediaAssetUpdateOne) ClearPublishedAt() *MediaAssetUpdateOne {
+	_u.mutation.ClearPublishedAt()
 	return _u
 }
 
@@ -2406,6 +2529,12 @@ func (_u *MediaAssetUpdateOne) sqlSave(ctx context.Context) (_node *MediaAsset, 
 	if value, ok := _u.mutation.NameKey(); ok {
 		_spec.SetField(mediaasset.FieldNameKey, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.GroupID(); ok {
+		_spec.SetField(mediaasset.FieldGroupID, field.TypeUUID, value)
+	}
+	if _u.mutation.GroupIDCleared() {
+		_spec.ClearField(mediaasset.FieldGroupID, field.TypeUUID)
+	}
 	if value, ok := _u.mutation.GroupName(); ok {
 		_spec.SetField(mediaasset.FieldGroupName, field.TypeString, value)
 	}
@@ -2420,6 +2549,15 @@ func (_u *MediaAssetUpdateOne) sqlSave(ctx context.Context) (_node *MediaAsset, 
 	}
 	if value, ok := _u.mutation.VisibilityStatus(); ok {
 		_spec.SetField(mediaasset.FieldVisibilityStatus, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PublicationReviewReason(); ok {
+		_spec.SetField(mediaasset.FieldPublicationReviewReason, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PublishedAt(); ok {
+		_spec.SetField(mediaasset.FieldPublishedAt, field.TypeTime, value)
+	}
+	if _u.mutation.PublishedAtCleared() {
+		_spec.ClearField(mediaasset.FieldPublishedAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.StorageConfigID(); ok {
 		_spec.SetField(mediaasset.FieldStorageConfigID, field.TypeUUID, value)

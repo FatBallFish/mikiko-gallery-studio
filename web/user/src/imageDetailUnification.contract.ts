@@ -31,8 +31,8 @@ for (const required of ['setZoomImage', '<ImageZoomViewer', 'onPreviewImage={set
   }
 }
 
-if (!components.includes("promptText: 'm-0 mt-2 max-h-") || !components.includes('overflow-y-auto') || !components.includes('tabIndex={0}')) {
-  throw new Error('long prompts should have a bounded, scrollable, keyboard-focusable detail region')
+if (!components.includes('className="u-prompt"') || !components.includes('tabIndex={0}') || !components.includes('u-detail')) {
+  throw new Error('long prompts should use the bounded, scrollable, keyboard-focusable u-prompt region inside u-detail')
 }
 
 if (!components.includes("source: '原图引用'")) {

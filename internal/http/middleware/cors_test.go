@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -48,5 +49,35 @@ func TestCORSAddsHeadersToActualLocalFrontendRequest(t *testing.T) {
 	}
 	if got := rec.Header().Get("Vary"); got != "Origin" {
 		t.Fatalf("expected vary origin, got %q", got)
+	}
+}
+
+func TestCORSExposesMCPTransportHeadersForConfiguredOrigins(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusUnauthorized) })
+	handler := CORSWithAllowedOrigins([]string{"https://client.example.test"}, next)
+	for _, method := range []string{http.MethodOptions, http.MethodPost} {
+		req := httptest.NewRequest(method, "/mcp", nil)
+		req.Header.Set("Origin", "https://client.example.test")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		for _, name := range []string{"Authorization", "Idempotency-Key", "MCP-Protocol-Version", "Mcp-Method", "Mcp-Name", "Mcp-Session-Id", "Mcp-Previous-Session-Id", "Last-Event-ID"} {
+			if !strings.Contains(rec.Header().Get("Access-Control-Allow-Headers"), name) {
+				t.Errorf("missing allowed header %s", name)
+			}
+		}
+		for _, name := range []string{"WWW-Authenticate", "MCP-Protocol-Version", "Mcp-Session-Id", "Mcp-Previous-Session-Id"} {
+			if !strings.Contains(rec.Header().Get("Access-Control-Expose-Headers"), name) {
+				t.Errorf("missing exposed header %s", name)
+			}
+		}
+	}
+	for _, origin := range []string{"https://untrusted.example.test", "null"} {
+		req := httptest.NewRequest(http.MethodOptions, "/mcp", nil)
+		req.Header.Set("Origin", origin)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Header().Get("Access-Control-Allow-Origin") != "" || rec.Header().Get("Access-Control-Allow-Credentials") != "" {
+			t.Fatal("untrusted origin received CORS permission")
+		}
 	}
 }

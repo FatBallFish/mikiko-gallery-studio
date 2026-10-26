@@ -777,15 +777,10 @@ func TestOrdinaryAPIAndWorkerStartupContainNoMigrationCalls(t *testing.T) {
 	}
 }
 
-func TestRunWiresAPIKeySigningSecretEncryptionKey(t *testing.T) {
-	cfg := config.Config{
-		App: config.AppConfig{Env: "prod"},
-		APIKey: config.APIKeyConfig{
-			SigningSecretEncryptionKey: "prod-runtime-api-key-signing-secret-encryption-key",
-		},
-	}
-
-	svc, err := newRuntimeAPIKeyService(cfg, apikeyservice.NewMemoryStore())
+func TestRunCreatesHashOnlyBearerAPIKeys(t *testing.T) {
+	cfg := config.Config{App: config.AppConfig{Env: "prod"}}
+	store := apikeyservice.NewMemoryStore()
+	svc, err := newRuntimeAPIKeyService(cfg, store)
 	if err != nil {
 		t.Fatalf("newRuntimeAPIKeyService: %v", err)
 	}
@@ -797,46 +792,37 @@ func TestRunWiresAPIKeySigningSecretEncryptionKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateKey: %v", err)
 	}
-
-	if got, ok := domainapikey.DecryptSigningSecret(created.Key.SigningSecret, cfg.APIKey.SigningSecretEncryptionKey); !ok || got != "sk-runtime-secret" {
-		t.Fatalf("expected runtime API key service to encrypt signing secret with cfg key, got %q ok=%v", got, ok)
+	persisted, err := store.GetByID(context.Background(), 1, created.Key.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
 	}
-	if _, ok := domainapikey.DecryptSigningSecret(created.Key.SigningSecret, "local-dev-api-key-signing-secret-encryption-key"); ok {
-		t.Fatal("expected runtime API key service not to encrypt signing secret with default local dev key")
+	if persisted.SecretHash != domainapikey.HashSecret(created.Secret) {
+		t.Fatal("expected runtime API key service to persist the bearer secret hash")
 	}
-}
-
-func TestRunRejectsWeakAPIKeySigningSecretEncryptionKeyInProd(t *testing.T) {
-	weakValues := []string{
-		"",
-		"secret",
-		"password",
-		"admin",
-		"admin-secret",
-		"admin-token-secret",
-		"short-prod-key",
-		"change-me-in-prod",
-		"example-api-key-signing-secret-encryption-key",
-		"local-dev-api-key-signing-secret-encryption-key",
+	if persisted.SigningSecret != "" || persisted.SecretCiphertext != "" {
+		t.Fatal("runtime API key service must not persist a recoverable secret")
 	}
-	for _, value := range weakValues {
-		cfg := config.Config{
-			App:    config.AppConfig{Env: "prod"},
-			APIKey: config.APIKeyConfig{SigningSecretEncryptionKey: value},
-		}
-		if _, err := newRuntimeAPIKeyService(cfg, apikeyservice.NewMemoryStore()); err == nil {
-			t.Fatalf("expected prod runtime API key service to reject weak signing secret encryption key %q", value)
-		}
+	identity, err := svc.AuthenticateBearer(context.Background(), created.Secret)
+	if err != nil {
+		t.Fatalf("AuthenticateBearer: %v", err)
+	}
+	if identity.UserID != 1 || identity.APIKeyID != created.Key.ID {
+		t.Fatalf("unexpected bearer identity: %#v", identity)
 	}
 }
 
-func TestRunAllowsDefaultAPIKeySigningSecretEncryptionKeyOutsideProd(t *testing.T) {
-	cfg := config.Config{
-		App:    config.AppConfig{Env: "local"},
-		APIKey: config.APIKeyConfig{SigningSecretEncryptionKey: "local-dev-api-key-signing-secret-encryption-key"},
-	}
-	if _, err := newRuntimeAPIKeyService(cfg, apikeyservice.NewMemoryStore()); err != nil {
-		t.Fatalf("expected local runtime API key service to allow default dev signing secret encryption key: %v", err)
+func TestRunIgnoresObsoleteAPIKeySigningEncryptionConfig(t *testing.T) {
+	values := []string{"", "secret", "password", "admin", "admin-secret", "admin-token-secret", "short-prod-key", "change-me-in-prod", "example-api-key-signing-secret-encryption-key", "local-dev-api-key-signing-secret-encryption-key"}
+	for _, env := range []string{"prod", "production", "local"} {
+		for _, value := range values {
+			cfg := config.Config{
+				App:    config.AppConfig{Env: env},
+				APIKey: config.APIKeyConfig{SigningSecretEncryptionKey: value},
+			}
+			if _, err := newRuntimeAPIKeyService(cfg, apikeyservice.NewMemoryStore()); err != nil {
+				t.Fatalf("obsolete signing encryption config must not block Bearer keys in %s: %v", env, err)
+			}
+		}
 	}
 }
 

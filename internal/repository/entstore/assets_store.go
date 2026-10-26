@@ -156,7 +156,7 @@ func (s *AssetsStore) SaveWithGeneratedName(ctx context.Context, userID int64, a
 		asset.Name = domainassets.ReferenceNameCandidate(preferredName, sequence)
 		saved, err := s.saveWithMetadata(ctx, userID, asset, metadata)
 		if err == nil {
-			return saved, nil
+			return s.projectReferenceDisplayName(ctx, saved), nil
 		}
 		if !repoent.IsConstraintError(err) {
 			return domainassets.ReferenceAsset{}, err
@@ -245,7 +245,7 @@ func (s *AssetsStore) ImportGalleryAlias(ctx context.Context, userID int64, resu
 		if err := tx.Commit(); err != nil {
 			return domainassets.ReferenceAsset{}, err
 		}
-		return asset, nil
+		return s.projectReferenceDisplayName(ctx, asset), nil
 	} else if !repoent.IsNotFound(err) {
 		return domainassets.ReferenceAsset{}, err
 	}
@@ -286,7 +286,7 @@ func (s *AssetsStore) ImportGalleryAlias(ctx context.Context, userID int64, resu
 	if err := tx.Commit(); err != nil {
 		return domainassets.ReferenceAsset{}, err
 	}
-	return asset, nil
+	return s.projectReferenceDisplayName(ctx, asset), nil
 }
 
 func referenceGenerationSnapshot(task *repoent.ImageTask) (*domainassets.GenerationSnapshot, error) {
@@ -415,7 +415,7 @@ func nextReferenceAssetName(ctx context.Context, client *repoent.Client, userID 
 
 func (s *AssetsStore) ensureReferenceAssetName(ctx context.Context, userID int64, entity *repoent.ReferenceAsset) (domainassets.ReferenceAsset, error) {
 	if entity.Name != nil && strings.TrimSpace(*entity.Name) != "" {
-		return mapReferenceAssetEntity(entity), nil
+		return s.referenceWithCanonicalName(ctx, entity), nil
 	}
 	for attempt := 0; attempt < 20; attempt++ {
 		name, err := nextReferenceAssetName(ctx, s.client, userID, "")
@@ -426,14 +426,14 @@ func (s *AssetsStore) ensureReferenceAssetName(ctx context.Context, userID int64
 			Where(referenceasset.UserIDEQ(userID), referenceasset.DeletedAtIsNil(), referenceasset.StatusNEQ("deleted"), referenceasset.NameIsNil()).
 			SetName(name).SetNameNormalized(name).Save(ctx)
 		if err == nil {
-			return mapReferenceAssetEntity(updated), nil
+			return s.referenceWithCanonicalName(ctx, updated), nil
 		}
 		if repoent.IsNotFound(err) {
 			reloaded, reloadErr := s.client.ReferenceAsset.Query().Where(referenceasset.IDEQ(entity.ID), referenceasset.UserIDEQ(userID), referenceasset.DeletedAtIsNil(), referenceasset.StatusNEQ("deleted")).Only(ctx)
 			if reloadErr != nil {
 				return domainassets.ReferenceAsset{}, repoerr.ErrNotFound
 			}
-			return mapReferenceAssetEntity(reloaded), nil
+			return s.referenceWithCanonicalName(ctx, reloaded), nil
 		}
 		if !repoent.IsConstraintError(err) {
 			return domainassets.ReferenceAsset{}, err
@@ -481,6 +481,24 @@ func (s *AssetsStore) DeleteByUserAndID(ctx context.Context, userID int64, asset
 		return err
 	}
 	return nil
+}
+
+func (s *AssetsStore) referenceWithCanonicalName(ctx context.Context, entity *repoent.ReferenceAsset) domainassets.ReferenceAsset {
+	return s.projectReferenceDisplayName(ctx, mapReferenceAssetEntity(entity))
+}
+
+func (s *AssetsStore) projectReferenceDisplayName(ctx context.Context, asset domainassets.ReferenceAsset) domainassets.ReferenceAsset {
+	id := asset.MediaAssetID
+	if id == "" {
+		id = asset.SourceImageResultID
+	}
+	if parsed, err := uuid.Parse(id); err == nil {
+		canonical, err := s.client.MediaAsset.Get(ctx, parsed)
+		if err == nil && canonical.DeletedAt == nil {
+			asset.DisplayName = canonical.Name
+		}
+	}
+	return asset
 }
 
 func mapReferenceAssetEntity(entity *repoent.ReferenceAsset) domainassets.ReferenceAsset {

@@ -1,6 +1,7 @@
+import { referenceAdmission, createReferenceReservations } from '../../../../shared/reference-admission'
 import type { VideoCapability, VideoTask } from '../../../../shared/api-types'
 import { parseUserHashState, userHashForRoute } from '../../routeState'
-import { VIDEO_TASK_INPUT_ROLES, promptReferenceNames, videoTaskInputMissing, videoTaskInputLabel } from './videoDraft'
+import { videoDraftInvalidReason, videoReferencePolicy, videoInputAssetReason, VIDEO_TASK_INPUT_ROLES, promptReferenceNames, videoTaskInputMissing, videoTaskInputLabel } from './videoDraft'
 import {
   applyVideoCapability,
   defaultVideoDraft,
@@ -70,8 +71,8 @@ const task = {
   prompt_binding_snapshot: { variables: [{ name: 'speed', value: 'private' }] }, inputs: [{ id: 'input-1', asset_id: 'asset-1', role: 'first_frame', ordinal: 0 }],
 } as VideoTask
 const reused = reuseVideoTask(task)
-if (reused.prompt_variables.length !== 0 || reused.prompt_template !== task.prompt_template || reused.output_count !== 2) {
-  throw new Error(`reuse must keep parameters without variable values: ${JSON.stringify(reused)}`)
+if (reused.prompt_variables[0]?.value !== 'private' || reused.prompt_template !== task.prompt_template || reused.output_count !== 2) {
+  throw new Error(`reuse must restore prompt variables and parameters: ${JSON.stringify(reused)}`)
 }
 // Reference videos/audios are hard to re-pick, so reuse must carry inputs over.
 if (reused.inputs.length !== 1 || reused.inputs[0].asset_id !== 'asset-1' || reused.inputs[0].role !== 'first_frame') {
@@ -102,3 +103,44 @@ const nfcNames = promptReferenceNames('{{@\u304b\u3099}}')
 if (nfcNames.size !== 1 || !nfcNames.has('\u304c')) {
   throw new Error('reference extraction must NFC-normalize names like the backend resolver')
 }
+const invalidModel = { ...draft, route_model_code: 'offline', inputs: [{ asset_id: 'keep', role: 'first_frame' as const, ordinal: 0 }] }
+const unchangedModel = applyVideoCapability(invalidModel, capability)
+if (unchangedModel.draft !== invalidModel || !videoDraftInvalidReason(invalidModel, capability)) throw new Error('invalid model must remain selected and block generation')
+const unsupportedTask = { ...draft, task_type: 'video_edit' as const, inputs: invalidModel.inputs }
+if (applyVideoCapability(unsupportedTask, capability).draft !== unsupportedTask) throw new Error('unsupported task must not change task or delete inputs')
+if (applyVideoCapability({ ...draft, inputs: invalidModel.inputs }, capability).draft.inputs !== invalidModel.inputs) throw new Error('text mode must preserve invalid inputs')
+if (!videoReferencePolicy(capability.model_groups[0], 'text_to_video').reason) throw new Error('text video must reject references')
+if (!videoReferencePolicy(capability.model_groups[0], 'image_to_video').reason) throw new Error('unknown input capability must fail closed')
+const inputModel = { ...capability.model_groups[0], input_capabilities_by_task_type: { image_to_video: { first_frame: { required: true, max_count: 1, media_types: ['image'], formats: ['jpg'], max_bytes: 100 } } } }
+if (videoReferencePolicy(inputModel, 'image_to_video').limits.first_frame !== 1) throw new Error('role count must come from current capability')
+if (videoInputAssetReason(inputModel, 'image_to_video', 'first_frame', { name: 'a.jpeg', mime_type: 'image/jpeg', media_type: 'image', file_size_bytes: 99 })) throw new Error('jpeg alias should be admitted')
+if (!videoInputAssetReason(inputModel, 'image_to_video', 'first_frame', { name: 'a.jpeg', mime_type: 'image/jpeg', media_type: 'image', file_size_bytes: 101 })) throw new Error('oversize input must be rejected')
+
+const policy = { limits: { reference_image: 2, reference_video: 1 } }
+const pending = createReferenceReservations<'reference_image' | 'reference_video'>()
+const kind = (input: { role: 'reference_image' | 'reference_video'; id: string }) => input.role
+const image = { role: 'reference_image' as const, id: 'i' }
+const video = { role: 'reference_video' as const, id: 'v' }
+const firstReservation = pending.reserve(policy, [], [image, image], kind)
+if (!firstReservation.ok || pending.reserve(policy, [], [image], kind).ok) throw new Error('concurrent uploads must reserve all image slots before upload')
+if (!pending.reserve(policy, [], [video], kind).ok) throw new Error('video slots must be independent of image slots')
+if (referenceAdmission({ policy, current: [], incoming: [image], reserved: pending.pending(), kind }).ok) throw new Error('asset picker must consider pending uploads')
+if (firstReservation.token !== undefined) pending.release(firstReservation.token)
+const duplicate = referenceAdmission({ policy, current: [image], incoming: [image], kind, key: (item) => item.id })
+if (!duplicate.ok || duplicate.merged.length !== 1) throw new Error('duplicate reference must not consume another slot')
+
+// A deferred upload keeps a synchronous reservation until completion, even
+// before the rendering state update that clears the old quote is committed.
+void (async () => {
+  const deferredReservations = createReferenceReservations<'reference_image'>()
+  let complete!: () => void
+  const upload = new Promise<void>((resolve) => { complete = resolve })
+  const reservation = deferredReservations.reserve({ limits: { reference_image: 1 } }, [], [image], () => 'reference_image')
+  if (!reservation.ok || reservation.token === undefined) throw new Error('deferred upload must reserve before starting')
+  const blocked = () => Object.values(deferredReservations.pending()).some((count) => (count ?? 0) > 0)
+  const completion = upload.finally(() => deferredReservations.release(reservation.token!))
+  if (!blocked()) throw new Error('submission and late quote responses must be blocked during deferred upload')
+  complete()
+  await completion
+  if (blocked()) throw new Error('completed uploads must release the synchronous submission guard')
+})()

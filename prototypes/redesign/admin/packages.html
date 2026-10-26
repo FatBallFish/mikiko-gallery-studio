@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>套餐管理 — Mikiko Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/admin.css">
+</head>
+<body data-site="admin" data-page="packages" data-title="套餐管理">
+<div class="a-shell"><div class="a-main">
+  <main class="a-content">
+    <header class="a-page-head">
+      <div class="a-page-head__copy">
+        <span class="a-kicker">Packages</span>
+        <h1>套餐管理</h1>
+        <p>积分包与订阅套餐。售价、积分、赠送与有效期在抽屉里一次性编辑，列表只保留决策所需字段。</p>
+      </div>
+      <div class="a-page-head__actions">
+        <button class="a-btn a-btn--sm" type="button" data-toast="已刷新套餐">刷新</button>
+        <button class="a-btn a-btn--sm a-btn--primary" type="button" data-open="#package-edit">新增套餐</button>
+      </div>
+    </header>
+
+    <div class="a-metrics" style="margin-bottom:16px">
+      <div class="a-metric"><div class="a-metric__label">套餐总数</div><div class="a-metric__value">8</div><div class="a-metric__foot">启用 6 · 归档 1</div></div>
+      <div class="a-metric"><div class="a-metric__label">今日购买</div><div class="a-metric__value">128</div><div class="a-metric__foot">收入 ¥ 6,420</div></div>
+      <div class="a-metric"><div class="a-metric__label">最畅销</div><div class="a-metric__value" style="font-size:21px">创作者包</div><div class="a-metric__foot">64 笔 · 50%</div></div>
+      <div class="a-metric"><div class="a-metric__label">平均客单价</div><div class="a-metric__value">¥ 50.16</div><div class="a-metric__foot">较上周 +4.2%</div></div>
+    </div>
+
+    <section class="a-panel a-panel--flush">
+      <div class="a-panel__head">
+        <div style="display:flex;gap:8px;align-items:center">
+          <div class="a-search" style="width:240px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="a-input" placeholder="搜索套餐代码或名称"></div>
+          <select class="a-select a-select--sm" style="width:130px"><option>全部类型</option><option>积分包</option><option>订阅套餐</option></select>
+          <select class="a-select a-select--sm" style="width:130px"><option>全部状态</option><option>启用</option><option>停用</option><option>已归档</option></select>
+        </div>
+        <span class="a-hint">共 8 个套餐</span>
+      </div>
+      <div class="a-table-wrap">
+        <table class="a-table" style="min-width:1040px">
+          <thead><tr><th>套餐</th><th>类型</th><th class="is-num">售价</th><th class="is-num">积分 / 赠送</th><th class="is-num">有效期</th><th class="is-num">排序</th><th>状态</th><th class="is-actions">操作</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><div class="a-cell-stack"><strong>创作者包</strong><span>points_5200</span></div></td>
+              <td>积分包</td><td class="is-num">¥ 50.00</td>
+              <td class="is-num">5,000 + 200</td><td class="is-num">365 天</td><td class="is-num">20</td>
+              <td><span class="a-badge a-badge--ok"><i></i>启用</span> <span class="a-badge a-badge--accent">开放购买</span></td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#package-edit">编辑</button><button class="a-row-btn" type="button" data-toast="已停用套餐">停用</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="更多操作" data-row-ignore>⋯</button></div></td>
+            </tr>
+            <tr>
+              <td><div class="a-cell-stack"><strong>工作室包</strong><span>points_11000</span></div></td>
+              <td>积分包</td><td class="is-num">¥ 100.00</td>
+              <td class="is-num">10,000 + 1,000</td><td class="is-num">365 天</td><td class="is-num">30</td>
+              <td><span class="a-badge a-badge--ok"><i></i>启用</span> <span class="a-badge a-badge--accent">开放购买</span></td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#package-edit">编辑</button><button class="a-row-btn" type="button" data-toast="已停用套餐">停用</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="更多操作" data-row-ignore>⋯</button></div></td>
+            </tr>
+            <tr>
+              <td><div class="a-cell-stack"><strong>年度包</strong><span>points_58000</span></div></td>
+              <td>积分包</td><td class="is-num">¥ 500.00</td>
+              <td class="is-num">50,000 + 8,000</td><td class="is-num">365 天</td><td class="is-num">40</td>
+              <td><span class="a-badge a-badge--ok"><i></i>启用</span> <span class="a-badge a-badge--accent">开放购买</span></td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#package-edit">编辑</button><button class="a-row-btn" type="button" data-toast="已停用套餐">停用</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="更多操作" data-row-ignore>⋯</button></div></td>
+            </tr>
+            <tr>
+              <td><div class="a-cell-stack"><strong>创作订阅 · Pro</strong><span>sub_monthly_pro</span></div></td>
+              <td>订阅套餐</td><td class="is-num">¥ 99.00</td>
+              <td class="is-num">8,000 + 0</td><td class="is-num">30 天</td><td class="is-num">50</td>
+              <td><span class="a-badge a-badge--ok"><i></i>启用</span> <span class="a-badge"><i></i>未开放购买</span></td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#package-edit">编辑</button><button class="a-row-btn" type="button" data-toast="订阅套餐购买入口未开放">开放</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="更多操作" data-row-ignore>⋯</button></div></td>
+            </tr>
+            <tr>
+              <td><div class="a-cell-stack"><strong>旧版灵感包</strong><span>points_1000_legacy</span></div></td>
+              <td>积分包</td><td class="is-num">¥ 10.00</td>
+              <td class="is-num">1,000 + 0</td><td class="is-num">365 天</td><td class="is-num">10</td>
+              <td><span class="a-badge"><i></i>已归档</span> <span class="a-badge"><i></i>未开放购买</span></td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn" type="button" data-toast="已恢复套餐">恢复</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="更多操作" data-row-ignore>⋯</button></div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="a-pager">
+        <div class="a-pager__info">显示 <b>1–5</b>，共 <b>8</b> 条</div>
+        <div class="a-pager__controls"><button class="a-pager__btn" disabled>‹</button><button class="a-pager__btn is-active">1</button><button class="a-pager__btn">2</button><button class="a-pager__btn">›</button></div>
+        <div class="a-pager__size"><span>每页</span><select><option>20</option><option>50</option></select></div>
+      </div>
+    </section>
+  </main>
+</div></div>
+
+<div class="a-scrim"></div>
+<aside class="a-drawer" id="package-edit" role="dialog" aria-modal="true" aria-label="编辑套餐">
+  <header class="a-drawer__head">
+    <div><h2>编辑套餐 · 创作者包</h2><p>points_5200 · 已购买 1,284 次</p></div>
+    <div class="a-drawer__spacer"></div>
+    <span class="a-badge a-badge--ok"><i></i>启用</span>
+    <button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </header>
+  <div class="a-drawer__body">
+    <form class="a-form">
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">1</span>套餐信息</h3><p>代码创建后不可修改，历史订单仍引用旧代码。</p></div>
+        <label class="a-field"><span>套餐代码 <span class="a-required">*</span></span><input class="a-input" value="points_5200" style="font-family:var(--font-admin-mono)" disabled></label>
+        <label class="a-field"><span>套餐名称 <span class="a-required">*</span></span><input class="a-input" value="创作者包"></label>
+        <label class="a-field"><span>套餐类型</span><select class="a-select"><option>积分包</option><option>订阅套餐</option></select></label>
+        <label class="a-field"><span>描述</span><textarea class="a-textarea">适合持续创作的个人创作者，约 208 张标准图片。</textarea></label>
+      </section>
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">2</span>价格与积分</h3></div>
+        <div class="a-form__pair">
+          <label class="a-field"><span>售价（CNY）</span><input class="a-input" value="50.00" inputmode="decimal"></label>
+          <label class="a-field"><span>基础积分</span><input class="a-input" value="5000" inputmode="numeric"></label>
+        </div>
+        <div class="a-form__pair">
+          <label class="a-field"><span>赠送积分</span><input class="a-input" value="200" inputmode="numeric"><span class="a-hint">到账合计 5,200。</span></label>
+          <label class="a-field"><span>排序值</span><input class="a-input" value="20" inputmode="numeric"></label>
+        </div>
+      </section>
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">3</span>有效期</h3></div>
+        <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>积分有有效期</label>
+        <label class="a-field"><span>有效天数</span><input class="a-input" value="365" inputmode="numeric"><span class="a-hint">从积分到账时间开始计算。</span></label>
+      </section>
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">4</span>状态</h3></div>
+        <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>启用套餐</label>
+        <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>在收银台开放购买</label>
+      </section>
+    </form>
+    <div class="a-banner a-banner--warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 9v5M12 17h.01"/></svg><div><strong style="font-size:13px">修改不会影响历史订单</strong><div class="a-hint">已购买用户的积分与订单金额保持不变。</div></div></div>
+  </div>
+  <footer class="a-drawer__foot">
+    <button class="a-btn a-btn--sm a-btn--danger" type="button" data-toast="归档套餐需二次确认" data-tone="bad">归档</button>
+    <div style="flex:1"></div>
+    <button class="a-btn a-btn--sm" type="button" data-close>取消</button>
+    <button class="a-btn a-btn--sm a-btn--primary" type="button" data-close data-toast="套餐已保存" data-tone="ok">保存套餐</button>
+  </footer>
+</aside>
+<script src="../assets/shell.js"></script>
+</body>
+</html>

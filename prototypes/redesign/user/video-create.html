@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>视频创作 — Mikiko Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Manrope:wght@300..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/user.css">
+<style>
+  .vd-switch { display: flex; justify-content: center; margin-bottom: 18px; }
+  .vd-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .vd-mode { display: grid; gap: 3px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 9px; background: transparent; text-align: left; transition: all var(--t-fast); }
+  .vd-mode b { color: var(--ink-2); font-size: 11.5px; font-weight: 650; }
+  .vd-mode span { color: var(--ink-3); font-size: 10px; }
+  .vd-mode:hover { border-color: var(--line-2); background: var(--surface-2); }
+  .vd-mode.is-active { border-color: var(--accent-line); background: var(--accent-soft); }
+  .vd-mode.is-active b { color: var(--accent); }
+  .vd-frames { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .vd-frame { display: grid; gap: 6px; }
+  .vd-frame__slot { display: grid; place-items: center; gap: 5px; aspect-ratio: 16/10; border: 1px dashed var(--line-2); border-radius: 9px; background: color-mix(in srgb, var(--surface) 60%, transparent); color: var(--ink-3); font-size: 10px; }
+  .vd-frame__slot:hover { border-color: var(--accent-line); color: var(--ink-2); }
+  .vd-frame__slot img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
+  .vd-frame > span { color: var(--ink-3); font-size: 10px; }
+  .vd-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .vd-quote { display: grid; gap: 7px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: color-mix(in srgb, var(--accent) 5%, transparent); }
+  .vd-task { display: grid; gap: 12px; }
+  .vd-task__results { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .vd-video { position: relative; overflow: hidden; border-radius: 10px; background: #000; }
+  .vd-video img { width: 100%; display: block; aspect-ratio: 16/9; object-fit: cover; }
+  .vd-video__play { position: absolute; inset: 0; display: grid; place-items: center; border: 0; background: linear-gradient(to top, rgba(0,0,0,.4), transparent); color: #fff; }
+  .vd-video__play span { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; border: 1px solid rgba(255,255,255,.3); background: rgba(0,0,0,.4); backdrop-filter: blur(8px); }
+  .u-result--video { width: min(760px, 92%); }
+  .u-result--video > img { width: 100%; max-width: none; max-height: 66vh; aspect-ratio: 16 / 9; object-fit: cover; }
+  .vd-result__play { position: absolute; left: 50%; top: 50%; z-index: 2; display: grid; place-items: center; width: 56px; height: 56px; transform: translate(-50%, -50%); border: 1px solid rgba(255,255,255,.32); border-radius: 50%; background: rgba(0,0,0,.42); color: #fff; backdrop-filter: blur(10px); transition: background var(--t-fast), color var(--t-fast), transform var(--t-fast); }
+  .vd-result__play:hover { background: var(--accent); color: var(--accent-ink); transform: translate(-50%, -50%) scale(1.04); }
+  .vd-meta { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--line); }
+  .vd-meta div { display: grid; gap: 2px; padding: 9px 11px; background: var(--surface); }
+  .vd-meta dt { color: var(--ink-3); font-size: 10px; }
+  .vd-meta dd { font-family: var(--font-mono); font-size: 12px; }
+  .vd-history { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+  @media (max-width: 760px) {
+    .vd-meta { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body data-site="user" data-page="genpic">
+<div class="u-shell"><div class="u-main">
+  <div class="u-content u-content--flush">
+    <div class="vd-switch">
+      <div class="u-segment">
+        <a href="genpic.html">图片生成</a>
+        <a class="is-active" href="video-create.html">视频生成</a>
+      </div>
+    </div>
+
+    <div class="u-workbench">
+      <aside class="u-controls" id="controls">
+        <div class="u-controls__head" onclick="if(window.matchMedia('(max-width:760px)').matches)this.parentElement.classList.toggle('is-open')">
+          <div style="display:grid;gap:2px"><strong style="font-size:13px">生成设置</strong><span class="u-meta">视频 · 首帧生视频</span></div>
+          <span class="u-chip u-chip--mono">◈ 52.00</span>
+        </div>
+        <div class="u-controls__body">
+          <div style="display:grid;gap:9px">
+            <div class="u-label">生成方式</div>
+            <div class="vd-modes">
+              <button class="vd-mode" type="button"><b>文生视频</b><span>纯文本描述</span></button>
+              <button class="vd-mode is-active" type="button"><b>首帧生视频</b><span>一张起始画面</span></button>
+              <button class="vd-mode" type="button"><b>首尾帧</b><span>起始 + 结束</span></button>
+              <button class="vd-mode" type="button"><b>参考生视频</b><span>主体 / 风格参考</span></button>
+              <button class="vd-mode" type="button"><b>视频编辑</b><span>修改已有片段</span></button>
+              <button class="vd-mode" type="button"><b>视频延长</b><span>续写已有镜头</span></button>
+            </div>
+          </div>
+
+          <div style="display:grid;gap:9px">
+            <div class="u-label">输入素材 <span class="u-label__hint">首帧 1 / 1</span></div>
+            <div class="vd-frames">
+              <div class="vd-frame">
+                <button class="vd-frame__slot" type="button" data-toast="从资产库选择首帧"><img src="https://picsum.photos/seed/vd-first/400/250" data-seed="vd-first" alt="首帧"></button>
+                <span>首帧 · 1536×960</span>
+              </div>
+              <div class="vd-frame">
+                <button class="vd-frame__slot" type="button" data-toast="上传尾帧（可选）"><span style="font-size:16px">+</span>尾帧（可选）</button>
+                <span>决定结束画面</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:grid;gap:9px">
+            <div class="u-label">提示词 <span class="u-label__hint">96 / 2000</span></div>
+            <div class="u-prompt-box">
+              <div class="u-prompt-box__head"><span class="u-meta">描述镜头运动与光线</span>
+                <div class="u-prompt-box__tools"><button class="u-prompt-box__tool" type="button" data-toast="已打开提示词优化">✦ 优化</button></div>
+              </div>
+              <textarea style="min-height:96px" spellcheck="false">镜头缓慢向前推进，尘埃在斜光中漂浮，植物叶片轻微摆动，浅景深，胶片颗粒。</textarea>
+              <div class="u-prompt-box__foot"><span>参考首帧构图</span><span>建议 ≤ 2000 字</span></div>
+            </div>
+          </div>
+
+          <div style="display:grid;gap:9px">
+            <div class="u-label">参数</div>
+            <div class="vd-grid2">
+              <label class="u-field"><span class="u-label">时长</span><select class="u-select"><option>8 秒</option><option>5 秒</option><option>10 秒</option></select></label>
+              <label class="u-field"><span class="u-label">清晰度</span><select class="u-select"><option>1080p</option><option>720p</option><option>480p</option></select></label>
+              <label class="u-field"><span class="u-label">比例</span><select class="u-select"><option>16:9</option><option>9:16</option><option>1:1</option></select></label>
+              <label class="u-field"><span class="u-label">数量</span><select class="u-select"><option>1</option><option>2</option></select></label>
+            </div>
+            <label class="u-switch"><input type="checkbox" checked><span class="u-switch__track"></span>生成音频</label>
+          </div>
+
+          <div class="vd-quote">
+            <div class="u-estimate__row"><span>单价 · 8 秒 1080p</span><b>◈ 52.00</b></div>
+            <div class="u-estimate__row"><span>预计总价 · 1 条</span><b>◈ 52.00</b></div>
+            <div class="u-estimate__row"><span>最大预留</span><b>◈ 52.00</b></div>
+            <div class="u-estimate__row"><span>可用余额</span><b>4,820.50</b></div>
+          </div>
+        </div>
+        <div class="u-controls__foot">
+          <div class="u-meta">提交后按实际生成秒数结算，失败自动退回预留</div>
+          <button class="u-btn u-btn--primary u-btn--lg u-btn--block" type="button" data-toast="已预留 ◈ 52.00，视频任务进入队列" data-tone="ok">生成视频</button>
+        </div>
+      </aside>
+
+      <section class="u-canvas">
+        <div class="u-canvas__head">
+          <div class="u-segment" data-tabs="vcanvas">
+            <button class="is-active" data-tab="vcurrent">当前任务</button>
+            <button data-tab="vhistory">历史任务</button>
+          </div>
+          <span class="u-meta">队列 2 · 1 个任务生成中</span>
+        </div>
+
+        <div data-tab-panels="vcanvas">
+          <div data-panel="vcurrent" style="display:grid;gap:14px">
+            <div class="u-stage-rail">
+              <span>任务阶段</span>
+              <div class="u-stage-rail__steps">
+                <span class="u-stage-rail__step is-done"><i class="u-stage-rail__dot"></i>参数校验</span>
+                <span class="u-stage-rail__step is-done"><i class="u-stage-rail__dot"></i>模型路由</span>
+                <span class="u-stage-rail__step is-now"><i class="u-stage-rail__dot"></i>视频生成</span>
+                <span class="u-stage-rail__step"><i class="u-stage-rail__dot"></i>结果入库</span>
+                <span class="u-stage-rail__step"><i class="u-stage-rail__dot"></i>积分结算</span>
+              </div>
+              <span class="u-meta">预计 40–70s</span>
+            </div>
+
+            <div class="vd-task">
+              <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px">
+                <div style="display:flex;gap:6px;flex-wrap:wrap">
+                  <span class="u-chip u-chip--accent"><span class="u-dot"></span>生成中</span>
+                  <span class="u-chip u-chip--mono">8s</span>
+                  <span class="u-chip u-chip--mono">1080p</span>
+                  <span class="u-chip u-chip--mono">16:9</span>
+                  <span class="u-chip u-chip--mono">有声</span>
+                </div>
+                <div style="display:flex;gap:7px">
+                  <button class="u-btn u-btn--sm" type="button" data-toast="已打开任务详情">详情</button>
+                  <button class="u-btn u-btn--sm" type="button" data-toast="已取消，预留积分退回">取消</button>
+                </div>
+              </div>
+              <div class="u-progress"><span></span></div>
+
+              <div class="u-stage">
+                <div class="u-result u-result--video">
+                  <img src="https://picsum.photos/seed/vd-poster/1200/675" data-seed="vd-poster" alt="视频首帧海报">
+                  <button class="vd-result__play" type="button" data-toast="全屏播放（hover 自动静音循环）" aria-label="播放视频"><span>▶</span></button>
+                  <div class="u-result__bar">
+                    <div class="u-result__ops">
+                      <button class="u-result__op" type="button" data-copy="夜班电车，雨后的城市街道，慢镜头推进。" aria-label="复制提示词">⧉</button>
+                      <button class="u-result__op" type="button" data-toast="已复用这组参数" aria-label="复用参数">↻</button>
+                      <button class="u-result__op" type="button" data-toast="延长这段视频" aria-label="视频延长">＋</button>
+                      <button class="u-result__op" type="button" data-open="#video-detail" aria-label="查看详情">⤢</button>
+                      <button class="u-result__op" type="button" data-toast="开始下载视频" aria-label="下载">↓</button>
+                    </div>
+                    <span class="u-result__caption">#1 · 8.0s · 1080p · 16:9 · 有声 · ◈ 52 · 待结算</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:baseline">
+              <h3 class="u-h3">最近视频</h3>
+              <a class="u-link" style="font-size:11.5px" href="gallery.html">全部资产</a>
+            </div>
+            <div class="u-history-strip">
+              <a class="u-history-card" href="#video-detail" data-open="#video-detail"><div class="u-history-card__media"><img src="https://picsum.photos/seed/vh-1/400/250" data-seed="vh-1" alt="历史视频 1"><span class="u-play"><span>▶</span></span></div><div class="u-history-card__body"><strong>夜班电车 8s</strong><span class="u-meta">◈ 48.00 · 成功</span></div></a>
+              <a class="u-history-card" href="#video-detail" data-open="#video-detail"><div class="u-history-card__media"><img src="https://picsum.photos/seed/vh-2/400/250" data-seed="vh-2" alt="历史视频 2"><span class="u-play"><span>▶</span></span></div><div class="u-history-card__body"><strong>雨滴落在窗台</strong><span class="u-meta">◈ 52.00 · 成功</span></div></a>
+              <a class="u-history-card" href="#video-detail" data-open="#video-detail"><div class="u-history-card__media"><img src="https://picsum.photos/seed/vh-3/400/250" data-seed="vh-3" alt="历史视频 3"><span class="u-play"><span>▶</span></span></div><div class="u-history-card__body"><strong>雾中林道推进</strong><span class="u-meta">◈ 52.00 · 成功</span></div></a>
+            </div>
+          </div>
+
+          <div data-panel="vhistory" hidden style="display:grid;gap:14px">
+            <div class="u-toolbar" style="margin:0">
+              <div class="u-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input placeholder="搜索提示词或任务 ID"></div>
+              <select class="u-filter"><option>全部状态</option><option>成功</option><option>失败</option><option>部分成功</option></select>
+            </div>
+            <div class="vd-history">
+              <a class="u-card" href="#video-detail" data-open="#video-detail"><div class="u-card__media"><img src="https://picsum.photos/seed/vh-4/560/340" data-seed="vh-4" alt="历史 4"><span class="u-card__tag">视频</span><span class="u-play"><span>▶</span></span></div><div class="u-card__body"><div class="u-card__title">夜班电车，8 秒循环镜头</div><div class="u-card__meta"><span>1080p · 16:9</span><span>◈ 48.00</span></div></div></a>
+              <a class="u-card" href="#video-detail" data-open="#video-detail"><div class="u-card__media"><img src="https://picsum.photos/seed/vh-5/560/340" data-seed="vh-5" alt="历史 5"><span class="u-card__tag">视频</span><span class="u-play"><span>▶</span></span></div><div class="u-card__body"><div class="u-card__title">雨滴落在窗台，微距慢镜头</div><div class="u-card__meta"><span>1080p · 9:16</span><span>◈ 52.00</span></div></div></a>
+              <a class="u-card" href="#video-detail" data-open="#video-detail"><div class="u-card__media"><img src="https://picsum.photos/seed/vh-6/560/340" data-seed="vh-6" alt="历史 6"><span class="u-card__tag">视频</span><span class="u-play"><span>▶</span></span></div><div class="u-card__body"><div class="u-card__title">雾中林道，向前推进</div><div class="u-card__meta"><span>1080p · 16:9</span><span>◈ 52.00</span></div></div></a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div></div>
+
+<div class="u-backdrop"></div>
+<aside class="u-drawer" id="video-detail" role="dialog" aria-modal="true" aria-label="视频任务详情">
+  <header class="u-drawer__head">
+    <div class="u-drawer__title"><strong>视频任务详情</strong><span>vtask_4d19b2 · 首帧生视频</span></div>
+    <div class="u-drawer__spacer"></div>
+    <button class="u-icon-btn" type="button" data-toast="已复制任务 ID">复制</button>
+    <button class="u-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </header>
+  <div class="u-drawer__body">
+    <div class="u-detail">
+      <section class="u-detail__stage-col">
+        <div class="u-detail__stage">
+          <span class="u-detail__stage-label"><span class="u-chip u-chip--mono">生成中</span><span class="u-chip u-chip--mono">8s · 1080p</span></span>
+          <img src="https://picsum.photos/seed/vd-poster/960/540" data-seed="vd-poster" alt="视频海报">
+        </div>
+        <div class="vd-meta">
+          <div><dt>时长</dt><dd>8.0s</dd></div>
+          <div><dt>帧率</dt><dd>24fps</dd></div>
+          <div><dt>音频</dt><dd>有声</dd></div>
+          <div><dt>阶段</dt><dd>视频生成</dd></div>
+        </div>
+        <div class="u-detail__refs">
+          <span class="u-detail__refs-label">输入素材</span>
+          <button class="u-detail__ref" type="button" data-toast="查看首帧"><img src="https://picsum.photos/seed/vd-first/200/200" data-seed="vd-first" alt="首帧"></button>
+        </div>
+      </section>
+      <section class="u-detail__info">
+        <div class="u-detail__info-scroll">
+          <div style="display:grid;gap:6px">
+            <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="u-chip u-chip--accent">首帧生视频</span><span class="u-chip u-chip--mono">seedance-2.5</span><span class="u-chip u-chip--mono">有声</span></div>
+            <h2 class="u-detail__title">玻璃温室推进镜头</h2>
+            <div class="u-meta">今天 19:06 · 预计 40–70 秒</div>
+          </div>
+          <div class="u-detail__section"><h4>Prompt</h4><div class="u-prompt">镜头缓慢向前推进，尘埃在斜光中漂浮，植物叶片轻微摆动，浅景深，胶片颗粒。</div></div>
+          <div class="u-detail__section"><h4>计费</h4>
+            <div class="u-estimate">
+              <div class="u-estimate__row"><span>预计积分</span><b>◈ 52.00</b></div>
+              <div class="u-estimate__row"><span>已预留</span><b>◈ 52.00</b></div>
+              <div class="u-estimate__row"><span>实际扣除</span><b>待生成完成</b></div>
+              <div class="u-estimate__row"><span>结算状态</span><b>pending</b></div>
+            </div>
+          </div>
+          <div class="u-detail__section"><h4>参数</h4>
+            <dl class="u-facts">
+              <div class="u-fact"><dt>时长</dt><dd>8 秒</dd></div>
+              <div class="u-fact"><dt>清晰度</dt><dd>1080p</dd></div>
+              <div class="u-fact"><dt>比例</dt><dd>16:9</dd></div>
+              <div class="u-fact"><dt>数量</dt><dd>1 条</dd></div>
+              <div class="u-fact"><dt>生成音频</dt><dd>是</dd></div>
+              <div class="u-fact"><dt>首帧</dt><dd>1 张</dd></div>
+            </dl>
+          </div>
+        </div>
+        <div class="u-detail__foot">
+          <button class="u-btn u-btn--sm" type="button" data-toast="已取消任务，预留退回">取消任务</button>
+          <button class="u-btn u-btn--sm" type="button" data-toast="已复用参数">复用参数</button>
+          <button class="u-btn u-btn--sm" type="button" data-toast="已复制任务 ID">复制任务 ID</button>
+        </div>
+      </section>
+    </div>
+  </div>
+</aside>
+
+<script src="../assets/shell.js"></script>
+</body>
+</html>

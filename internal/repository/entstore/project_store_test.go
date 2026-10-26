@@ -261,7 +261,7 @@ func TestProjectStoreTransferIncludesUnifiedMediaVideoTasksAndActiveUploads(t *t
 	}
 	standaloneAssetID := uuid.New()
 	if _, err := client.MediaAsset.Create().SetID(standaloneAssetID).SetUserID(808).SetProjectID(sourceID).
-		SetName("voice.wav").SetNameKey("voice.wav").SetMediaType("audio").SetSourceType("local_upload").
+		SetName("voice.wav").SetNameKey("voice.wav").SetGroupName("Transfer group").SetMediaType("audio").SetSourceType("local_upload").
 		SetStatus("ready").SetObjectKey("media/original/808/voice.wav").SetMimeType("audio/wav").SetFileSizeBytes(200).Save(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -290,6 +290,14 @@ func TestProjectStoreTransferIncludesUnifiedMediaVideoTasksAndActiveUploads(t *t
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	transferredAsset, err := client.MediaAsset.Get(ctx, standaloneAssetID)
+	if err != nil || transferredAsset.GroupID == nil || transferredAsset.GroupName != "Transfer group" {
+		t.Fatalf("transferred group = %v %v", transferredAsset, err)
+	}
+	destinationGroup, err := client.AssetGroup.Get(ctx, *transferredAsset.GroupID)
+	if err != nil || destinationGroup.ProjectID != targetID {
+		t.Fatalf("group points to source project: %v %v", destinationGroup, err)
 	}
 	if result.Transferred.Tasks != 2 || result.Transferred.Assets != 3 {
 		t.Fatalf("multimedia transfer counts = %#v, want 2 tasks and 3 assets", result.Transferred)

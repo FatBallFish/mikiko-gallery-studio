@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>支付配置 — Mikiko Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/admin.css">
+<style>
+  .cs-method { display: grid; grid-template-columns: minmax(0,1fr) 180px 160px 110px 100px auto; gap: 12px; align-items: center; padding: 13px 16px; border-bottom: 1px solid var(--a-line); font-size: 13px; }
+  .cs-method:last-child { border-bottom: 0; }
+  .cs-method__logo { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 7px; background: var(--a-surface-3); font-size: 11px; font-weight: 700; }
+  .cs-amount-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .cs-webhook { display: grid; grid-template-columns: minmax(0,1.2fr) 140px 110px 110px auto; gap: 12px; align-items: center; padding: 13px 16px; border-bottom: 1px solid var(--a-line); font-size: 13px; }
+</style>
+</head>
+<body data-site="admin" data-page="cashier-config" data-title="支付配置">
+<div class="a-shell"><div class="a-main">
+  <main class="a-content">
+    <header class="a-page-head">
+      <div class="a-page-head__copy">
+        <span class="a-kicker">Cashier</span>
+        <h1>支付配置</h1>
+        <p>收银台展示、支付方式与渠道实例分层配置。所有多级表单以抽屉打开，保存栏固定在底部。</p>
+      </div>
+      <div class="a-page-head__actions">
+        <button class="a-btn a-btn--sm" type="button" data-toast="已刷新配置">刷新</button>
+        <button class="a-btn a-btn--sm a-btn--primary" type="button" data-open="#instance-edit">新增渠道实例</button>
+      </div>
+    </header>
+
+    <div class="a-tabs" data-tabs="cashier">
+      <button class="a-tab is-active" data-tab="cs-overview">概览</button>
+      <button class="a-tab" data-tab="cs-methods">支付方式</button>
+      <button class="a-tab" data-tab="cs-instances">渠道实例 <span class="a-tab__count">3</span></button>
+      <button class="a-tab" data-tab="cs-orders">订单</button>
+      <button class="a-tab" data-tab="cs-webhooks">回调事件 <span class="a-tab__count">2</span></button>
+    </div>
+
+    <div data-tab-panels="cashier">
+      <div data-panel="cs-overview" style="display:grid;gap:16px">
+        <div class="a-metrics">
+          <div class="a-metric"><div class="a-metric__label">今日订单</div><div class="a-metric__value">642</div><div class="a-metric__foot">成功 618</div></div>
+          <div class="a-metric"><div class="a-metric__label">今日到账</div><div class="a-metric__value">¥ 18,420</div><div class="a-metric__foot">含订阅 ¥ 2,871</div></div>
+          <div class="a-metric"><div class="a-metric__label">失败回调</div><div class="a-metric__value" style="color:var(--a-danger)">2</div><div class="a-metric__foot">金额不一致</div></div>
+          <div class="a-metric"><div class="a-metric__label">启用实例</div><div class="a-metric__value">3</div><div class="a-metric__foot">支付宝 / 微信 / Stripe</div></div>
+        </div>
+
+        <div class="a-grid a-grid--2">
+          <section class="a-panel a-panel--pad">
+            <div class="a-section-title" style="margin-bottom:14px"><div><h2>收银台展示</h2><p>用户端结算页可见的支付方式与限制。</p></div></div>
+            <div class="cs-amount-grid">
+              <label class="a-field"><span>最低自定义金额</span><input class="a-input" value="1" inputmode="decimal"></label>
+              <label class="a-field"><span>最高自定义金额</span><input class="a-input" value="10000" inputmode="decimal"></label>
+              <label class="a-field"><span>CNY / 积分</span><input class="a-input" value="0.01" inputmode="decimal"></label>
+            </div>
+            <div style="display:grid;gap:8px;margin-top:14px">
+              <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>支付宝可见</label>
+              <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>微信支付可见</label>
+              <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>Stripe 可见</label>
+              <label class="a-switch"><input type="checkbox"><span class="a-switch__track"></span>Mock 测试通道可见</label>
+            </div>
+            <div class="a-form__pair" style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <label class="a-field"><span>单日支付上限</span><input class="a-input" value="5000" inputmode="decimal"></label>
+              <label class="a-field"><span>异常订单阻断</span><select class="a-select"><option>开启</option><option>关闭</option></select></label>
+            </div>
+          </section>
+
+          <section class="a-panel a-panel--pad">
+            <div class="a-section-title" style="margin-bottom:14px"><div><h2>注册送体验额度</h2><p>新用户注册后自动发放一次。</p></div></div>
+            <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>启用注册赠送</label>
+            <div class="cs-amount-grid" style="margin-top:14px">
+              <label class="a-field"><span>赠送积分</span><input class="a-input" value="200" inputmode="numeric"></label>
+              <label class="a-field"><span>有效天数</span><input class="a-input" value="30" inputmode="numeric"></label>
+              <label class="a-field"><span>提醒阈值</span><input class="a-input" value="50" inputmode="numeric"></label>
+            </div>
+            <label class="a-switch" style="margin-top:14px"><input type="checkbox" checked><span class="a-switch__track"></span>每个用户仅领取一次</label>
+            <div class="a-banner a-banner--info" style="margin-top:14px;font-size:12.5px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg><span>体验额度优先于充值余额消耗，过期后自动失效。</span></div>
+          </section>
+        </div>
+
+        <section class="a-panel a-panel--flush">
+          <div class="a-panel__head"><div><h2>渠道实例</h2><p>点击实例编辑密钥、限额与回调地址。</p></div><button class="a-btn a-btn--sm" type="button" data-open="#instance-edit">新增实例</button></div>
+          <div class="a-table-wrap">
+            <table class="a-table" style="min-width:980px">
+              <thead><tr><th>实例</th><th>类型</th><th>支付方式</th><th class="is-num">权重</th><th>状态</th><th class="is-actions">操作</th></tr></thead>
+              <tbody>
+                <tr data-row-open="#instance-edit" style="cursor:pointer">
+                  <td><div class="a-cell-stack"><strong>alipay-direct</strong><span>支付宝直连 · 已配置密钥</span></div></td><td>支付宝直连</td><td>支付宝</td><td class="is-num">70</td><td><span class="a-badge a-badge--ok"><i></i>启用</span></td>
+                  <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#instance-edit" data-row-ignore>编辑</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="已测试连接" data-row-ignore>测试</button></div></td>
+                </tr>
+                <tr data-row-open="#instance-edit" style="cursor:pointer">
+                  <td><div class="a-cell-stack"><strong>wechat-v3</strong><span>微信直连 · 已配置密钥</span></div></td><td>微信直连</td><td>微信支付</td><td class="is-num">60</td><td><span class="a-badge a-badge--ok"><i></i>启用</span></td>
+                  <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#instance-edit" data-row-ignore>编辑</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="已测试连接" data-row-ignore>测试</button></div></td>
+                </tr>
+                <tr data-row-open="#instance-edit" style="cursor:pointer">
+                  <td><div class="a-cell-stack"><strong>jeepay-cn</strong><span>JeePay 中转 · 回调异常</span></div></td><td>JeePay</td><td>支付宝</td><td class="is-num">20</td><td><span class="a-badge a-badge--bad"><i></i>异常</span></td>
+                  <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#instance-edit" data-row-ignore>编辑</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="已测试连接：签名校验失败" data-row-ignore>测试</button></div></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div data-panel="cs-methods" hidden>
+        <section class="a-panel a-panel--flush">
+          <div class="a-panel__head"><div><h2>支付方式</h2><p>展示名称、渠道与调度顺序；拖动排序在后续实现中提供。</p></div><button class="a-btn a-btn--sm" type="button" data-toast="已新增支付方式行">新增方式</button></div>
+          <div>
+            <div class="cs-method" style="background:var(--a-surface-2);color:var(--a-ink-3);font-size:11.5px;font-weight:600"><span>方式</span><span>展示名称</span><span>渠道类型</span><span>调度</span><span>状态</span><span></span></div>
+            <div class="cs-method"><div style="display:flex;align-items:center;gap:10px"><span class="cs-method__logo" style="color:#1677ff">支</span><strong>支付宝</strong></div><input class="a-input a-input--sm" value="支付宝"><select class="a-select a-select--sm"><option>支付宝直连</option><option>JeePay</option></select><span>轮询</span><span class="a-badge a-badge--ok"><i></i>启用</span><div class="a-row-actions"><button class="a-row-btn" type="button" data-toast="已保存支付方式">保存</button></div></div>
+            <div class="cs-method"><div style="display:flex;align-items:center;gap:10px"><span class="cs-method__logo" style="color:#07c160">微</span><strong>微信支付</strong></div><input class="a-input a-input--sm" value="微信支付"><select class="a-select a-select--sm"><option>微信直连</option><option>JeePay</option></select><span>轮询</span><span class="a-badge a-badge--ok"><i></i>启用</span><div class="a-row-actions"><button class="a-row-btn" type="button" data-toast="已保存支付方式">保存</button></div></div>
+            <div class="cs-method"><div style="display:flex;align-items:center;gap:10px"><span class="cs-method__logo" style="color:#635bff">S</span><strong>Stripe</strong></div><input class="a-input a-input--sm" value="银行卡 / Apple Pay"><select class="a-select a-select--sm"><option>Stripe</option></select><span>随机</span><span class="a-badge a-badge--ok"><i></i>启用</span><div class="a-row-actions"><button class="a-row-btn" type="button" data-toast="已保存支付方式">保存</button></div></div>
+            <div class="cs-method"><div style="display:flex;align-items:center;gap:10px"><span class="cs-method__logo">M</span><strong>Mock 测试</strong></div><input class="a-input a-input--sm" value="Mock 测试"><select class="a-select a-select--sm"><option>Mock</option></select><span>随机</span><span class="a-badge"><i></i>停用</span><div class="a-row-actions"><button class="a-row-btn" type="button" data-toast="已启用 Mock 通道">启用</button></div></div>
+          </div>
+        </section>
+      </div>
+
+      <div data-panel="cs-instances" hidden>
+        <section class="a-panel a-panel--flush">
+          <div class="a-panel__head"><div><h2>渠道实例</h2><p>密钥只写不读；实例停用后不再参与调度。</p></div><button class="a-btn a-btn--sm a-btn--primary" type="button" data-open="#instance-edit">新增实例</button></div>
+          <div class="a-table-wrap">
+            <table class="a-table" style="min-width:1040px">
+              <thead><tr><th>实例</th><th>类型</th><th>支付方式</th><th>配置状态</th><th class="is-num">权重</th><th>状态</th><th class="is-actions">操作</th></tr></thead>
+              <tbody>
+                <tr><td><div class="a-cell-stack"><strong>alipay-direct</strong><span>alipay_direct</span></div></td><td>支付宝直连</td><td>支付宝</td><td><span class="a-badge a-badge--ok"><i></i>完整</span></td><td class="is-num">70</td><td><span class="a-badge a-badge--ok"><i></i>启用</span></td><td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#instance-edit">编辑</button><button class="a-row-btn" type="button" data-toast="已探测：账密有效">探测</button></div></td></tr>
+                <tr><td><div class="a-cell-stack"><strong>wechat-v3</strong><span>wechatpay_v3</span></div></td><td>微信直连</td><td>微信支付</td><td><span class="a-badge a-badge--ok"><i></i>完整</span></td><td class="is-num">60</td><td><span class="a-badge a-badge--ok"><i></i>启用</span></td><td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#instance-edit">编辑</button><button class="a-row-btn" type="button" data-toast="已探测：证书有效">探测</button></div></td></tr>
+                <tr><td><div class="a-cell-stack"><strong>jeepay-cn</strong><span>jeepay</span></div></td><td>JeePay</td><td>支付宝</td><td><span class="a-badge a-badge--warn"><i></i>签名待复核</span></td><td class="is-num">20</td><td><span class="a-badge a-badge--bad"><i></i>异常</span></td><td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#instance-edit">编辑</button><button class="a-row-btn" type="button" data-toast="探测失败：签名校验不通过">探测</button></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div data-panel="cs-orders" hidden>
+        <section class="a-panel a-panel--flush">
+          <div class="a-panel__head"><div><h2>收银台订单</h2><p>与订单管理同一数据源，这里聚焦支付动作。</p></div><a class="a-btn a-btn--sm" href="orders.html">在订单管理中查看</a></div>
+          <div class="a-table-wrap">
+            <table class="a-table" style="min-width:960px">
+              <thead><tr><th>订单</th><th>购买类型</th><th class="is-num">金额</th><th class="is-num">积分</th><th>方式</th><th>状态</th><th class="is-actions">操作</th></tr></thead>
+              <tbody>
+                <tr><td class="a-mono" style="font-size:12px">MK202610220918</td><td>创作者包</td><td class="is-num">¥ 50.00</td><td class="is-num">5,200</td><td>支付宝</td><td><span class="a-badge a-badge--ok"><i></i>已到账</span></td><td class="is-actions"><div class="a-row-actions"><button class="a-row-btn" type="button" data-toast="已查单：渠道已支付">查单</button><button class="a-row-btn" type="button" data-toast="退款需二次确认">退款</button></div></td></tr>
+                <tr><td class="a-mono" style="font-size:12px">MK202610220917</td><td>自定义金额</td><td class="is-num">¥ 200.00</td><td class="is-num">20,000</td><td>微信支付</td><td><span class="a-badge a-badge--warn"><i></i>待支付</span></td><td class="is-actions"><div class="a-row-actions"><button class="a-row-btn" type="button" data-toast="已查单：等待用户支付">查单</button><button class="a-row-btn" type="button" data-toast="已关闭订单">关闭</button></div></td></tr>
+                <tr><td class="a-mono" style="font-size:12px">MK202610220903</td><td>工作室包</td><td class="is-num">¥ 100.00</td><td class="is-num">11,000</td><td>JeePay</td><td><span class="a-badge a-badge--bad"><i></i>回调失败</span></td><td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-toast="已发起补单：人工到账">补单</button><button class="a-row-btn" type="button" data-toast="已重试回调">重试回调</button></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div data-panel="cs-webhooks" hidden>
+        <section class="a-panel a-panel--flush">
+          <div class="a-panel__head"><div><h2>回调事件</h2><p>验签失败的订单不会被自动到账，需要人工确认。</p></div><span class="a-badge a-badge--bad"><i></i>2 个失败</span></div>
+          <div>
+            <div class="cs-webhook" style="background:var(--a-surface-2);color:var(--a-ink-3);font-size:11.5px;font-weight:600"><span>事件</span><span>订单</span><span>渠道</span><span>状态</span><span></span></div>
+            <div class="cs-webhook"><div><strong style="display:block;font-size:12.5px">payment.succeeded</strong><span class="a-hint">10-22 08:56:31 · 金额不一致</span></div><span class="a-mono" style="font-size:11.5px">MK202610220903</span><span>JeePay</span><span class="a-badge a-badge--bad"><i></i>验签失败</span><div class="a-row-actions"><button class="a-row-btn" type="button" data-toast="已重试回调">重试</button><button class="a-row-btn" type="button" data-toast="已打开原始 payload">查看</button></div></div>
+            <div class="cs-webhook"><div><strong style="display:block;font-size:12.5px">payment.succeeded</strong><span class="a-hint">10-22 08:41:02 · 重复回调</span></div><span class="a-mono" style="font-size:11.5px">MK202610220881</span><span>JeePay</span><span class="a-badge a-badge--warn"><i></i>已忽略</span><div class="a-row-actions"><button class="a-row-btn" type="button" data-toast="查看 payload">查看</button></div></div>
+            <div class="cs-webhook"><div><strong style="display:block;font-size:12.5px">payment.succeeded</strong><span class="a-hint">10-22 09:18:41 · 已处理</span></div><span class="a-mono" style="font-size:11.5px">MK202610220918</span><span>支付宝</span><span class="a-badge a-badge--ok"><i></i>已处理</span><div class="a-row-actions"><button class="a-row-btn" type="button" data-toast="查看 payload">查看</button></div></div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+</div></div>
+
+<div class="a-scrim"></div>
+<aside class="a-drawer" id="instance-edit" role="dialog" aria-modal="true" aria-label="编辑渠道实例">
+  <header class="a-drawer__head">
+    <div><h2>编辑渠道实例</h2><p>alipay-direct · 支付宝直连 · 今日 412 笔</p></div>
+    <div class="a-drawer__spacer"></div>
+    <span class="a-badge a-badge--ok"><i></i>启用</span>
+    <button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </header>
+  <div class="a-drawer__body">
+    <form class="a-form">
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">1</span>基础信息</h3></div>
+        <label class="a-field"><span>实例名称 <span class="a-required">*</span></span><input class="a-input" value="alipay-direct"></label>
+        <label class="a-field"><span>渠道类型</span><select class="a-select"><option>支付宝直连</option><option>微信直连</option><option>JeePay</option><option>Stripe</option><option>Mock</option></select></label>
+        <div class="a-form__pair">
+          <label class="a-field"><span>权重</span><input class="a-input" value="70" inputmode="numeric"></label>
+          <label class="a-field"><span>调度方式</span><select class="a-select"><option>轮询</option><option>随机</option></select></label>
+        </div>
+      </section>
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">2</span>金额限制</h3></div>
+        <div class="a-form__pair">
+          <label class="a-field"><span>单笔最低</span><input class="a-input" value="1.00" inputmode="decimal"></label>
+          <label class="a-field"><span>单笔最高</span><input class="a-input" value="5000.00" inputmode="decimal"></label>
+        </div>
+      </section>
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">3</span>渠道凭据</h3><p>密钥只写不读，保存后显示掩码。</p></div>
+        <label class="a-field"><span>App ID</span><input class="a-input" value="202610220001" style="font-family:var(--font-admin-mono)"></label>
+        <label class="a-field"><span>商户私钥</span><input class="a-input" type="password" placeholder="已配置 · 留空表示保持不变"></label>
+        <label class="a-field"><span>支付宝公钥</span><input class="a-input" type="password" placeholder="已配置 · 留空表示保持不变"></label>
+        <label class="a-field"><span>异步回调地址</span><input class="a-input" value="https://api.mikiko.studio/v1/cashier/webhooks/alipay" style="font-family:var(--font-admin-mono);font-size:12px"></label>
+        <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>启用该实例</label>
+      </section>
+    </form>
+    <div class="a-banner a-banner--info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg><span>保存前建议先执行一次“探测”，确认凭据与回调可达。</span></div>
+  </div>
+  <footer class="a-drawer__foot">
+    <button class="a-btn a-btn--sm" type="button" data-toast="探测通过：签名有效，回调可达">探测</button>
+    <button class="a-btn a-btn--sm a-btn--danger" type="button" data-toast="删除实例需先停用" data-tone="bad">删除</button>
+    <div style="flex:1"></div>
+    <button class="a-btn a-btn--sm" type="button" data-close>取消</button>
+    <button class="a-btn a-btn--sm a-btn--primary" type="button" data-close data-toast="渠道实例已保存" data-tone="ok">保存实例</button>
+  </footer>
+</aside>
+<script src="../assets/shell.js"></script>
+</body>
+</html>

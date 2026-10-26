@@ -37,11 +37,15 @@ const historyCases = [
   },
   {
     input: { surface: 'history', status: 'succeeded', resultCount: 1 },
-    expected: { selectTask: false, navigateHash: false, outputTab: null, openDialog: false, openLightbox: true },
+    expected: { selectTask: false, navigateHash: false, outputTab: null, openDialog: true, openLightbox: false },
   },
   {
     input: { surface: 'history', status: 'failed', resultCount: 0 },
-    expected: { selectTask: false, navigateHash: false, outputTab: null, openDialog: false, openLightbox: false },
+    expected: { selectTask: false, navigateHash: false, outputTab: null, openDialog: true, openLightbox: false },
+  },
+  {
+    input: { surface: 'history', status: 'running', resultCount: 0 },
+    expected: { selectTask: false, navigateHash: false, outputTab: null, openDialog: true, openLightbox: false },
   },
 ] as const
 for (const testCase of historyCases) {

@@ -31,6 +31,8 @@ const (
 	FieldName = "name"
 	// FieldNameKey holds the string denoting the name_key field in the database.
 	FieldNameKey = "name_key"
+	// FieldGroupID holds the string denoting the group_id field in the database.
+	FieldGroupID = "group_id"
 	// FieldGroupName holds the string denoting the group_name field in the database.
 	FieldGroupName = "group_name"
 	// FieldMediaType holds the string denoting the media_type field in the database.
@@ -41,6 +43,10 @@ const (
 	FieldStatus = "status"
 	// FieldVisibilityStatus holds the string denoting the visibility_status field in the database.
 	FieldVisibilityStatus = "visibility_status"
+	// FieldPublicationReviewReason holds the string denoting the publication_review_reason field in the database.
+	FieldPublicationReviewReason = "publication_review_reason"
+	// FieldPublishedAt holds the string denoting the published_at field in the database.
+	FieldPublishedAt = "published_at"
 	// FieldStorageConfigID holds the string denoting the storage_config_id field in the database.
 	FieldStorageConfigID = "storage_config_id"
 	// FieldStorageDriver holds the string denoting the storage_driver field in the database.
@@ -149,11 +155,14 @@ var Columns = []string{
 	FieldLegacyImageResultID,
 	FieldName,
 	FieldNameKey,
+	FieldGroupID,
 	FieldGroupName,
 	FieldMediaType,
 	FieldSourceType,
 	FieldStatus,
 	FieldVisibilityStatus,
+	FieldPublicationReviewReason,
+	FieldPublishedAt,
 	FieldStorageConfigID,
 	FieldStorageDriver,
 	FieldBucket,
@@ -217,6 +226,8 @@ var (
 	DefaultVisibilityStatus string
 	// VisibilityStatusValidator is a validator for the "visibility_status" field. It is called by the builders before save.
 	VisibilityStatusValidator func(string) error
+	// DefaultPublicationReviewReason holds the default value on creation for the "publication_review_reason" field.
+	DefaultPublicationReviewReason string
 	// DefaultStorageDriver holds the default value on creation for the "storage_driver" field.
 	DefaultStorageDriver string
 	// StorageDriverValidator is a validator for the "storage_driver" field. It is called by the builders before save.
@@ -305,6 +316,11 @@ func ByNameKey(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldNameKey, opts...).ToFunc()
 }
 
+// ByGroupID orders the results by the group_id field.
+func ByGroupID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldGroupID, opts...).ToFunc()
+}
+
 // ByGroupName orders the results by the group_name field.
 func ByGroupName(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldGroupName, opts...).ToFunc()
@@ -328,6 +344,16 @@ func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 // ByVisibilityStatus orders the results by the visibility_status field.
 func ByVisibilityStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldVisibilityStatus, opts...).ToFunc()
+}
+
+// ByPublicationReviewReason orders the results by the publication_review_reason field.
+func ByPublicationReviewReason(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPublicationReviewReason, opts...).ToFunc()
+}
+
+// ByPublishedAt orders the results by the published_at field.
+func ByPublishedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPublishedAt, opts...).ToFunc()
 }
 
 // ByStorageConfigID orders the results by the storage_config_id field.

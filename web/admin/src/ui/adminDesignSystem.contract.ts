@@ -29,9 +29,25 @@ for (const dependency of ['@fontsource-variable/geist', '@fontsource-variable/ge
   }
 }
 
-for (const forbiddenFont of ['Inter', 'Fraunces', 'JetBrains Mono', 'fonts.googleapis.com']) {
-  if ((stylesSource + tokenSource).includes(forbiddenFont)) {
-    throw new Error(`admin typography must not depend on ${forbiddenFont}`)
+const prototypeTokens = readFileSync(new URL('../../../shared/redesign-theme.css', import.meta.url), 'utf8')
+const prototypeAdmin = readFileSync(new URL('../redesign.css', import.meta.url), 'utf8')
+
+if (stylesSource.includes('Inter')) {
+  throw new Error('admin typography must not depend on Inter')
+}
+for (const requiredFont of ['Fraunces', 'Instrument Sans', 'IBM Plex Mono']) {
+  if (!prototypeTokens.includes(requiredFont)) {
+    throw new Error(`Command Deck typography must provide ${requiredFont}`)
+  }
+}
+for (const sizing of ['font-size: 15px', 'font-size: 30px', 'font-size: 14px', 'font-variant-numeric: tabular-nums']) {
+  if (!prototypeAdmin.includes(sizing)) {
+    throw new Error(`Command Deck typography must preserve ${sizing}`)
+  }
+}
+for (const requiredShellToken of ['--a-side-w: 248px', '--a-top-h: 68px', '--a-accent: #2e4a7d', '--a-bg: #f2f1ec']) {
+  if (!prototypeTokens.includes(requiredShellToken)) {
+    throw new Error(`Command Deck tokens must preserve ${requiredShellToken}`)
   }
 }
 

@@ -45,6 +45,18 @@ func (f AdminUserFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, e
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AdminUserMutation", m)
 }
 
+// The AssetGroupFunc type is an adapter to allow the use of ordinary
+// function as AssetGroup mutator.
+type AssetGroupFunc func(context.Context, *ent.AssetGroupMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AssetGroupFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AssetGroupMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AssetGroupMutation", m)
+}
+
 // The AuditLogFunc type is an adapter to allow the use of ordinary
 // function as AuditLog mutator.
 type AuditLogFunc func(context.Context, *ent.AuditLogMutation) (ent.Value, error)
@@ -307,6 +319,18 @@ func (f ModelRouteFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, 
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ModelRouteMutation", m)
+}
+
+// The OAuthRecordFunc type is an adapter to allow the use of ordinary
+// function as OAuthRecord mutator.
+type OAuthRecordFunc func(context.Context, *ent.OAuthRecordMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f OAuthRecordFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.OAuthRecordMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.OAuthRecordMutation", m)
 }
 
 // The ObjectDeletionJobFunc type is an adapter to allow the use of ordinary

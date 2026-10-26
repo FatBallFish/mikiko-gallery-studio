@@ -15,6 +15,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/adminuser"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikey"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikeyquotareservation"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/assetgroup"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/auditlog"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/canvasgenerationrun"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clusterchallenge"
@@ -37,6 +38,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelroute"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/oauthrecord"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectdeletionjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectreconcilecheckpoint"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectstorageconfig"
@@ -144,6 +146,7 @@ func checkColumn(t, c string) error {
 			apikey.Table:                      apikey.ValidColumn,
 			apikeyquotareservation.Table:      apikeyquotareservation.ValidColumn,
 			adminuser.Table:                   adminuser.ValidColumn,
+			assetgroup.Table:                  assetgroup.ValidColumn,
 			auditlog.Table:                    auditlog.ValidColumn,
 			canvasgenerationrun.Table:         canvasgenerationrun.ValidColumn,
 			clusterchallenge.Table:            clusterchallenge.ValidColumn,
@@ -166,6 +169,7 @@ func checkColumn(t, c string) error {
 			modelaccountmodel.Table:           modelaccountmodel.ValidColumn,
 			modelprovider.Table:               modelprovider.ValidColumn,
 			modelroute.Table:                  modelroute.ValidColumn,
+			oauthrecord.Table:                 oauthrecord.ValidColumn,
 			objectdeletionjob.Table:           objectdeletionjob.ValidColumn,
 			objectreconcilecheckpoint.Table:   objectreconcilecheckpoint.ValidColumn,
 			objectstorageconfig.Table:         objectstorageconfig.ValidColumn,

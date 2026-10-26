@@ -21,6 +21,7 @@ import (
 	domainadminconfig "github.com/fatballfish/pic-gallery/internal/domain/adminconfig"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/domain/modelhub"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	"github.com/fatballfish/pic-gallery/internal/provider"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
@@ -129,6 +130,12 @@ func TestGalleryPublishUsesTransferredImageProject(t *testing.T) {
 	}
 }
 
+type galleryTestRouting struct{ snapshot modelhub.ModelRoutingSnapshot }
+
+func (r galleryTestRouting) ModelRoutingConfig(context.Context) (modelhub.ModelRoutingSnapshot, error) {
+	return r.snapshot, nil
+}
+
 func TestGalleryPublishReviewAndPublicListFlow(t *testing.T) {
 	imageBytes := tinyPNG(t)
 	var generationServer *httptest.Server
@@ -212,7 +219,26 @@ func TestGalleryPublishReviewAndPublicListFlow(t *testing.T) {
 	api := handlers.NewAPIWithAdminServices(cfg, authSvc, nil, taskSvc, adminCfgSvc, billingSvc, nil, adminAuth, auditservice.NewService(nil), nil, nil)
 	handler := NewWithAPI(api)
 
-	taskID := createAndProcessAgentTask(t, handler, taskSvc, session.AccessToken)
+	routing := galleryTestRouting{snapshot: modelhub.ModelRoutingSnapshot{
+		Version:     "gallery-fixture-v1",
+		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Gallery fixture", Visibility: "public", Enabled: true}},
+		ProviderModels: []modelhub.ProviderCandidate{{
+			AccountModelID: 11, Provider: "openrouter", AdapterType: "openrouter", AuthType: "api_key",
+			BaseURL: generationServer.URL, Credentials: map[string]string{"api_key": "or-key"}, ModelCode: "openrouter/vision", HealthStatus: "enabled",
+			SupportedTaskTypes: []string{"text_to_image"}, SupportedBaseResolution: []string{"2k"},
+			SizeModes: []string{"pixel"}, SupportedPixelSizes: []string{"1536x1024"}, MaxImageCount: 5,
+		}},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 11, Priority: 1, Weight: 100, Enabled: true}},
+		Prices:     []modelhub.RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "2k", BasePoints: "8.00000", ReferenceMultiplier: "1.00000", Enabled: true}},
+	}}
+	// API construction installs its model-admin source; replace it with the fixture.
+	taskSvc.SetModelRoutingSource(routing)
+	billingSvc.SetModelRoutingSource(routing)
+	taskID := createAndProcessAgentTask(t, handler, taskSvc, session.AccessToken, "plus")
+	settled, err := taskSvc.GetByID(t.Context(), 1, taskID)
+	if err != nil || settled.Status != domainimagetask.StatusSucceeded || settled.ActualPoints != "8.00000" {
+		t.Fatalf("gallery task settlement: task=%+v err=%v", settled, err)
+	}
 	detailReq := httptest.NewRequest(http.MethodGet, "/api/agent/image/v1/tasks/"+taskID, nil)
 	detailReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
 	detailRec := httptest.NewRecorder()

@@ -5,13 +5,21 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"regexp"
 	"strings"
+	"time"
+
+	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
+	mediaassetservice "github.com/fatballfish/pic-gallery/internal/service/mediaasset"
+	"github.com/fatballfish/pic-gallery/pkg/errs"
 
 	"github.com/google/uuid"
 
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	domaincanvas "github.com/fatballfish/pic-gallery/internal/domain/canvas"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/domain/nativeimage"
 	"github.com/fatballfish/pic-gallery/internal/domain/prompttemplate"
 	domainvideo "github.com/fatballfish/pic-gallery/internal/domain/video"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
@@ -52,6 +60,7 @@ func (e *ImageBillingEstimator) EstimateImage(ctx context.Context, req domainima
 		RequestedSize: req.RequestedSize, RequestedOutputImageCount: count, ReferenceImageCount: req.ReferenceImageCount,
 		MaskPresent: req.MaskPresent, UserGroupCode: req.UserGroupCode, UserGroupCodes: append([]string(nil), req.UserGroupCodes...),
 		UserGroupMultiplier: req.UserGroupMultiplier, CapabilityVersion: req.CapabilityVersion,
+		Operation: req.Operation, NativeOptions: req.NativeOptions,
 	})
 	if err != nil {
 		return Estimate{}, err
@@ -66,7 +75,17 @@ type VideoTaskPort interface {
 	Cancel(context.Context, int64, uuid.UUID, string) (videotaskservice.Task, error)
 }
 
+type CanvasMediaAssets interface {
+	GetAsset(context.Context, int64, uuid.UUID) (mediaassetservice.Asset, error)
+}
+
+type ImageMetadataPreflight interface {
+	PreflightMetadata(context.Context, domainimagetask.CreateRequest) (domainbilling.EstimateResult, error)
+}
+
 type TaskGenerator struct {
+	references     *assetservice.Service
+	media          CanvasMediaAssets
 	images         ImageTaskPort
 	imageEstimator ImageEstimator
 	videos         VideoTaskPort
@@ -76,15 +95,77 @@ func NewTaskGenerator(images ImageTaskPort, imageEstimator ImageEstimator, video
 	return &TaskGenerator{images: images, imageEstimator: imageEstimator, videos: videos}
 }
 
+// SetReferenceAssets configures canonical media conversion before serving requests.
+func (g *TaskGenerator) SetReferenceAssets(refs *assetservice.Service, media ...CanvasMediaAssets) {
+	g.references = refs
+	if len(media) > 0 {
+		g.media = media[0]
+	}
+}
+
+// PrepareCanvasImageRequest maps canonical resources and named bindings to durable
+// reference aliases. Ownership and readiness are checked for both quote and create.
+func (g *TaskGenerator) PrepareCanvasImageRequest(ctx context.Context, submission GenerationSubmission) (domainimagetask.CreateRequest, error) {
+	request, err := imageRequest(submission)
+	if err != nil {
+		return request, err
+	}
+	aliases := make(map[string]string, len(request.ReferenceAssetIDs))
+	for i, id := range request.ReferenceAssetIDs {
+		if g.references == nil {
+			return request, errs.WithDetails(errs.New(503, "IMAGE_REFERENCE_UNAVAILABLE", "canvas reference assets are unavailable"), map[string]any{"field": "reference_asset_ids", "index": i})
+		}
+		alias, loadErr := g.references.GetMetadata(ctx, submission.UserID, id)
+		if loadErr != nil {
+			var serviceErr *errs.Error
+			if !errors.As(loadErr, &serviceErr) || serviceErr.StatusCode != 404 {
+				return request, canvasReferenceError(loadErr, i)
+			}
+			mediaID, parseErr := uuid.Parse(id)
+			if parseErr != nil || g.media == nil {
+				return request, canvasReferenceError(loadErr, i)
+			}
+			asset, mediaErr := g.media.GetAsset(ctx, submission.UserID, mediaID)
+			if mediaErr != nil {
+				return request, errs.WithDetails(errs.New(404, errs.CodeNotFound, "canvas reference media asset not found"), map[string]any{"field": "reference_asset_ids", "index": i})
+			}
+			alias, loadErr = g.references.ImportCanvasMediaAlias(ctx, submission.UserID, asset)
+			if loadErr != nil {
+				return request, canvasReferenceError(loadErr, i)
+			}
+		}
+		aliases[id] = alias.ID
+		request.ReferenceAssetIDs[i] = alias.ID
+	}
+	for i := range request.ReferenceBindings {
+		request.ReferenceBindings[i].AssetID = aliases[request.ReferenceBindings[i].AssetID]
+	}
+	return request, nil
+}
+
 func (g *TaskGenerator) Estimate(ctx context.Context, submission GenerationSubmission) (Estimate, error) {
+	start := time.Now()
+	defer func() {
+		slog.InfoContext(ctx, "canvas generation phase", "phase", "estimate", "kind", submission.Kind, "duration_ms", time.Since(start).Milliseconds())
+	}()
 	switch submission.Kind {
 	case TaskKindImage:
-		if g == nil || g.imageEstimator == nil {
+		if g == nil {
 			return Estimate{}, errors.New("canvas image estimates are unavailable")
 		}
-		request, err := imageRequest(submission)
+		request, err := g.PrepareCanvasImageRequest(ctx, submission)
 		if err != nil {
 			return Estimate{}, err
+		}
+		if preflight, ok := g.images.(ImageMetadataPreflight); ok {
+			result, err := preflight.PreflightMetadata(ctx, request)
+			if err != nil {
+				return Estimate{}, err
+			}
+			return Estimate{Points: result.EstimatedPoints, Detail: map[string]any{"charged_points": result.ChargedPoints, "base_resolution": result.BaseResolution, "resolved_size": result.ResolvedSize, "capability_version": result.CapabilityVersion}}, nil
+		}
+		if g.imageEstimator == nil {
+			return Estimate{}, errors.New("canvas image estimates are unavailable")
 		}
 		return g.imageEstimator.EstimateImage(ctx, request)
 	case TaskKindVideo:
@@ -111,7 +192,7 @@ func (g *TaskGenerator) Generate(ctx context.Context, submission GenerationSubmi
 		if g == nil || g.images == nil {
 			return GenerationTask{}, errors.New("canvas image generation is unavailable")
 		}
-		request, err := imageRequest(submission)
+		request, err := g.PrepareCanvasImageRequest(ctx, submission)
 		if err != nil {
 			return GenerationTask{}, err
 		}
@@ -158,7 +239,7 @@ func (g *TaskGenerator) Status(ctx context.Context, userID int64, kind TaskKind,
 				assets = append(assets, id)
 			}
 		}
-		return TaskStatus{Status: imageRunStatus(task.Status), ResultAssetIDs: assets, ErrorCode: task.ErrorCode, ErrorMessage: task.ErrorMessage}, nil
+		return TaskStatus{ProgressStage: task.ProgressStage, ProgressMessage: task.ProgressMessage, Status: imageRunStatus(task.Status), ResultAssetIDs: assets, ErrorCode: task.ErrorCode, ErrorMessage: task.ErrorMessage}, nil
 	case TaskKindVideo:
 		if g == nil || g.videos == nil {
 			return TaskStatus{}, errors.New("canvas video generation is unavailable")
@@ -173,7 +254,7 @@ func (g *TaskGenerator) Status(ctx context.Context, userID int64, kind TaskKind,
 				assets = append(assets, *item.ResultAssetID)
 			}
 		}
-		return TaskStatus{Status: videoRunStatus(task.Status), ResultAssetIDs: assets}, nil
+		return TaskStatus{ProgressStage: task.ProgressStage, ProgressMessage: task.ProgressMessage, Status: videoRunStatus(task.Status), ResultAssetIDs: assets}, nil
 	default:
 		return TaskStatus{}, fmt.Errorf("unsupported canvas task kind %q", kind)
 	}
@@ -192,33 +273,35 @@ func (g *TaskGenerator) Cancel(ctx context.Context, userID int64, kind TaskKind,
 
 func imageRequest(submission GenerationSubmission) (domainimagetask.CreateRequest, error) {
 	type imageDraft struct {
-		AbstractModel     string `json:"abstract_model"`
-		RouteModelCode    string `json:"route_model_code"`
-		TaskType          string `json:"task_type"`
-		Prompt            string `json:"prompt"`
-		PromptTemplate    string `json:"prompt_template"`
-		NegativePrompt    string `json:"negative_prompt"`
-		SizeMode          string `json:"size_mode"`
-		RequestedSize     string `json:"requested_size"`
-		BaseResolution    string `json:"base_resolution"`
-		Quality           string `json:"quality"`
-		OutputFormat      string `json:"output_format"`
-		Background        string `json:"background"`
-		OutputCompression int    `json:"output_compression"`
-		Moderation        string `json:"moderation"`
-		AspectRatio       string `json:"aspect_ratio"`
-		OutputImageCount  int    `json:"output_image_count"`
-		ReferenceStrength int    `json:"reference_strength"`
-		Seed              *int64 `json:"seed"`
-		ResponseMode      string `json:"response_mode"`
-		SavePolicy        string `json:"save_policy"`
-		CapabilityVersion string `json:"capability_version"`
+		Operation         nativeimage.Operation `json:"operation"`
+		NativeOptions     *nativeimage.Options  `json:"native_options"`
+		AbstractModel     string                `json:"abstract_model"`
+		RouteModelCode    string                `json:"route_model_code"`
+		TaskType          string                `json:"task_type"`
+		Prompt            string                `json:"prompt"`
+		PromptTemplate    string                `json:"prompt_template"`
+		NegativePrompt    string                `json:"negative_prompt"`
+		SizeMode          string                `json:"size_mode"`
+		RequestedSize     string                `json:"requested_size"`
+		BaseResolution    string                `json:"base_resolution"`
+		Quality           string                `json:"quality"`
+		OutputFormat      string                `json:"output_format"`
+		Background        string                `json:"background"`
+		OutputCompression int                   `json:"output_compression"`
+		Moderation        string                `json:"moderation"`
+		AspectRatio       string                `json:"aspect_ratio"`
+		OutputImageCount  int                   `json:"output_image_count"`
+		ReferenceStrength int                   `json:"reference_strength"`
+		Seed              *int64                `json:"seed"`
+		ResponseMode      string                `json:"response_mode"`
+		SavePolicy        string                `json:"save_policy"`
+		CapabilityVersion string                `json:"capability_version"`
 	}
 	var draft imageDraft
 	if err := json.Unmarshal(generationDraft(submission.Node.Payload), &draft); err != nil {
 		return domainimagetask.CreateRequest{}, fmt.Errorf("decode image generation node: %w", err)
 	}
-	request := domainimagetask.CreateRequest{AbstractModel: draft.AbstractModel, RouteModelCode: draft.RouteModelCode, TaskType: draft.TaskType, Prompt: draft.Prompt, PromptTemplate: draft.PromptTemplate, NegativePrompt: draft.NegativePrompt, SizeMode: draft.SizeMode, RequestedSize: draft.RequestedSize, BaseResolution: draft.BaseResolution, Quality: draft.Quality, OutputFormat: draft.OutputFormat, Background: draft.Background, OutputCompression: draft.OutputCompression, Moderation: draft.Moderation, AspectRatio: draft.AspectRatio, OutputImageCount: draft.OutputImageCount, ReferenceStrength: draft.ReferenceStrength, Seed: draft.Seed, ResponseMode: draft.ResponseMode, SavePolicy: draft.SavePolicy, CapabilityVersion: draft.CapabilityVersion}
+	request := domainimagetask.CreateRequest{Operation: draft.Operation, NativeOptions: draft.NativeOptions, AbstractModel: draft.AbstractModel, RouteModelCode: draft.RouteModelCode, TaskType: draft.TaskType, Prompt: draft.Prompt, PromptTemplate: draft.PromptTemplate, NegativePrompt: draft.NegativePrompt, SizeMode: draft.SizeMode, RequestedSize: draft.RequestedSize, BaseResolution: draft.BaseResolution, Quality: draft.Quality, OutputFormat: draft.OutputFormat, Background: draft.Background, OutputCompression: draft.OutputCompression, Moderation: draft.Moderation, AspectRatio: draft.AspectRatio, OutputImageCount: draft.OutputImageCount, ReferenceStrength: draft.ReferenceStrength, Seed: draft.Seed, ResponseMode: draft.ResponseMode, SavePolicy: draft.SavePolicy, CapabilityVersion: draft.CapabilityVersion}
 	switch request.SizeMode {
 	case "auto":
 		request.RequestedSize, request.BaseResolution, request.AspectRatio = "", "", ""
@@ -248,7 +331,7 @@ func imageRequest(submission GenerationSubmission) (domainimagetask.CreateReques
 	if request.AbstractModel == "" && request.RouteModelCode == "" {
 		return request, errors.New("image generation node must select a model")
 	}
-	if request.Prompt == "" && request.PromptTemplate == "" {
+	if request.Prompt == "" && request.PromptTemplate == "" && request.Operation != nativeimage.OperationLayerDecomposition {
 		return request, errors.New("image generation node must connect or define a prompt")
 	}
 	request.TaskID = uuid.NewString()
@@ -268,6 +351,12 @@ func imageRequest(submission GenerationSubmission) (domainimagetask.CreateReques
 	request.TaskType = "text_to_image"
 	if request.ReferenceImageCount > 0 {
 		request.TaskType = "image_edit"
+	}
+	if request.Operation == "" {
+		request.Operation = nativeimage.OperationGenerate
+		if request.ReferenceImageCount > 0 {
+			request.Operation = nativeimage.OperationEdit
+		}
 	}
 	bindings, err := promptReferenceBindings(prompt.ReferenceNames, submission.Inputs)
 	if err != nil {
@@ -356,6 +445,26 @@ type selectedPrompt struct {
 }
 
 func promptFromInputs(submission GenerationSubmission) (selectedPrompt, error) {
+	if domaincanvas.IsIntegrated(submission.Node.Type) {
+		var draft struct {
+			PromptTemplate string            `json:"prompt_template"`
+			Prompt         string            `json:"prompt"`
+			Variables      map[string]string `json:"variables"`
+		}
+		if err := json.Unmarshal(generationDraft(submission.Node.Payload), &draft); err != nil {
+			return selectedPrompt{}, fmt.Errorf("decode inline prompt: %w", err)
+		}
+		template := draft.PromptTemplate
+		if template == "" {
+			template = draft.Prompt
+		}
+		template = regexp.MustCompile(`\$\{([^{}]+)\}`).ReplaceAllStringFunc(template, func(value string) string { return "{{$" + value[2:len(value)-1] + "}}" })
+		parsed, err := prompttemplate.Parse(template, prompttemplate.DefaultLimits())
+		if err != nil {
+			return selectedPrompt{}, fmt.Errorf("parse inline prompt: %w", err)
+		}
+		return selectedPrompt{Template: parsed.Canonical, Variables: draft.Variables, VariableNames: parsed.VariableNames, ReferenceNames: parsed.ReferenceNames}, nil
+	}
 	var envelope struct {
 		ActivePromptNodeID string `json:"active_prompt_node_id"`
 	}
@@ -423,7 +532,7 @@ func promptReferenceBindings(names []string, inputs []GenerationInput) ([]prompt
 	assetsByName := make(map[string]string)
 	for _, input := range inputs {
 		switch input.Role {
-		case domaincanvas.InputRoleReference, domaincanvas.InputRoleFirstFrame, domaincanvas.InputRoleLastFrame, domaincanvas.InputRoleReferenceImage:
+		case domaincanvas.InputRoleReference, domaincanvas.InputRoleFirstFrame, domaincanvas.InputRoleLastFrame, domaincanvas.InputRoleReferenceImage, domaincanvas.InputRoleReferenceVideo, domaincanvas.InputRoleReferenceAudio:
 		default:
 			continue
 		}
@@ -489,3 +598,12 @@ func videoRunStatus(status domainvideo.TaskStatus) RunStatus {
 
 var _ ImageTaskPort = (*imagetaskservice.Service)(nil)
 var _ VideoTaskPort = (*videotaskservice.Service)(nil)
+
+func canvasReferenceError(err error, index int) error {
+	var typed *errs.Error
+	if errors.As(err, &typed) {
+		copy := *typed
+		return errs.WithDetails(&copy, map[string]any{"field": "reference_asset_ids", "index": index})
+	}
+	return fmt.Errorf("canvas reference_asset_ids[%d]: %w", index, err)
+}

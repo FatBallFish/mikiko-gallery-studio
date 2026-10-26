@@ -1,7 +1,7 @@
 import type { CallRecord } from '../../../shared/api-types'
 // @ts-ignore contract scripts run in tsx/node; the admin app tsconfig does not include node types.
 import { readFileSync } from 'node:fs'
-import { callRecordCommonErrorCodes, callRecordFilterCopy, callRecordRepair, callRecordRows, callRecordSourceChannelOptions, callRecordStatusOptions } from './callRecordRows'
+import { callRecordCommonErrorCodes, callRecordFilterCopy, callRecordPreviewURL, callRecordPrompt, callRecordProviderOptions, callRecordRepair, callRecordRouteModelOptions, callRecordRows, callRecordSourceChannelOptions, callRecordStatusOptions } from './callRecordRows'
 
 const callRecordsPageSource = readFileSync(new URL('./CallRecordsPage.tsx', import.meta.url), 'utf8')
 
@@ -34,7 +34,7 @@ if (callRecordRepair('PROVIDER_TIMEOUT') !== null) {
   throw new Error('unknown call-record failures should not expose an unrelated repair route')
 }
 
-const rows = callRecordRows([
+const sampleRecords = [
   {
     id: 1,
     task_id: 'task_1234567890abcdef',
@@ -102,7 +102,9 @@ const rows = callRecordRows([
     finished_at: '2026-06-05T01:00:07Z',
     attempt_count: 1,
   },
-] satisfies CallRecord[])
+] satisfies CallRecord[]
+
+const rows = callRecordRows(sampleRecords)
 
 const insufficientPointsRow = callRecordRows([{
   ...rows[0]!,
@@ -211,6 +213,109 @@ const invalidDateRow = callRecordRows([{
 } as unknown as CallRecord])[0]
 if (invalidDateRow?.createdAt !== 'not-a-date' || invalidDateRow?.lifecycleLabel !== '开始 also-not-a-date · 结束 -') {
   throw new Error(`call records should preserve invalid dates and use - for missing dates, got ${JSON.stringify(invalidDateRow)}`)
+}
+
+if (rows[0]?.durationLabel !== '—' || rows[0]?.durationSeconds !== 0) {
+  throw new Error(`call records without usable timestamps should render an empty duration, got ${JSON.stringify(rows[0])}`)
+}
+
+if (rows[1]?.durationLabel !== '6.0s' || rows[1]?.durationSeconds !== 6) {
+  throw new Error(`call records should compute duration from started_at and finished_at, got ${JSON.stringify(rows[1])}`)
+}
+
+const createdToFinishedRow = callRecordRows([{
+  ...sampleRecords[0],
+  id: 10,
+  task_id: 'task_created_to_finished',
+  created_at: '2026-06-05T02:00:00Z',
+  started_at: null,
+  finished_at: '2026-06-05T02:00:04Z',
+  updated_at: '2026-06-05T02:00:04Z',
+}])[0]
+if (createdToFinishedRow?.durationLabel !== '4.0s') {
+  throw new Error(`call records should fall back to created_at when started_at is missing, got ${JSON.stringify(createdToFinishedRow)}`)
+}
+
+const routeOptions = callRecordRouteModelOptions(
+  [{ code: 'route-image-history', name: '历史路由' } as never],
+  [sampleRecords[1]],
+)
+if (!routeOptions.some((option) => option.value === 'route-image-history' && option.label.includes('历史路由'))) {
+  throw new Error(`route model filter options should use real route models and record codes, got ${JSON.stringify(routeOptions)}`)
+}
+
+const providerOptions = callRecordProviderOptions(
+  [{ provider_code: 'openai' } as never],
+  [sampleRecords[1]],
+)
+if (!providerOptions.some((option) => option.value === 'openai')) {
+  throw new Error(`provider filter options should use real provider codes, got ${JSON.stringify(providerOptions)}`)
+}
+
+if (callRecordPreviewURL(sampleRecords[1]) !== null) {
+  throw new Error('call-record preview must stay empty when the API does not project an output URL')
+}
+const previewRecord = { ...sampleRecords[1], preview_url: '/api/example/result.png' } as unknown as CallRecord
+if (callRecordPreviewURL(previewRecord) !== '/api/example/result.png') {
+  throw new Error(`call-record preview should accept a real projected URL, got ${callRecordPreviewURL(previewRecord)}`)
+}
+const unsafePreviewRecord = { ...sampleRecords[1], preview_url: 'javascript:alert(1)' } as unknown as CallRecord
+if (callRecordPreviewURL(unsafePreviewRecord) !== null) {
+  throw new Error('call-record preview must reject non-http URLs')
+}
+const protocolRelativePreview = { ...sampleRecords[1], preview_url: '//cdn.example.com/result.png' } as unknown as CallRecord
+if (callRecordPreviewURL(protocolRelativePreview) !== null) {
+  throw new Error('call-record preview must reject protocol-relative URLs')
+}
+
+if (callRecordPrompt(sampleRecords[1]) !== '') {
+  throw new Error('call-record prompt must stay empty when the API does not project prompt text')
+}
+const promptRecord = { ...sampleRecords[1], prompt: '  温室里的柑橘  ' } as unknown as CallRecord
+if (callRecordPrompt(promptRecord) !== '温室里的柑橘') {
+  throw new Error(`call-record prompt should pass through a real projected prompt, got ${callRecordPrompt(promptRecord)}`)
+}
+
+if (callRecordFilterCopy.provider.label !== '上游渠道') {
+  throw new Error(`provider filter should use an operator-facing label, got ${callRecordFilterCopy.provider.label}`)
+}
+
+if (!callRecordFilterCopy.userId.placeholder.includes('邮箱')) {
+  throw new Error(`user filter should advertise email matching, got ${callRecordFilterCopy.userId.placeholder}`)
+}
+
+if (callRecordFilterCopy.createdAt.label !== '创建时间') {
+  throw new Error(`creation-time filter should be labelled 创建时间, got ${callRecordFilterCopy.createdAt.label}`)
+}
+
+if (!callRecordsPageSource.includes('type="datetime-local"') || !callRecordsPageSource.includes('创建时间开始') || !callRecordsPageSource.includes('创建时间结束')) {
+  throw new Error('call-record page should expose one combined creation-time field with start and end datetime inputs')
+}
+
+if (!callRecordsPageSource.includes('cr-range') || callRecordsPageSource.includes('name="createdFrom"') || callRecordsPageSource.includes('name="createdTo"')) {
+  throw new Error('creation-time start/end inputs must stay inside a single bordered control')
+}
+
+if (!callRecordsPageSource.includes('created_from: isoQueryTime(filters.createdFrom)') || !callRecordsPageSource.includes('created_to: isoQueryTime(filters.createdTo)')) {
+  throw new Error('call-record page should send the backend-supported created_from/created_to query params')
+}
+
+if (!callRecordsPageSource.includes('callRecordRouteModelOptions') || !callRecordsPageSource.includes('route_model_code: filters.routeModel || undefined')) {
+  throw new Error('call-record page should send the backend route_model_code filter')
+}
+
+if (!callRecordsPageSource.includes('callRecordProviderOptions') || callRecordsPageSource.includes('Provider 或账号')) {
+  throw new Error('call-record page should use real provider options and an operator-facing provider label')
+}
+
+if (!callRecordsPageSource.includes('resolveUserFilter') || !callRecordsPageSource.includes('listUsersPage(query')) {
+  throw new Error('call-record page should resolve email filters through the real user directory')
+}
+
+for (const drawerContract of ['结果预览', '任务归属', '提示词与生成参数', 'cr-detail-grid', 'cr-billing', 'row.prompt']) {
+  if (!callRecordsPageSource.includes(drawerContract)) {
+    throw new Error(`call-record drawer should implement ${drawerContract}`)
+  }
 }
 
 const filterCopyText = Object.values(callRecordFilterCopy).flatMap((item) => (

@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>运营总览 — Mikiko Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/admin.css">
+<style>
+  .ov-chart-card { display: grid; gap: 16px; }
+  .ov-legend { display: flex; flex-wrap: wrap; gap: 14px; color: var(--a-ink-3); font-size: 12px; }
+  .ov-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .ov-legend i { width: 8px; height: 8px; border-radius: 2px; }
+  .ov-queue { display: grid; }
+  .ov-queue__row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 12px; padding: 13px 0; border-bottom: 1px solid var(--a-line); }
+  .ov-queue__row:last-child { border-bottom: 0; }
+  .ov-queue__row strong { display: block; font-size: 13px; font-weight: 600; }
+  .ov-queue__row span { color: var(--a-ink-3); font-size: 11.5px; }
+  .ov-model-row { display: grid; grid-template-columns: minmax(0,1.2fr) minmax(0,1fr) 70px; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--a-line); font-size: 13px; }
+  .ov-model-row:last-child { border-bottom: 0; }
+  .ov-model-bar { height: 6px; border-radius: 3px; background: var(--a-surface-3); overflow: hidden; }
+  .ov-model-bar i { display: block; height: 100%; background: var(--a-accent); border-radius: 3px; }
+  .ov-rank { display: grid; gap: 2px; }
+  .ov-rank__row { display: grid; grid-template-columns: 22px minmax(0,1fr) auto; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px dashed var(--a-line); font-size: 13px; }
+  .ov-rank__row:last-child { border-bottom: 0; }
+  .ov-rank__n { color: var(--a-ink-3); font-family: var(--font-admin-mono); font-size: 11px; }
+</style>
+</head>
+<body data-site="admin" data-page="dashboard" data-title="运营总览">
+<div class="a-shell"><div class="a-main">
+  <div class="a-status-strip">
+    <div class="a-status-cell"><span>环境</span><strong><i class="u-dot" style="width:6px;height:6px;border-radius:50%;background:var(--a-success);display:inline-block"></i>production · cn-east</strong></div>
+    <div class="a-status-cell"><span>API 状态</span><strong>运行正常 · 99.98%</strong></div>
+    <div class="a-status-cell"><span>待处理</span><strong>7 条审核 · 2 个支付风险</strong></div>
+    <div class="a-status-cell"><span>模型通道</span><strong>5 / 5 可用</strong></div>
+    <div class="a-status-cell"><span>配置草稿</span><strong>3 项未发布</strong></div>
+  </div>
+
+  <main class="a-content">
+    <header class="a-page-head">
+      <div class="a-page-head__copy">
+        <span class="a-kicker">Overview · 2026-10-22</span>
+        <h1>运营总览</h1>
+        <p>今天的生成、消耗与风险。所有指标按北京时间统计，点击卡片可进入对应明细。</p>
+      </div>
+      <div class="a-page-head__actions">
+        <select class="a-select a-select--sm" style="width:140px"><option>今天</option><option>最近 24 小时</option><option>最近 7 天</option></select>
+        <button class="a-btn a-btn--sm" type="button" data-toast="已刷新总览数据">刷新</button>
+      </div>
+    </header>
+
+    <div class="a-metrics" data-reveal>
+      <a class="a-metric" href="users.html">
+        <div class="a-metric__label"><span>总用户数</span><span class="a-metric__delta a-metric__delta--up">+8.4%</span></div>
+        <div class="a-metric__value">12,847</div>
+        <div class="a-metric__foot">今日新增 42 · 活跃 1,908</div>
+      </a>
+      <a class="a-metric" href="call-records.html">
+        <div class="a-metric__label"><span>生成成功率</span><span class="a-metric__delta a-metric__delta--up">+1.2%</span></div>
+        <div class="a-metric__value">97.6%</div>
+        <div class="a-metric__foot">成功 18,204 · 失败 447</div>
+      </a>
+      <a class="a-metric" href="pricing.html">
+        <div class="a-metric__label"><span>今日消耗积分</span><span class="a-metric__delta a-metric__delta--down">−3.1%</span></div>
+        <div class="a-metric__value">1.28M</div>
+        <div class="a-metric__foot">图片 1.02M · 视频 264K</div>
+      </a>
+      <a class="a-metric" href="monitoring.html">
+        <div class="a-metric__label"><span>生成前置失败</span><span class="a-metric__delta a-metric__delta--up">+12</span></div>
+        <div class="a-metric__value">39</div>
+        <div class="a-metric__foot">多为余额不足与模型不可见</div>
+      </a>
+    </div>
+
+    <div class="a-grid a-grid--main-side" style="margin-top:16px">
+      <section class="a-panel a-panel--pad ov-chart-card" data-reveal>
+        <div class="a-section-title" style="margin:0">
+          <div><h2>24 小时生成量</h2><p>真实上游调用 · 每小时汇总</p></div>
+          <div class="ov-legend"><span><i style="background:var(--a-accent)"></i>图片</span><span><i style="background:#9aa9c4"></i>视频</span><span><i style="background:var(--a-line-2)"></i>前置失败</span></div>
+        </div>
+        <div class="a-chart" aria-label="24 小时生成量趋势图">
+          <svg viewBox="0 0 900 190" preserveAspectRatio="none">
+            <line class="a-chart__grid" x1="0" y1="30" x2="900" y2="30"/>
+            <line class="a-chart__grid" x1="0" y1="80" x2="900" y2="80"/>
+            <line class="a-chart__grid" x1="0" y1="130" x2="900" y2="130"/>
+            <line class="a-chart__grid" x1="0" y1="180" x2="900" y2="180"/>
+            <path class="a-chart__area" d="M0 150 L40 144 L80 148 L120 120 L160 128 L200 98 L240 108 L280 76 L320 88 L360 64 L400 72 L440 48 L480 62 L520 42 L560 54 L600 36 L640 48 L680 30 L720 46 L760 38 L800 52 L840 34 L880 44 L900 40 L900 180 L0 180 Z"/>
+            <path class="a-chart__line" d="M0 150 L40 144 L80 148 L120 120 L160 128 L200 98 L240 108 L280 76 L320 88 L360 64 L400 72 L440 48 L480 62 L520 42 L560 54 L600 36 L640 48 L680 30 L720 46 L760 38 L800 52 L840 34 L880 44 L900 40"/>
+            <path d="M0 166 L60 164 L120 158 L180 160 L240 150 L300 152 L360 146 L420 148 L480 140 L540 144 L600 136 L660 140 L720 132 L780 138 L840 130 L900 134" fill="none" stroke="#9aa9c4" stroke-width="2" stroke-linecap="round"/>
+            <path d="M0 176 L90 174 L180 176 L270 172 L360 174 L450 170 L540 172 L630 168 L720 170 L810 166 L900 168" fill="none" stroke="var(--a-line-2)" stroke-width="2" stroke-dasharray="4 4"/>
+          </svg>
+        </div>
+        <div style="display:flex;justify-content:space-between;color:var(--a-ink-3);font-family:var(--font-admin-mono);font-size:10.5px"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>现在</span></div>
+      </section>
+
+      <aside class="a-panel a-panel--pad" data-reveal data-reveal-delay="1">
+        <div class="a-section-title" style="margin:0"><div><h2>待处理</h2><p>需要人工确认的项目</p></div><span class="a-badge a-badge--warn">9</span></div>
+        <div class="ov-queue">
+          <a class="ov-queue__row" href="reviews.html"><div><strong>公开图片审核</strong><span>最早一条等待 2 小时 14 分</span></div><span class="a-badge a-badge--warn">7</span></a>
+          <a class="ov-queue__row" href="orders.html"><div><strong>支付回调异常</strong><span>JeePay · 金额不一致 2 笔</span></div><span class="a-badge a-badge--bad">2</span></a>
+          <a class="ov-queue__row" href="video-tasks.html"><div><strong>视频任务部分成功</strong><span>3 个任务待重新转存</span></div><span class="a-badge a-badge--info">3</span></a>
+          <a class="ov-queue__row" href="access-accounts.html"><div><strong>接入账号探测</strong><span>2 个账号 30 分钟未心跳</span></div><span class="a-badge">2</span></a>
+          <a class="ov-queue__row" href="monitoring.html"><div><strong>前置失败聚类</strong><span>MODEL_ROUTE_NO_CANDIDATE · 18 次</span></div><span class="a-badge a-badge--bad">!</span></a>
+        </div>
+      </aside>
+    </div>
+
+    <div class="a-grid a-grid--main-side" style="margin-top:16px">
+      <section class="a-panel a-panel--flush" data-reveal>
+        <div class="a-panel__head">
+          <div><h2>最新注册用户</h2><p>最近 24 小时 · 按注册时间倒序</p></div>
+          <a class="a-btn a-btn--sm a-btn--quiet" href="users.html">查看全部</a>
+        </div>
+        <div class="a-table-wrap">
+          <table class="a-table" style="min-width:760px">
+            <thead><tr><th>用户</th><th>所属分组</th><th class="is-num">积分余额</th><th>状态</th><th>注册时间</th><th class="is-actions">操作</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><span class="a-cell-entity"><span class="a-cell-entity__avatar">岑</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">岑屿</span><span class="a-cell-entity__meta">cenyu@atelier.moe · #10241</span></span></span></td>
+                <td><span class="a-badge a-badge--accent">plus</span></td>
+                <td class="is-num">3,280.00</td>
+                <td><span class="a-badge a-badge--ok"><i></i>正常</span></td>
+                <td class="is-muted">10 分钟前</td>
+                <td class="is-actions"><a class="a-row-btn" href="users.html">详情</a></td>
+              </tr>
+              <tr>
+                <td><span class="a-cell-entity"><span class="a-cell-entity__avatar">沈</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">沈砚白</span><span class="a-cell-entity__meta">shen.yanbai@studio.moe · #10240</span></span></span></td>
+                <td><span class="a-badge a-badge--accent">pro</span></td>
+                <td class="is-num">12,940.00</td>
+                <td><span class="a-badge a-badge--ok"><i></i>正常</span></td>
+                <td class="is-muted">38 分钟前</td>
+                <td class="is-actions"><a class="a-row-btn" href="users.html">详情</a></td>
+              </tr>
+              <tr>
+                <td><span class="a-cell-entity"><span class="a-cell-entity__avatar">苏</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">苏迟</span><span class="a-cell-entity__meta">suchi@inkroom.cn · #10239</span></span></span></td>
+                <td><span class="a-badge">free</span></td>
+                <td class="is-num">220.00</td>
+                <td><span class="a-badge a-badge--warn"><i></i>待验证</span></td>
+                <td class="is-muted">1 小时前</td>
+                <td class="is-actions"><a class="a-row-btn" href="users.html">详情</a></td>
+              </tr>
+              <tr>
+                <td><span class="a-cell-entity"><span class="a-cell-entity__avatar">陆</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">陆小满</span><span class="a-cell-entity__meta">luxiaoman@mikiko.ai · #10238</span></span></span></td>
+                <td><span class="a-badge">base</span></td>
+                <td class="is-num">980.00</td>
+                <td><span class="a-badge a-badge--ok"><i></i>正常</span></td>
+                <td class="is-muted">2 小时前</td>
+                <td class="is-actions"><a class="a-row-btn" href="users.html">详情</a></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <aside style="display:grid;gap:16px">
+        <section class="a-panel a-panel--pad" data-reveal>
+          <div class="a-section-title" style="margin:0"><div><h2>模型调用分布</h2><p>今日 · 按抽象模型</p></div></div>
+          <div class="ov-model-row"><span>Plus Image</span><div class="ov-model-bar"><i style="width:78%"></i></div><b class="a-num" style="font-size:12px;text-align:right">8,412</b></div>
+          <div class="ov-model-row"><span>Pro Image</span><div class="ov-model-bar"><i style="width:52%"></i></div><b class="a-num" style="font-size:12px;text-align:right">5,603</b></div>
+          <div class="ov-model-row"><span>Base Image</span><div class="ov-model-bar"><i style="width:34%"></i></div><b class="a-num" style="font-size:12px;text-align:right">3,668</b></div>
+          <div class="ov-model-row"><span>Seedance 2.5</span><div class="ov-model-bar"><i style="width:21%"></i></div><b class="a-num" style="font-size:12px;text-align:right">2,264</b></div>
+          <div class="ov-model-row"><span>Hailuo 02</span><div class="ov-model-bar"><i style="width:9%"></i></div><b class="a-num" style="font-size:12px;text-align:right">971</b></div>
+        </section>
+
+        <section class="a-panel a-panel--pad" data-reveal>
+          <div class="a-section-title" style="margin:0"><div><h2>用户消费榜</h2><p>今日 · 积分</p></div><a class="a-btn a-btn--sm a-btn--quiet" href="users.html">全部</a></div>
+          <div class="ov-rank">
+            <div class="ov-rank__row"><span class="ov-rank__n">01</span><span>沈砚白 <span class="a-hint">pro</span></span><span class="a-num" style="font-size:12px">18,420</span></div>
+            <div class="ov-rank__row"><span class="ov-rank__n">02</span><span>岑屿 <span class="a-hint">plus</span></span><span class="a-num" style="font-size:12px">12,880</span></div>
+            <div class="ov-rank__row"><span class="ov-rank__n">03</span><span>何弦 <span class="a-hint">plus</span></span><span class="a-num" style="font-size:12px">9,140</span></div>
+            <div class="ov-rank__row"><span class="ov-rank__n">04</span><span>林知远 <span class="a-hint">plus</span></span><span class="a-num" style="font-size:12px">7,602</span></div>
+            <div class="ov-rank__row"><span class="ov-rank__n">05</span><span>叶青禾 <span class="a-hint">base</span></span><span class="a-num" style="font-size:12px">4,218</span></div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+</div></div>
+<script src="../assets/shell.js"></script>
+</body>
+</html>

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>管理后台登录 — Mikiko Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/admin.css">
+</head>
+<body data-site="admin" data-page="login">
+<div class="a-login">
+  <section class="a-login__brandcol">
+    <div class="a-login__brand"><i>M</i><span>Mikiko Ops</span><span style="margin-left:auto;color:rgba(242,240,234,.45);font-family:var(--font-admin-mono);font-size:11px">v0.0.36 · prod</span></div>
+    <div class="a-login__statement">
+      <span class="a-kicker" style="color:rgba(242,240,234,.45)">Operations Command Deck</span>
+      <h1>看清每一笔消耗，<br>再决定下一步。</h1>
+      <p>用户、模型、路由、价格与任务链路都在同一个工作台里。列表可以直接扫读，详情在抽屉里展开，不再把配置摊在同一个页面。</p>
+    </div>
+    <div class="a-login__proofs">
+      <div class="a-login__proof"><span>环境</span><strong>production · cn-east</strong></div>
+      <div class="a-login__proof"><span>API readyz</span><strong style="color:#8fceb0">healthy · 99.98%</strong></div>
+      <div class="a-login__proof"><span>待审核</span><strong>7 项</strong></div>
+      <div class="a-login__proof"><span>会话</span><strong>受保护 · 审计开启</strong></div>
+    </div>
+  </section>
+
+  <section class="a-login__pane">
+    <div class="a-login__form">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span class="a-kicker">Admin Access</span>
+        <button class="a-icon-btn" type="button" data-theme-toggle aria-label="切换主题"></button>
+      </div>
+      <div style="display:grid;gap:6px">
+        <h2>登录控制台</h2>
+        <p class="a-hint">使用管理员邮箱与密码。连续失败会触发登录限流并写入审计日志。</p>
+      </div>
+      <form class="a-form" style="display:grid;gap:16px" onsubmit="event.preventDefault();location.href='dashboard.html'">
+        <label class="a-field"><span>管理员邮箱</span><input class="a-input" type="email" value="lin.zhiyuan@mikiko.studio" autocomplete="username" style="min-height:46px"></label>
+        <label class="a-field"><span>密码 <a href="#" onclick="event.preventDefault();Mikiko.toast('请联系超级管理员重置密码')" style="font-weight:500;color:var(--a-accent)">忘记密码</a></span><input class="a-input" type="password" value="password123" autocomplete="current-password" style="min-height:46px"></label>
+        <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>保持登录（7 天）</label>
+        <button class="a-btn a-btn--primary" type="submit" style="min-height:46px;font-size:14.5px">进入控制台</button>
+      </form>
+      <div class="a-banner a-banner--info" style="font-size:12.5px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg>
+        <span>单点登录入口由部署配置决定。当前实例未启用 OIDC 时，仅本地管理员可登录。</span>
+      </div>
+      <p class="a-hint" style="font-family:var(--font-admin-mono);font-size:11px">IP 203.0.113.24 · 浏览器 Chrome 141 · 登录行为将写入审计日志</p>
+    </div>
+  </section>
+</div>
+<script src="../assets/shell.js"></script>
+</body>
+</html>

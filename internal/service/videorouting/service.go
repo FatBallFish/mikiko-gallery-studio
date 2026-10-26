@@ -14,18 +14,19 @@ import (
 type Service struct{ store Store }
 
 type CapabilityResponse struct {
-	RouteModelCode    string                    `json:"route_model_code"`
-	Name              string                    `json:"name"`
-	Description       string                    `json:"description,omitempty"`
-	MinimumPoints     string                    `json:"minimum_points"`
-	IconKey           string                    `json:"icon_key,omitempty"`
-	IconSVG           string                    `json:"icon_svg,omitempty"`
-	GroupCodes        []string                  `json:"group_codes,omitempty"`
-	ConfigVersion     string                    `json:"config_version"`
-	CapabilityVersion string                    `json:"capability_version"`
-	MaxOutputCount    int                       `json:"max_output_count"`
-	TaskTypes         []domainvideo.TaskType    `json:"task_types"`
-	Combinations      []domainvideo.Combination `json:"combinations"`
+	RouteModelCode              string                                                                         `json:"route_model_code"`
+	Name                        string                                                                         `json:"name"`
+	Description                 string                                                                         `json:"description,omitempty"`
+	MinimumPoints               string                                                                         `json:"minimum_points"`
+	IconKey                     string                                                                         `json:"icon_key,omitempty"`
+	IconSVG                     string                                                                         `json:"icon_svg,omitempty"`
+	GroupCodes                  []string                                                                       `json:"group_codes,omitempty"`
+	ConfigVersion               string                                                                         `json:"config_version"`
+	CapabilityVersion           string                                                                         `json:"capability_version"`
+	MaxOutputCount              int                                                                            `json:"max_output_count"`
+	TaskTypes                   []domainvideo.TaskType                                                         `json:"task_types"`
+	Combinations                []domainvideo.Combination                                                      `json:"combinations"`
+	InputCapabilitiesByTaskType map[domainvideo.TaskType]map[domainvideo.InputRole]domainvideo.InputCapability `json:"input_capabilities_by_task_type"`
 }
 
 // RouteModelGroupInfo mirrors the image capability payload's grouping
@@ -61,13 +62,72 @@ func (s *Service) Capabilities(ctx context.Context, code string, userGroupCodes 
 		RouteModelCode: group.Code, Name: group.Name, Description: group.Description, ConfigVersion: group.ConfigVersion,
 		MinimumPoints: group.MinimumTaskPoints, CapabilityVersion: capabilityVersion(group.Candidates), MaxOutputCount: group.MaxOutputCount, TaskTypes: append([]domainvideo.TaskType(nil), group.TaskTypes...),
 	}
+	response.InputCapabilitiesByTaskType = make(map[domainvideo.TaskType]map[domainvideo.InputRole]domainvideo.InputCapability)
 	seen := make(map[string]struct{})
 	for _, taskType := range group.TaskTypes {
 		candidates := make([]domainvideo.Candidate, 0, len(group.Candidates))
 		for _, candidate := range group.Candidates {
-			candidates = append(candidates, domainvideo.Candidate{ID: candidate.AccountModelID, Enabled: true, Capability: candidate.Capability})
+			// Enumerate public resolutions through the same forward mapping
+			// used by Resolve. Reversing a mapping loses identity resolutions
+			// and advertises sources whose mapped target is unsupported.
+			capability := candidate.Capability
+			if capability.SchemaVersion != 1 || capability.ProviderNativeMaxN < 1 || capability.ProviderNativeMaxN > 10 {
+				continue
+			}
+			task, ok := capability.TaskTypes[taskType]
+			if !ok {
+				continue
+			}
+			resolutions := make([]domainvideo.Resolution, 0)
+			for _, public := range []domainvideo.Resolution{domainvideo.Resolution480P, domainvideo.Resolution720P, domainvideo.Resolution768P, domainvideo.Resolution1080P, domainvideo.Resolution2K, domainvideo.Resolution4K} {
+				mapped := mapCandidateRequest(candidate, domainvideo.Request{Resolution: public}).Resolution
+				for _, supported := range task.Resolutions {
+					if mapped == supported {
+						resolutions = append(resolutions, public)
+						break
+					}
+				}
+			}
+			task.Resolutions = resolutions
+			capability.TaskTypes = map[domainvideo.TaskType]domainvideo.TaskCapability{taskType: task}
+			candidates = append(candidates, domainvideo.Candidate{ID: candidate.AccountModelID, Enabled: true, Capability: capability})
 		}
 		visible := domainvideo.BuildVisibleCapability(candidates, taskType)
+		var publicInputs map[domainvideo.InputRole]domainvideo.InputCapability
+		for _, candidate := range candidates {
+			if len(domainvideo.BuildVisibleCapability([]domainvideo.Candidate{candidate}, taskType).Combinations) == 0 {
+				continue
+			}
+			inputs := candidate.Capability.TaskTypes[taskType].Inputs
+			if publicInputs == nil {
+				publicInputs = make(map[domainvideo.InputRole]domainvideo.InputCapability)
+				for role, input := range inputs {
+					publicInputs[role] = input
+				}
+				continue
+			}
+			for role, input := range publicInputs {
+				other, ok := inputs[role]
+				if !ok {
+					delete(publicInputs, role)
+					continue
+				}
+				input.Required = input.Required || other.Required
+				if input.MaxCount < 0 || (other.MaxCount >= 0 && other.MaxCount < input.MaxCount) {
+					input.MaxCount = other.MaxCount
+				}
+				if input.MaxBytes <= 0 || (other.MaxBytes > 0 && other.MaxBytes < input.MaxBytes) {
+					input.MaxBytes = other.MaxBytes
+				}
+				input.MediaTypes = intersectInputValues(input.MediaTypes, other.MediaTypes)
+				input.Formats = intersectInputValues(input.Formats, other.Formats)
+				publicInputs[role] = input
+			}
+		}
+		if publicInputs == nil {
+			publicInputs = make(map[domainvideo.InputRole]domainvideo.InputCapability)
+		}
+		response.InputCapabilitiesByTaskType[taskType] = publicInputs
 		for _, combination := range visible.Combinations {
 			combination.CandidateID = 0
 			key := string(combination.TaskType) + "/" + intString(combination.DurationSeconds) + "/" + string(combination.Resolution) + "/" + string(combination.AspectRatio) + "/" + string(combination.AudioMode)
@@ -79,6 +139,19 @@ func (s *Service) Capabilities(ctx context.Context, code string, userGroupCodes 
 		}
 	}
 	return response, nil
+}
+
+func intersectInputValues(left, right []string) []string {
+	result := make([]string, 0)
+	for _, value := range left {
+		for _, other := range right {
+			if strings.EqualFold(value, other) {
+				result = append(result, value)
+				break
+			}
+		}
+	}
+	return result
 }
 
 func (s *Service) ListCapabilities(ctx context.Context, userGroupCodes []string) (CapabilityListResponse, error) {
@@ -111,10 +184,7 @@ func (s *Service) Resolve(ctx context.Context, code string, userGroupCodes []str
 	matched := make([]Candidate, 0, len(group.Candidates))
 	var fieldErrors []domainvideo.FieldError
 	for _, candidate := range group.Candidates {
-		mapped := request
-		if resolution := candidate.ResolutionMappings[request.Resolution]; resolution != "" {
-			mapped.Resolution = resolution
-		}
+		mapped := mapCandidateRequest(candidate, request)
 		match := candidate.Capability.Match(mapped)
 		if match.Matches {
 			candidate.MappedRequest = mapped
@@ -127,6 +197,13 @@ func (s *Service) Resolve(ctx context.Context, code string, userGroupCodes []str
 		return Resolution{}, errs.WithDetails(errs.New(422, errs.CodeVideoCapabilityMismatch, "no video candidate supports the complete parameter combination"), map[string]any{"field_errors": fieldErrors})
 	}
 	return Resolution{Group: group, Request: request, Candidates: matched, CapabilityVersion: capabilityVersion(matched)}, nil
+}
+
+func mapCandidateRequest(candidate Candidate, request domainvideo.Request) domainvideo.Request {
+	if resolution := candidate.ResolutionMappings[request.Resolution]; resolution != "" {
+		request.Resolution = resolution
+	}
+	return request
 }
 
 func (s *Service) group(ctx context.Context, code string, userGroupCodes []string) (Group, error) {

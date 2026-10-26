@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/assetgroup"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaasset"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/migrationcheckpoint"
@@ -329,10 +330,23 @@ func insertMediaAssetBackfillRow(ctx context.Context, tx *repoent.Tx, row *repoe
 	if row.Height > 0 {
 		height = row.Height
 	}
+	var groupID any
+	groupName := ""
+	if strings.TrimSpace(row.ImageGroup) != "" {
+		groupName = strings.Join(strings.Fields(row.ImageGroup), " ")
+		g, err := tx.AssetGroup.Query().Where(assetgroup.UserIDEQ(row.UserID), assetgroup.ProjectIDEQ(projectID), assetgroup.NameKeyEQ(strings.ToLower(groupName))).Only(ctx)
+		if repoent.IsNotFound(err) {
+			g, err = tx.AssetGroup.Create().SetUserID(row.UserID).SetProjectID(projectID).SetName(groupName).SetNameKey(strings.ToLower(groupName)).Save(ctx)
+		}
+		if err != nil {
+			return false, err
+		}
+		groupID, groupName = g.ID, g.Name
+	}
 	args := []any{
-		row.ID, row.CreatedAt, row.UpdatedAt, row.UserID, row.ID, name, strings.ToLower(name), row.ImageGroup,
+		row.ID, row.CreatedAt, row.UpdatedAt, row.UserID, row.ID, name, strings.ToLower(name), groupName,
 		"image", "generated", "ready", row.VisibilityStatus, storageConfigID, row.StorageDriver, "", row.ObjectKey,
-		row.MimeType, row.FileSizeBytes, row.Sha256, width, height, "image", row.TaskID, int64(1), projectID,
+		row.MimeType, row.FileSizeBytes, row.Sha256, width, height, "image", row.TaskID, int64(1), projectID, groupID,
 	}
 	placeholders := make([]string, len(args))
 	for index := range args {
@@ -343,7 +357,7 @@ func insertMediaAssetBackfillRow(ctx context.Context, tx *repoent.Tx, row *repoe
 	}
 	query := `INSERT INTO media_assets (` +
 		`id, created_at, updated_at, user_id, legacy_image_result_id, name, name_key, group_name, media_type, source_type, status, visibility_status, ` +
-		`storage_config_id, storage_driver, bucket, object_key, mime_type, file_size_bytes, sha256, width, height, source_task_kind, source_task_id, version, project_id` +
+		`storage_config_id, storage_driver, bucket, object_key, mime_type, file_size_bytes, sha256, width, height, source_task_kind, source_task_id, version, project_id, group_id` +
 		`) VALUES (` + strings.Join(placeholders, ",") + `) ON CONFLICT (id) DO NOTHING`
 	affected, err := tx.ExecRawAffected(ctx, query, args...)
 	if err != nil {

@@ -25,6 +25,7 @@ type APIKey struct {
 	SecretHash           string     `json:"-"`
 	SecretCiphertext     string     `json:"-"`
 	SigningSecret        string     `json:"-"`
+	Scopes               []string   `json:"scopes"`
 	Name                 string     `json:"name"`
 	Status               string     `json:"status"`
 	GroupCode            string     `json:"group_code"`
@@ -44,6 +45,7 @@ type APIKey struct {
 }
 
 type Identity struct {
+	Scopes    []string
 	APIKeyID  int64
 	UserID    int64
 	AccessKey string

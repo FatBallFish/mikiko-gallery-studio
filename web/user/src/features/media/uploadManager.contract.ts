@@ -1,4 +1,6 @@
 import {
+  boundedUploadRequest,
+  uploadFailure,
   acceptUploadFiles,
   completedPartNumbers,
   createUploadSnapshot,
@@ -126,4 +128,39 @@ await retry(async () => {
 }).catch(() => undefined)
 if (abortedAttempts !== 1) throw new Error('paused uploads must not retry aborted requests')
 
+const expired = restoreUploadSnapshots(serializeUploadSnapshots([{ ...pending, uploadID: 'expired', expiresAt: '2000-01-01' }]))[0]
+if (expired.localID !== pending.localID || !expired.initializationKey || expired.initializationKey === pending.localID || expired.uploadID) throw new Error('expired sessions must rotate init identity and preserve UI identity')
+const ambiguous = restoreUploadSnapshots(serializeUploadSnapshots([{ ...pending, ...uploadFailure(new Error('timeout'), 'initializing') }]))[0]
+if ((ambiguous.initializationKey ?? ambiguous.localID) !== pending.localID) throw new Error('ambiguous init retries must retain the idempotency key')
+let timeoutSignal: AbortSignal | undefined
+const timeoutError = await boundedUploadRequest((signal) => {
+  timeoutSignal = signal
+  return new Promise<never>(() => undefined)
+}, new AbortController().signal, 5).catch((error: unknown) => error)
+if (!timeoutSignal?.aborted || uploadFailure(timeoutError, 'initializing').status !== 'failed' || !uploadFailure(timeoutError, 'initializing').error?.includes('创建上传会话失败')) throw new Error('deferred init must time out into retryable initialization failure')
+const paused = new AbortController()
+let resolveLate!: (value: string) => void
+const pendingInit = boundedUploadRequest(() => new Promise<string>((resolve) => { resolveLate = resolve }), paused.signal)
+await Promise.resolve()
+paused.abort()
+const pauseError = await pendingInit.catch((error: unknown) => error)
+resolveLate('late session')
+if (uploadFailure(pauseError, 'initializing').status !== 'paused') throw new Error('pause must settle deferred init even before a late response')
+if (!uploadFailure(new Error('offline'), 'completing').error?.includes('完成上传失败')) throw new Error('completion failures must identify the correct stage')
+
 console.log('media upload manager contract passed')
+
+const { MEDIA_UPLOAD_TERMINATED_EVENT, notifyUploadTerminated } = await import('./uploadManager')
+const terminalEvents: CustomEvent[] = []
+const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
+Object.defineProperty(globalThis, 'window', { configurable: true, value: { dispatchEvent: (event: CustomEvent) => { terminalEvents.push(event); return true } } })
+try {
+  const target = { canvasID: 'canvas', nodeID: 'upload-token' }
+  notifyUploadTerminated({ target, status: 'failed', error: 'network failed' })
+  notifyUploadTerminated({ target, status: 'cancelled' })
+  if (terminalEvents.length !== 2 || terminalEvents.some((event) => event.type !== MEDIA_UPLOAD_TERMINATED_EVENT || event.detail.target !== target)) throw new Error('terminal events must carry the original upload destination')
+  if (terminalEvents[0].detail.status !== 'failed' || terminalEvents[1].detail.status !== 'cancelled') throw new Error('failure and cancellation must remain distinct')
+} finally {
+  if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow)
+  else Reflect.deleteProperty(globalThis, 'window')
+}

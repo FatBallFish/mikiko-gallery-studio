@@ -28,12 +28,34 @@ func TestDocsEndpointsReturnStructuredContract(t *testing.T) {
 	if openAPIResp.OpenAPI == "" || len(openAPIResp.Paths) == 0 {
 		t.Fatalf("expected non-empty openapi document, got openapi=%q paths=%d", openAPIResp.OpenAPI, len(openAPIResp.Paths))
 	}
-	for _, path := range []string{"/api/agent/billing/v1/estimate", "/api/open/image/v1/estimate"} {
+	for _, path := range []string{"/api/agent/billing/v1/estimate"} {
 		operation := openAPIResp.Paths[path]["get"].(map[string]any)
 		parameters := operation["parameters"].([]any)
 		firstParameter := parameters[0].(map[string]any)
 		if firstParameter["$ref"] != "./components/parameters/common.yaml#/components/parameters/RouteModelCode" {
 			t.Fatalf("expected runtime OpenAPI JSON %s to prefer RouteModelCode, got %#v", path, parameters)
+		}
+	}
+
+	for path, operationID := range map[string]string{
+		"/api/open/v1/image-tasks/preflight": "preflight_image_task",
+		"/api/open/v1/image-tasks":           "create_image_task",
+	} {
+		operation, ok := openAPIResp.Paths[path]["post"].(map[string]any)
+		if !ok || operation["operationId"] != operationID || operation["requestBody"] == nil {
+			t.Fatalf("missing unified POST contract %s: %#v", path, operation)
+		}
+		security, ok := operation["security"].([]any)
+		if !ok || len(security) != 1 {
+			t.Fatalf("invalid developer security %s: %#v", path, operation["security"])
+		}
+		if _, ok := security[0].(map[string]any)["developerBearerAuth"]; !ok {
+			t.Fatalf("developer operation must use Bearer: %#v", security)
+		}
+	}
+	for _, path := range []string{"/api/open/image/v1/estimate", "/api/open/image/v1/tasks", "/api/open/image/v1/reference-assets/uploads"} {
+		if _, ok := openAPIResp.Paths[path]; ok {
+			t.Fatalf("removed developer route still documented: %s", path)
 		}
 	}
 

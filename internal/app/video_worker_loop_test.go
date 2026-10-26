@@ -45,24 +45,42 @@ func TestNewVideoArtifactHTTPClientTrustsConfiguredTestCA(t *testing.T) {
 
 func TestRunIndependentWorkerLoopsRunsVideoWithoutImageSlots(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
-	var imageStarted, videoStarted atomic.Bool
+	defer cancel()
+	imageStarted := make(chan struct{})
+	videoStarted := make(chan struct{})
 	done := make(chan error, 1)
 	go func() {
 		done <- runIndependentWorkerLoops(ctx,
-			func(ctx context.Context) error { imageStarted.Store(true); <-ctx.Done(); return ctx.Err() },
-			func(ctx context.Context) error { videoStarted.Store(true); cancel(); return nil },
+			func(ctx context.Context) error {
+				close(imageStarted)
+				<-ctx.Done()
+				return ctx.Err()
+			},
+			func(ctx context.Context) error {
+				select {
+				case <-imageStarted:
+					close(videoStarted)
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+				<-ctx.Done()
+				return ctx.Err()
+			},
 		)
 	}()
 	select {
+	case <-videoStarted:
+	case <-time.After(time.Second):
+		t.Fatal("video loop did not start while image loop was waiting")
+	}
+	cancel()
+	select {
 	case err := <-done:
-		if err != nil {
-			t.Fatalf("runIndependentWorkerLoops() error = %v", err)
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("runIndependentWorkerLoops() error = %v, want context.Canceled", err)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("worker loops did not stop")
-	}
-	if !imageStarted.Load() || !videoStarted.Load() {
-		t.Fatalf("started image=%v video=%v", imageStarted.Load(), videoStarted.Load())
 	}
 }
 
@@ -167,8 +185,8 @@ func TestRunWorkerRoleSlotsKeepsConcurrencyIndependent(t *testing.T) {
 	if got := peak.Load(); got != 3 {
 		t.Fatalf("peak concurrency = %d, want 3", got)
 	}
-	close(release)
 	cancel()
+	close(release)
 	select {
 	case err := <-done:
 		if !errors.Is(err, context.Canceled) {

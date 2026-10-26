@@ -40,10 +40,20 @@ func TestCanvasStorePersistsRevisionReferencesAndCAS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	document := domaincanvas.DocumentV1{SchemaVersion: 1, Nodes: []domaincanvas.Node{{ID: "image", Type: domaincanvas.NodeTypeImage, AssetID: assetID.String(), Size: domaincanvas.Size{Width: 220, Height: 160}}}}
+	document := domaincanvas.DocumentV1{SchemaVersion: 1, Nodes: []domaincanvas.Node{{ID: "image", Type: domaincanvas.NodeTypeImageV2, AssetID: assetID.String(), Size: domaincanvas.Size{Width: 220, Height: 160}}}}
 	saved, err := service.SaveDocument(t.Context(), canvasservice.SaveDocumentRequest{UserID: 12, CanvasID: created.ID, ExpectedRevision: 1, Document: document})
 	if err != nil {
 		t.Fatal(err)
+	}
+	// Failed ownership/type validation must leave document, references and revisions intact.
+	for _, bad := range []domaincanvas.Node{
+		{ID: "foreign", Type: domaincanvas.NodeTypeImageV2, AssetID: uuid.NewString(), Size: domaincanvas.Size{Width: 80, Height: 80}},
+		{ID: "wrong-kind", Type: domaincanvas.NodeTypeVideoV2, AssetID: assetID.String(), Size: domaincanvas.Size{Width: 80, Height: 80}},
+	} {
+		invalid := domaincanvas.DocumentV1{SchemaVersion: 1, Nodes: []domaincanvas.Node{bad}}
+		if _, err := service.SaveDocument(t.Context(), canvasservice.SaveDocumentRequest{UserID: 12, CanvasID: created.ID, ExpectedRevision: saved.Revision, Document: invalid}); err == nil {
+			t.Fatal("invalid asset accepted")
+		}
 	}
 	if saved.Revision != 2 {
 		t.Fatalf("revision = %d", saved.Revision)
@@ -88,12 +98,6 @@ func TestCanvasStoreAttachAndTransferAreAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	created.Document.Nodes = append(created.Document.Nodes, domaincanvas.Node{ID: "result-slot", Type: domaincanvas.NodeTypeImage, Position: domaincanvas.Point{X: 800, Y: 80}, Size: domaincanvas.Size{Width: 220, Height: 160}})
-	created.Document.Edges = append(created.Document.Edges, domaincanvas.Edge{ID: "result-slot-edge", Source: "image-generation", Target: "result-slot", InputRole: domaincanvas.InputRoleResult})
-	created, err = service.SaveDocument(t.Context(), canvasservice.SaveDocumentRequest{UserID: 22, CanvasID: created.ID, ExpectedRevision: created.Revision, Document: created.Document})
-	if err != nil {
-		t.Fatal(err)
-	}
 	run, err := service.Generate(t.Context(), canvasservice.GenerateRequest{UserID: 22, CanvasID: created.ID, NodeID: "image-generation", IdempotencyKey: "one"})
 	if err != nil {
 		t.Fatal(err)
@@ -106,7 +110,7 @@ func TestCanvasStoreAttachAndTransferAreAtomic(t *testing.T) {
 		t.Fatalf("attach = (%#v,%v)", attached, err)
 	}
 	afterAttach, err := service.Get(t.Context(), 22, created.ID)
-	if err != nil || len(afterAttach.Document.Nodes) != 3 || afterAttach.Document.Nodes[2].ID != "result-slot" || afterAttach.Document.Nodes[2].AssetID != resultAssetID.String() {
+	if err != nil || len(afterAttach.Document.Nodes) != 4 || afterAttach.Document.Nodes[0].ID != "image-generation" || afterAttach.Document.Nodes[0].AssetID != resultAssetID.String() {
 		t.Fatalf("persisted result slot = (%#v, %v)", afterAttach.Document, err)
 	}
 	refs, err := client.MediaAssetReference.Query().Where(mediaassetreference.RefTypeEQ("canvas_node"), mediaassetreference.RefIDEQ(created.ID), mediaassetreference.DeletedAtIsNil()).All(t.Context())
@@ -145,7 +149,7 @@ func TestCanvasStoreRecoversUnplacedResultsAtRequestedPosition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	created.Document.Nodes = created.Document.Nodes[:1]
+	created.Document.Nodes = nil
 	created.Document.Edges = nil
 	if _, err := service.SaveDocument(t.Context(), canvasservice.SaveDocumentRequest{UserID: 23, CanvasID: created.ID, ExpectedRevision: created.Revision, Document: created.Document}); err != nil {
 		t.Fatal(err)
@@ -158,7 +162,7 @@ func TestCanvasStoreRecoversUnplacedResultsAtRequestedPosition(t *testing.T) {
 		t.Fatalf("recover unplaced = (%#v, %v)", recovered, err)
 	}
 	after, err := service.Get(t.Context(), 23, created.ID)
-	if err != nil || len(after.Document.Nodes) != 2 || len(after.Document.Edges) != 0 || after.Document.Nodes[1].Position.X != 340 || after.Document.Nodes[1].Position.Y != 280 {
+	if err != nil || len(after.Document.Nodes) != 1 || len(after.Document.Edges) != 0 || after.Document.Nodes[0].Position.X != 340 || after.Document.Nodes[0].Position.Y != 280 {
 		t.Fatalf("recovered canvas = (%#v, %v)", after.Document, err)
 	}
 }

@@ -222,6 +222,10 @@ func TestBuildDeploymentFilesRoutesWebNodesToThePublicAPIBaseURL(t *testing.T) {
 	nginx := string(files[1].Content)
 	for _, required := range []string{
 		"server api.example.test:8443;",
+		"location = /mcp {", "location = /.well-known/oauth-authorization-server {",
+		"location = /.well-known/oauth-protected-resource {", "location = /.well-known/oauth-protected-resource/mcp {",
+		"location = /oauth/authorize {", "location = /oauth/token {", "location = /oauth/revoke {", "location = /oauth/register {",
+		"proxy_buffering off;", "proxy_request_buffering off;", "proxy_read_timeout 3600s;",
 		"proxy_pass https://pic_gallery_api/base$request_uri;",
 		"proxy_set_header Host api.example.test:8443;",
 		"proxy_ssl_server_name on;",
@@ -234,8 +238,8 @@ func TestBuildDeploymentFilesRoutesWebNodesToThePublicAPIBaseURL(t *testing.T) {
 	if strings.Contains(nginx, "server api:8080;") {
 		t.Fatal("web-node Nginx config still depends on a local API container")
 	}
-	if got := strings.Count(nginx, "proxy_set_header Host api.example.test:8443;"); got != 8 {
-		t.Fatalf("external API Host header count = %d, want 8", got)
+	if got := strings.Count(nginx, "proxy_set_header Host api.example.test:8443;"); got != 16 {
+		t.Fatalf("external API Host header count = %d, want 16", got)
 	}
 	for _, preserved := range []string{
 		"proxy_pass http://pic_gallery_docs_web/;\n        proxy_set_header Host $host;",

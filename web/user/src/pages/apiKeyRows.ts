@@ -31,6 +31,7 @@ export type ApiKeyCreateForm = {
 }
 
 export type ApiKeyEditForm = {
+  scopes?: string[]
   name: string
   rpmLimit: number
   expiresAt: string
@@ -60,7 +61,17 @@ const statusBadges: Record<string, ApiKeyStatusBadge> = {
   expired: { label: '已过期', tone: 'warning' },
 }
 
+export const defaultApiKeyScopes = ['account:read', 'models:read', 'images:read', 'images:write']
+export const allApiKeyScopes = ['account:read', 'models:read', 'images:read', 'images:write', 'videos:read', 'videos:write', 'videos:delete', 'assets:read', 'assets:write', 'assets:delete', 'uploads:read', 'uploads:write', 'uploads:delete', 'projects:read', 'projects:write', 'projects:delete', 'groups:read', 'groups:write', 'groups:delete']
+
 const scopeLabels: Record<string, string> = {
+  'account:read': '读取账号与余额',
+  'models:read': '读取模型',
+  'videos:read': '读取视频任务', 'videos:write': '创建视频任务', 'videos:delete': '取消视频任务',
+  'assets:read': '读取素材', 'assets:write': '修改素材', 'assets:delete': '删除素材',
+  'uploads:read': '读取上传状态', 'uploads:write': '上传素材', 'uploads:delete': '终止上传',
+  'projects:read': '读取项目', 'projects:write': '创建与修改项目', 'projects:delete': '删除项目',
+  'groups:read': '读取分组', 'groups:write': '创建与修改分组', 'groups:delete': '删除分组',
   'images:write': '创建图片任务',
   'images:read': '读取图片任务',
   'balance:read': '读取余额',
@@ -102,7 +113,7 @@ export function maskSecretPreview(value?: string | null) {
 }
 
 export function apiKeyQuickstart(key: Pick<ApiKey, 'access_key' | 'secret_preview'> | null) {
-  const secret = key?.secret_preview ? maskSecretPreview(key.secret_preview) : 'sk_live_xxx'
+  const secret = '$STUDIO_API_KEY'
   const accessKey = key?.access_key ? maskToken(key.access_key) : 'ak_live_xxx'
   return {
     title: apiKeyPageLabels.quickstartCodeTitle,
@@ -148,6 +159,7 @@ export function apiKeyCreatePayload(form: ApiKeyCreateForm) {
 
 export function apiKeyEditForm(key: ApiKey): ApiKeyEditForm {
   return {
+    scopes: [...key.scopes],
     name: key.name,
     rpmLimit: key.rpm_limit ?? 30,
     expiresAt: dateInputValue(key.expires_at),
@@ -160,6 +172,7 @@ export function apiKeyEditForm(key: ApiKey): ApiKeyEditForm {
 export function apiKeyUpdatePayload(form: ApiKeyEditForm): UpdateApiKeyRequest {
   return {
     name: form.name,
+    scopes: form.scopes,
     rpm_limit: form.rpmLimit,
     expires_at: form.expiresAt || null,
     total_quota_points: form.totalQuotaPoints.trim() || null,

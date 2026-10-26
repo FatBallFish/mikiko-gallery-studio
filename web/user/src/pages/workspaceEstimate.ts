@@ -8,6 +8,7 @@ export type WorkspaceEstimateSnapshot = {
 
 export function workspaceEstimateKey(payload: EstimateRequest) {
   return JSON.stringify({
+    operation: payload.operation, nativeOptions: payload.native_options, seed: payload.seed, negativePrompt: payload.negative_prompt,
     taskType: payload.task_type,
     model: payload.route_model_code,
     sizeMode: payload.size_mode,

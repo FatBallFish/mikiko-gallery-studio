@@ -40,6 +40,41 @@ function assertAbsent(record: Record<string, unknown>, keys: string[], message: 
 }
 
 const normalizeCapabilities = requireFunction('normalizeCapabilities')
+const nativeProfile = { model: 'doubao-seedream-5-0-pro-260628', operations: ['generate', 'edit', 'layer_decomposition'], max_reference_images: 10 }
+for (const flag of [false, true, undefined]) {
+  for (const aliases of [false, true]) {
+    const nativeFields = aliases
+      ? { NativeImageProfile: nativeProfile, ...(flag === undefined ? {} : { NativeImageLayerPricingConfirmed: flag }) }
+      : { native_image_profile: nativeProfile, ...(flag === undefined ? {} : { native_image_layer_pricing_confirmed: flag }) }
+    const normalized = normalizeCapabilities({ model_groups: [{
+      code: 'native', task_types: ['text_to_image', 'image_edit'], max_reference_image_count: 10, ...nativeFields,
+      capabilities_by_task_type: {
+        text_to_image: { max_reference_image_count: 0, ...nativeFields },
+        image_edit: { max_reference_image_count: 10, ...nativeFields },
+      },
+    }] }).model_groups[0]
+    for (const value of [normalized, normalized.capabilities_by_task_type.text_to_image, normalized.capabilities_by_task_type.image_edit]) {
+      assertDeepEqual(value.native_image_profile, nativeProfile, 'native profile must survive image normalization')
+      assertDeepEqual(value.native_image_layer_pricing_confirmed, flag, 'native layer pricing must preserve false, true and missing')
+      if (flag === undefined) assertAbsent(value, ['native_image_layer_pricing_confirmed'], 'missing confirmation must remain absent')
+    }
+    assertDeepEqual(normalized.max_reference_image_count, 10, 'native model editing capacity must remain 10')
+    assertDeepEqual(normalized.capabilities_by_task_type.text_to_image.max_reference_image_count, 0, 'native text task must retain zero references')
+    assertDeepEqual(normalized.capabilities_by_task_type.image_edit.max_reference_image_count, 10, 'native edit task must retain 10 references')
+  }
+}
+
+for (const reason of ['拆层底图售价未配置；图层成本未确认', '', undefined, null, false, 42, {}]) {
+  for (const aliases of [false, true]) {
+    const fields = aliases ? { NativeImageLayerUnavailableReason: reason } : { native_image_layer_unavailable_reason: reason }
+    const normalized = normalizeCapabilities({ model_groups: [{ code: 'layer-reason', ...fields, capabilities_by_task_type: { image_edit: fields } }] }).model_groups[0]
+    for (const value of [normalized, normalized.capabilities_by_task_type.image_edit]) {
+      if (typeof reason === 'string') assertDeepEqual(value.native_image_layer_unavailable_reason, reason, 'specific layer reason must survive normalization including explicit empty strings')
+      else assertAbsent(value, ['native_image_layer_unavailable_reason'], 'missing or malformed layer reasons must remain absent')
+    }
+  }
+}
+
 const buildEstimateWireRequest = requireFunction('buildEstimateWireRequest')
 const buildCreateTaskWireRequest = requireFunction('buildCreateTaskWireRequest')
 const buildGalleryReferenceImportRequest = requireFunction('buildGalleryReferenceImportRequest')
@@ -191,10 +226,51 @@ assertDeepEqual(estimateWire, {
   moderation: 'low',
   requested_output_image_count: 2,
   reference_image_count: 1,
+  reference_asset_ids: ['ref-1'],
 }, 'estimate conversion should emit the complete current Go wire contract')
 assertAbsent(estimateWire, [
   'pixel_size',
 ], 'estimate conversion must not leak UI-only fields')
+
+const referenceIDs = ['owned-ref-b', 'owned-ref-a']
+const referenceWire = buildEstimateWireRequest({ ...ratioRequest, reference_asset_ids: referenceIDs, input_dimensions: [{ width: 99999, height: 99999 }], width: 99999, height: 99999 })
+referenceIDs[0] = 'replaced-after-build'
+assertDeepEqual(referenceWire.reference_asset_ids, ['owned-ref-b', 'owned-ref-a'], 'estimate wire must snapshot ordered reference asset IDs')
+assertDeepEqual(referenceWire.reference_image_count, 2, 'reference count must match IDs from the same request')
+assertAbsent(referenceWire, ['input_dimensions', 'reference_dimensions', 'width', 'height'], 'input pricing dimensions must come from owned server metadata')
+
+// Exercise the real API wrapper and URL serializer without making any network request.
+async function verifyEstimateReferenceTransport() {
+  const estimateFetch = globalThis.fetch
+  try {
+    const requests: Array<{ url: URL; init?: RequestInit }> = []
+    globalThis.fetch = async (input, init) => {
+      requests.push({ url: new URL(String(input), 'http://localhost'), init })
+      return new Response(JSON.stringify({ estimated_points: '1', sufficient: true }), { headers: { 'Content-Type': 'application/json' } })
+    }
+    for (const ids of [undefined, [], ['owned-ref-b', 'owned-ref-a']]) {
+      await generationApi.userApi.estimate({ ...ratioRequest, task_type: 'image_edit', operation: 'edit', native_options: { negative_prompt: 'blur' }, reference_asset_ids: ids })
+      const { url, init } = requests[requests.length - 1]
+      assertDeepEqual(url.pathname, '/api/agent/billing/v1/estimate', 'workspace estimate must use the billing estimate endpoint')
+      assertDeepEqual(init?.method ?? 'GET', 'GET', 'billing estimate must preserve GET transport')
+      assertDeepEqual(url.searchParams.get('reference_image_count'), String(ids?.length ?? 0), 'serialized count must match reference IDs')
+      assertDeepEqual(url.searchParams.get('reference_asset_ids'), ids?.length ? ids.join(',') : null, 'GET query must send ordered asset IDs in the backend-supported comma format')
+      assertDeepEqual(JSON.parse(url.searchParams.get('native_options')!), { negative_prompt: 'blur' }, 'reference IDs must coexist with native option serialization')
+      for (const field of ['input_dimensions', 'reference_dimensions', 'width', 'height']) {
+        if (url.searchParams.has(field)) throw new Error(`estimate must not send trusted input metadata: ${field}`)
+      }
+    }
+    const abort = new AbortController()
+    await generationApi.userApi.estimateCanvasNode('canvas-reference', 'node-reference', abort.signal)
+    const canvasRequest = requests[requests.length - 1]
+    assertDeepEqual(canvasRequest.url.pathname, '/api/agent/canvas/v1/canvases/canvas-reference/nodes/node-reference:estimate', 'canvas estimates must use the persisted graph endpoint')
+    assertDeepEqual(canvasRequest.init?.method, 'POST', 'canvas node estimate remains POST')
+    if (canvasRequest.init?.signal !== abort.signal) throw new Error('canvas estimate must preserve cancellation signal')
+    assertDeepEqual(canvasRequest.init?.body, undefined, 'canvas references are resolved from the saved graph without client dimensions')
+  } finally {
+    globalThis.fetch = estimateFetch
+  }
+}
 
 const createWire = buildCreateTaskWireRequest({
   ...ratioRequest,
@@ -287,7 +363,7 @@ if (!/retryUnauthorized:\s*false/.test(refreshSessionSource)) {
   throw new Error('user refreshSession must remain non-recursive with retryUnauthorized: false')
 }
 
-void verifyBaseResolutionOnlyConsumers().catch((error) => {
+void verifyEstimateReferenceTransport().then(() => verifyBaseResolutionOnlyConsumers()).catch((error) => {
   queueMicrotask(() => { throw error })
 })
 

@@ -19,6 +19,7 @@ var (
 		{Name: "access_key", Type: field.TypeString, Size: 64},
 		{Name: "secret_hash", Type: field.TypeString, Size: 128},
 		{Name: "secret_ciphertext", Type: field.TypeString, Nullable: true, Size: 512},
+		{Name: "scopes", Type: field.TypeJSON},
 		{Name: "name", Type: field.TypeString, Size: 64},
 		{Name: "status", Type: field.TypeString, Size: 32, Default: "active"},
 		{Name: "group_code", Type: field.TypeString, Size: 32, Default: "default"},
@@ -52,12 +53,12 @@ var (
 			{
 				Name:    "apikey_status",
 				Unique:  false,
-				Columns: []*schema.Column{APIKeysColumns[9]},
+				Columns: []*schema.Column{APIKeysColumns[10]},
 			},
 			{
 				Name:    "apikey_group_code",
 				Unique:  false,
-				Columns: []*schema.Column{APIKeysColumns[10]},
+				Columns: []*schema.Column{APIKeysColumns[11]},
 			},
 		},
 	}
@@ -120,6 +121,30 @@ var (
 				Name:    "adminuser_status",
 				Unique:  false,
 				Columns: []*schema.Column{AdminUsersColumns[6]},
+			},
+		},
+	}
+	// AssetGroupsColumns holds the columns for the "asset_groups" table.
+	AssetGroupsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "project_id", Type: field.TypeUUID},
+		{Name: "name", Type: field.TypeString, Size: 64},
+		{Name: "name_key", Type: field.TypeString, Size: 64},
+		{Name: "version", Type: field.TypeInt64, Default: 1},
+	}
+	// AssetGroupsTable holds the schema information for the "asset_groups" table.
+	AssetGroupsTable = &schema.Table{
+		Name:       "asset_groups",
+		Columns:    AssetGroupsColumns,
+		PrimaryKey: []*schema.Column{AssetGroupsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "assetgroup_user_id_project_id_name_key",
+				Unique:  true,
+				Columns: []*schema.Column{AssetGroupsColumns[3], AssetGroupsColumns[4], AssetGroupsColumns[6]},
 			},
 		},
 	}
@@ -867,11 +892,14 @@ var (
 		{Name: "legacy_image_result_id", Type: field.TypeUUID, Nullable: true},
 		{Name: "name", Type: field.TypeString, Size: 255},
 		{Name: "name_key", Type: field.TypeString, Size: 255},
+		{Name: "group_id", Type: field.TypeUUID, Nullable: true},
 		{Name: "group_name", Type: field.TypeString, Size: 64, Default: ""},
 		{Name: "media_type", Type: field.TypeString, Size: 16},
 		{Name: "source_type", Type: field.TypeString, Size: 24},
 		{Name: "status", Type: field.TypeString, Size: 32, Default: "processing"},
 		{Name: "visibility_status", Type: field.TypeString, Size: 32, Default: "private"},
+		{Name: "publication_review_reason", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "published_at", Type: field.TypeTime, Nullable: true},
 		{Name: "storage_config_id", Type: field.TypeUUID, Nullable: true},
 		{Name: "storage_driver", Type: field.TypeString, Size: 16, Default: "local"},
 		{Name: "bucket", Type: field.TypeString, Size: 255, Default: ""},
@@ -906,7 +934,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "media_assets_projects_media_assets",
-				Columns:    []*schema.Column{MediaAssetsColumns[37]},
+				Columns:    []*schema.Column{MediaAssetsColumns[40]},
 				RefColumns: []*schema.Column{ProjectsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -920,27 +948,27 @@ var (
 			{
 				Name:    "mediaasset_project_id",
 				Unique:  false,
-				Columns: []*schema.Column{MediaAssetsColumns[37]},
+				Columns: []*schema.Column{MediaAssetsColumns[40]},
 			},
 			{
 				Name:    "mediaasset_user_id_project_id_created_at_id",
 				Unique:  false,
-				Columns: []*schema.Column{MediaAssetsColumns[4], MediaAssetsColumns[37], MediaAssetsColumns[1], MediaAssetsColumns[0]},
+				Columns: []*schema.Column{MediaAssetsColumns[4], MediaAssetsColumns[40], MediaAssetsColumns[1], MediaAssetsColumns[0]},
 			},
 			{
 				Name:    "mediaasset_user_id_project_id_media_type_source_type_status",
 				Unique:  false,
-				Columns: []*schema.Column{MediaAssetsColumns[4], MediaAssetsColumns[37], MediaAssetsColumns[9], MediaAssetsColumns[10], MediaAssetsColumns[11]},
+				Columns: []*schema.Column{MediaAssetsColumns[4], MediaAssetsColumns[40], MediaAssetsColumns[10], MediaAssetsColumns[11], MediaAssetsColumns[12]},
 			},
 			{
 				Name:    "mediaasset_user_id_project_id_name_key",
 				Unique:  false,
-				Columns: []*schema.Column{MediaAssetsColumns[4], MediaAssetsColumns[37], MediaAssetsColumns[7]},
+				Columns: []*schema.Column{MediaAssetsColumns[4], MediaAssetsColumns[40], MediaAssetsColumns[7]},
 			},
 			{
 				Name:    "mediaasset_storage_config_id_object_key",
 				Unique:  true,
-				Columns: []*schema.Column{MediaAssetsColumns[13], MediaAssetsColumns[16]},
+				Columns: []*schema.Column{MediaAssetsColumns[16], MediaAssetsColumns[19]},
 			},
 			{
 				Name:    "mediaasset_legacy_image_result_id",
@@ -950,7 +978,7 @@ var (
 			{
 				Name:    "mediaasset_source_task_kind_source_task_id",
 				Unique:  false,
-				Columns: []*schema.Column{MediaAssetsColumns[30], MediaAssetsColumns[31]},
+				Columns: []*schema.Column{MediaAssetsColumns[33], MediaAssetsColumns[34]},
 			},
 		},
 	}
@@ -1348,6 +1376,27 @@ var (
 				Name:    "modelroute_provider_model_id",
 				Unique:  false,
 				Columns: []*schema.Column{ModelRoutesColumns[5]},
+			},
+		},
+	}
+	// OauthRecordsColumns holds the columns for the "oauth_records" table.
+	OauthRecordsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Size: 512},
+		{Name: "kind", Type: field.TypeString, Size: 32},
+		{Name: "user_id", Type: field.TypeInt64, Default: 0},
+		{Name: "payload", Type: field.TypeBytes},
+		{Name: "version", Type: field.TypeInt64, Default: 1},
+	}
+	// OauthRecordsTable holds the schema information for the "oauth_records" table.
+	OauthRecordsTable = &schema.Table{
+		Name:       "oauth_records",
+		Columns:    OauthRecordsColumns,
+		PrimaryKey: []*schema.Column{OauthRecordsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "oauthrecord_kind_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{OauthRecordsColumns[1], OauthRecordsColumns[2]},
 			},
 		},
 	}
@@ -2215,6 +2264,7 @@ var (
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "image_pricing", Type: field.TypeJSON, Nullable: true},
 		{Name: "code", Type: field.TypeString, Size: 64},
 		{Name: "name", Type: field.TypeString, Size: 128},
 		{Name: "description", Type: field.TypeString, Size: 2147483647, Default: ""},
@@ -2234,17 +2284,17 @@ var (
 			{
 				Name:    "routemodel_code",
 				Unique:  true,
-				Columns: []*schema.Column{RouteModelsColumns[4]},
+				Columns: []*schema.Column{RouteModelsColumns[5]},
 			},
 			{
 				Name:    "routemodel_visibility_enabled",
 				Unique:  false,
-				Columns: []*schema.Column{RouteModelsColumns[7], RouteModelsColumns[9]},
+				Columns: []*schema.Column{RouteModelsColumns[8], RouteModelsColumns[10]},
 			},
 			{
 				Name:    "routemodel_media_type_enabled",
 				Unique:  false,
-				Columns: []*schema.Column{RouteModelsColumns[8], RouteModelsColumns[9]},
+				Columns: []*schema.Column{RouteModelsColumns[9], RouteModelsColumns[10]},
 			},
 		},
 	}
@@ -3364,6 +3414,7 @@ var (
 		APIKeysTable,
 		APIKeyQuotaReservationsTable,
 		AdminUsersTable,
+		AssetGroupsTable,
 		AuditLogsTable,
 		CanvasGenerationRunsTable,
 		ClusterChallengesTable,
@@ -3386,6 +3437,7 @@ var (
 		ModelAccountModelsTable,
 		ModelProvidersTable,
 		ModelRoutesTable,
+		OauthRecordsTable,
 		ObjectDeletionJobsTable,
 		ObjectReconcileCheckpointsTable,
 		ObjectStorageConfigsTable,

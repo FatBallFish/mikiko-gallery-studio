@@ -2176,6 +2176,9 @@ components:
         enabled: { type: boolean }
         extra:
           type: object
+          properties:
+            native_image:
+              $ref: ./common.yaml#/components/schemas/NativeImageConfig
           additionalProperties: true
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
@@ -2219,6 +2222,9 @@ components:
           default: false
         extra:
           type: object
+          properties:
+            native_image:
+              $ref: ./common.yaml#/components/schemas/NativeImageConfig
           additionalProperties: true
     AdminModelAccountModelResponse:
       type: object
@@ -2240,6 +2246,8 @@ components:
     AdminRouteModel:
       type: object
       properties:
+        image_pricing:
+          $ref: '#/components/schemas/RouteImagePricing'
         id: { type: integer, format: int64 }
         code: { type: string }
         name: { type: string }
@@ -2269,6 +2277,8 @@ components:
       type: object
       required: [code, name, visibility, media_type]
       properties:
+        image_pricing:
+          $ref: '#/components/schemas/RouteImagePricing'
         code: { type: string }
         name: { type: string }
         description: { type: string }
@@ -2296,3 +2306,64 @@ components:
                 $ref: '#/components/schemas/AdminRouteModel'
             pagination:
               $ref: ./common.yaml#/components/schemas/Pagination
+    RouteImagePricing:
+      type: object
+      nullable: true
+      additionalProperties: false
+      required: [schema_version, rules]
+      properties:
+        schema_version: { type: integer, enum: [1] }
+        rules:
+          type: array
+          minItems: 1
+          description: One rule per unique operation. Missing operation means unconfigured.
+          items: { $ref: '#/components/schemas/RouteImagePricingRule' }
+    RouteImagePricingTier:
+      type: object
+      additionalProperties: false
+      required: [name, price]
+      description: Exactly one of max_pixels or base_resolution; pixel thresholds strictly increase. Resolution matching preserves legacy tiers.
+      properties:
+        name: { type: string, minLength: 1 }
+        price: { type: string, pattern: '^[0-9]+(\.[0-9]+)?$' }
+        max_pixels: { type: integer, format: int64, minimum: 1 }
+        base_resolution: { type: string, minLength: 1 }
+    RouteImagePricingRule:
+      type: object
+      additionalProperties: false
+      required: [operation, mode, currency, version, input]
+      properties:
+        operation: { type: string, enum: [generate, edit, layer_decomposition] }
+        mode: { type: string, enum: [per_image, pixel_token] }
+        currency: { type: string, enum: [CNY, points] }
+        version: { type: string, minLength: 1 }
+        input:
+          type: object
+          additionalProperties: false
+          required: [free_images]
+          properties:
+            free_images: { type: integer, minimum: 0 }
+            per_image: { type: string, pattern: '^[0-9]+(\.[0-9]+)?$' }
+        output_tiers:
+          type: array
+          items: { $ref: '#/components/schemas/RouteImagePricingTier' }
+        pixel_token:
+          type: object
+          additionalProperties: false
+          required: [definition, pixels_per_token, input_per_million, output_per_million]
+          description: Platform units; ceil(width*height/pixels_per_token) per image, then sum. Not vendor usage. Cannot mix with per-image or layers.
+          properties:
+            definition: { type: string, enum: [platform_pixels_v1] }
+            pixels_per_token: { type: integer, format: int64, minimum: 1 }
+            input_per_million: { type: string, pattern: '^[0-9]+(\.[0-9]+)?$' }
+            output_per_million: { type: string, pattern: '^[0-9]+(\.[0-9]+)?$' }
+        layers:
+          type: object
+          additionalProperties: false
+          required: [confirmed, tiers]
+          properties:
+            confirmed: { type: boolean }
+            base_price: { type: string, pattern: '^[0-9]+(\.[0-9]+)?$' }
+            tiers:
+              type: array
+              items: { $ref: '#/components/schemas/RouteImagePricingTier' }

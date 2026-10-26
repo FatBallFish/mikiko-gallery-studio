@@ -27,9 +27,12 @@ if (!options.groups.includes('城市') || !options.models.includes('plus') || !o
 }
 
 const merged = mergeReferenceAssets([{ id: 'a' }, { id: 'b' }], [{ id: 'b' }, { id: 'c' }], 2)
-if (JSON.stringify(merged.map((item) => item.id)) !== JSON.stringify(['b', 'c'])) {
-  throw new Error(`reference merge should prefer incoming assets and respect limit, got ${JSON.stringify(merged)}`)
+if (JSON.stringify(merged.map((item) => item.id)) !== JSON.stringify(['a', 'b'])) {
+  throw new Error(`overflow must preserve current references atomically, got ${JSON.stringify(merged)}`)
 }
+if (mergeReferenceAssets([{ id: 'keep' }], [{ id: 'new' }], 0)[0]?.id !== 'keep') throw new Error('max zero must never clear existing references')
+const admitted = mergeReferenceAssets([{ id: 'a' }], [{ id: 'a' }, { id: 'b' }], 2)
+if (admitted.map((item) => item.id).join(',') !== 'a,b') throw new Error('admitted merge preserves order and deduplicates')
 
 const reuseCapability = {
   task_types: ['text_to_image', 'image_edit'],

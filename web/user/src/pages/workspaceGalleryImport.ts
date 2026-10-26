@@ -50,11 +50,12 @@ export function galleryImportOptions(images: GalleryImage[]) {
 
 export function mergeReferenceAssets<T extends { id: string }>(current: T[], incoming: T[], limit: number) {
   const byId = new Map<string, T>()
-  for (const item of [...incoming, ...current]) {
+  for (const item of [...current, ...incoming]) {
     if (!item.id || byId.has(item.id)) continue
     byId.set(item.id, item)
   }
-  return Array.from(byId.values()).slice(0, Math.max(0, limit))
+  const merged = Array.from(byId.values())
+  return merged.length > limit ? current : merged
 }
 
 export function firstGalleryReferenceReuse(currentReferenceCount: number, imported: ReferenceAsset[], capability: Capability) {

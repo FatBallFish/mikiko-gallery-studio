@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>图片任务 — Mikiko Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/admin.css">
+<style>
+  .it-route { display: grid; gap: 2px; }
+  .it-route strong { font-size: 13px; font-weight: 600; }
+  .it-route span { color: var(--a-ink-3); font-family: var(--font-admin-mono); font-size: 10.5px; }
+  .it-chain { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 3px; }
+  .it-chain i { color: var(--a-ink-3); font-style: normal; font-size: 10px; }
+  .it-attempt { display: grid; gap: 8px; padding: 13px; border: 1px solid var(--a-line); border-radius: 9px; background: var(--a-surface); }
+  .it-attempt__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .it-attempt__head strong { font-size: 12.5px; }
+  .it-attempt code { font-family: var(--font-admin-mono); font-size: 11px; color: var(--a-ink-2); overflow-wrap: anywhere; }
+  .it-snapshot { padding: 12px; border: 1px solid var(--a-line); border-radius: 8px; background: var(--a-surface-2); font-family: var(--font-admin-mono); font-size: 11px; line-height: 1.7; color: var(--a-ink-2); overflow-x: auto; white-space: pre; }
+</style>
+</head>
+<body data-site="admin" data-page="call-records" data-title="图片任务">
+<div class="a-shell"><div class="a-main">
+  <main class="a-content">
+    <header class="a-page-head">
+      <div class="a-page-head__copy">
+        <span class="a-kicker">Image Tasks</span>
+        <h1>图片任务</h1>
+        <p>按用户、路由、模型与错误码定位任务。用户列展示名称与邮箱，点击可查看账户摘要；调用链与计费快照在抽屉里展开。</p>
+      </div>
+      <div class="a-page-head__actions">
+        <button class="a-btn a-btn--sm" type="button" data-toast="已刷新图片任务">刷新</button>
+        <button class="a-btn a-btn--sm" type="button" data-toast="已导出当前筛选结果">导出</button>
+      </div>
+    </header>
+
+    <div class="a-metrics" style="margin-bottom:16px">
+      <div class="a-metric"><div class="a-metric__label">当前结果</div><div class="a-metric__value">18,204</div><div class="a-metric__foot">近 24 小时</div></div>
+      <div class="a-metric"><div class="a-metric__label">成功率</div><div class="a-metric__value">97.6%</div><div class="a-metric__foot">较昨日 +1.2%</div></div>
+      <div class="a-metric"><div class="a-metric__label">平均耗时</div><div class="a-metric__value">7.4<span style="font-size:14px;color:var(--a-ink-3)">s</span></div><div class="a-metric__foot">P95 18.2s</div></div>
+      <div class="a-metric"><div class="a-metric__label">消耗积分</div><div class="a-metric__value">1.02M</div><div class="a-metric__foot">成本 ¥ 2,846.20</div></div>
+    </div>
+
+    <section class="a-filters">
+      <div class="a-filters__row">
+        <label class="a-field"><span>用户</span><div class="a-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="a-input" placeholder="姓名 / 邮箱 / 用户 ID"></div></label>
+        <label class="a-field"><span>任务状态</span><select class="a-select"><option>全部状态</option><option>排队中</option><option>执行中</option><option>成功</option><option>失败</option><option>已取消</option></select></label>
+        <label class="a-field"><span>路由模型</span><select class="a-select"><option>全部路由</option><option>Plus Image</option><option>Pro Image</option><option>Base Image</option><option>图片编辑</option></select></label>
+        <label class="a-field"><span>调用入口</span><select class="a-select"><option>全部入口</option><option>用户 Web</option><option>Open API</option><option>OpenAI 兼容</option></select></label>
+      </div>
+      <div class="a-filters__row a-filters__more">
+        <label class="a-field"><span>任务 ID</span><input class="a-input" placeholder="task_…"></label>
+        <label class="a-field"><span>错误码</span><select class="a-select"><option>全部错误码</option><option>MODEL_ROUTE_NOT_FOUND</option><option>MODEL_ROUTE_NO_CANDIDATE</option><option>ROUTE_MODEL_PRICE_MISSING</option><option>BILLING_INSUFFICIENT_POINTS</option><option>UPSTREAM_UNAVAILABLE</option></select></label>
+        <label class="a-field"><span>创建时间从</span><input class="a-input" type="date" value="2026-10-22"></label>
+        <label class="a-field"><span>创建时间至</span><input class="a-input" type="date" value="2026-10-22"></label>
+      </div>
+      <div class="a-filters__foot">
+        <span class="a-filters__result">共 <b>18,204</b> 条 · 第 1 / 911 页</span>
+        <div class="a-filters__actions">
+          <button class="a-btn a-btn--sm a-btn--quiet" type="button" data-filter-more>更多筛选</button>
+          <button class="a-btn a-btn--sm" type="button" data-toast="已重置筛选">重置</button>
+          <button class="a-btn a-btn--sm a-btn--primary" type="button" data-toast="已应用筛选">查询</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="a-panel a-panel--flush" style="margin-top:16px">
+      <div class="a-panel__head">
+        <div><h2>任务列表</h2><p>点击行查看详情；用户、路由与模型均已映射为可读名称。</p></div>
+        <span class="a-hint">按创建时间倒序</span>
+      </div>
+      <div class="a-table-wrap">
+        <table class="a-table" style="min-width:1180px">
+          <thead><tr><th>任务 / 时间</th><th>用户</th><th>路由与模型</th><th>配置 / 提示词</th><th class="is-num">积分</th><th class="is-num">耗时</th><th>状态</th><th class="is-actions">操作</th></tr></thead>
+          <tbody>
+            <tr data-row-open="#task-detail" style="cursor:pointer">
+              <td><div class="a-cell-stack"><strong style="font-family:var(--font-admin-mono);font-size:12px">task_8f21c4e0</strong><span>10-22 18:42:11</span></div></td>
+              <td><button class="a-cell-entity" type="button" data-open="#user-peek" data-row-ignore><span class="a-cell-entity__avatar">岑</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">岑屿</span><span class="a-cell-entity__meta">cenyu@atelier.moe</span></span></button></td>
+              <td><div class="it-route"><strong>Plus Image</strong><span>plus-image · seedream-4.0</span><div class="it-chain"><span class="a-tag">OpenAI 兼容</span><i>→</i><span class="a-tag">acc-east-2</span></div></div></td>
+              <td><div class="a-cell-stack"><strong style="font-weight:500;max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">黄昏时分的玻璃温室，暖金色斜光…</strong><span>文生图 · 2K · 4:5 · 参考图 2</span></div></td>
+              <td class="is-num">24.00</td><td class="is-num">9.4s</td>
+              <td><span class="a-badge a-badge--ok"><i></i>成功</span></td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#task-detail" data-row-ignore>详情</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="复制任务 ID" data-copy="task_8f21c4e0" data-row-ignore>⧉</button></div></td>
+            </tr>
+            <tr data-row-open="#task-detail" style="cursor:pointer">
+              <td><div class="a-cell-stack"><strong style="font-family:var(--font-admin-mono);font-size:12px">task_2a0c11f9</strong><span>10-22 18:36:02</span></div></td>
+              <td><button class="a-cell-entity" type="button" data-open="#user-peek" data-row-ignore><span class="a-cell-entity__avatar">沈</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">沈砚白</span><span class="a-cell-entity__meta">shen.yanbai@studio.moe</span></span></button></td>
+              <td><div class="it-route"><strong>Pro Image</strong><span>pro-image · flux-1.1-pro</span><div class="it-chain"><span class="a-tag">Open API</span><i>→</i><span class="a-tag">acc-east-1</span></div></div></td>
+              <td><div class="a-cell-stack"><strong style="font-weight:500;max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">建筑立面，雨后蓝色时刻，湿反光…</strong><span>文生图 · 4K · 16:9</span></div></td>
+              <td class="is-num">48.00</td><td class="is-num">22.8s</td>
+              <td><span class="a-badge a-badge--bad"><i></i>失败</span></td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#task-detail" data-row-ignore>详情</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="复制任务 ID" data-copy="task_2a0c11f9" data-row-ignore>⧉</button></div></td>
+            </tr>
+            <tr data-row-open="#task-detail" style="cursor:pointer">
+              <td><div class="a-cell-stack"><strong style="font-family:var(--font-admin-mono);font-size:12px">task_0c82be31</strong><span>10-22 18:30:47</span></div></td>
+              <td><button class="a-cell-entity" type="button" data-open="#user-peek" data-row-ignore><span class="a-cell-entity__avatar">林</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">林知远</span><span class="a-cell-entity__meta">lin.zhiyuan@studio.moe</span></span></button></td>
+              <td><div class="it-route"><strong>图片编辑</strong><span>image-edit · seedream-edit</span><div class="it-chain"><span class="a-tag">用户 Web</span><i>→</i><span class="a-tag">acc-east-2</span></div></div></td>
+              <td><div class="a-cell-stack"><strong style="font-weight:500;max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">把背景替换成阴天海面，保留人物…</strong><span>图片编辑 · 2K · 4:5 · 参考图 1</span></div></td>
+              <td class="is-num">12.00</td><td class="is-num">6.2s</td>
+              <td><span class="a-badge a-badge--ok"><i></i>成功</span></td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#task-detail" data-row-ignore>详情</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-copy="task_0c82be31" data-toast="复制任务 ID" data-row-ignore>⧉</button></div></td>
+            </tr>
+            <tr data-row-open="#task-detail" style="cursor:pointer">
+              <td><div class="a-cell-stack"><strong style="font-family:var(--font-admin-mono);font-size:12px">task_77b30ac2</strong><span>10-22 18:28:13</span></div></td>
+              <td><button class="a-cell-entity" type="button" data-open="#user-peek" data-row-ignore><span class="a-cell-entity__avatar">苏</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">苏迟</span><span class="a-cell-entity__meta">suchi@inkroom.cn</span></span></button></td>
+              <td><div class="it-route"><strong>Plus Image</strong><span>plus-image · seedream-4.0</span><div class="it-chain"><span class="a-tag">用户 Web</span><i>→</i><span class="a-tag">acc-east-2</span></div></div></td>
+              <td><div class="a-cell-stack"><strong style="font-weight:500;max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">亚麻布上的柑橘，午后自然光…</strong><span>文生图 · 2K · 4:5</span></div></td>
+              <td class="is-num">24.00</td><td class="is-num">—</td>
+              <td><span class="a-badge a-badge--info"><i></i>执行中</span></td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#task-detail" data-row-ignore>详情</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-copy="task_77b30ac2" data-toast="复制任务 ID" data-row-ignore>⧉</button></div></td>
+            </tr>
+            <tr data-row-open="#task-detail" style="cursor:pointer">
+              <td><div class="a-cell-stack"><strong style="font-family:var(--font-admin-mono);font-size:12px">task_5d11e8a0</strong><span>10-22 18:21:55</span></div></td>
+              <td><button class="a-cell-entity" type="button" data-open="#user-peek" data-row-ignore><span class="a-cell-entity__avatar">何</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">何弦</span><span class="a-cell-entity__meta">hexian@studio.moe</span></span></button></td>
+              <td><div class="it-route"><strong>Plus Image</strong><span>plus-image · seedream-4.0</span><div class="it-chain"><span class="a-tag">OpenAI 兼容</span><i>→</i><span class="a-tag">acc-east-1</span></div></div></td>
+              <td><div class="a-cell-stack"><strong style="font-weight:500;max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">织物层叠褶皱，侧逆光…</strong><span>文生图 · 1K · 1:1</span></div></td>
+              <td class="is-num">6.00</td><td class="is-num">3.1s</td>
+              <td><span class="a-badge a-badge--warn"><i></i>已取消</span></td>
+              <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#task-detail" data-row-ignore>详情</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-copy="task_5d11e8a0" data-toast="复制任务 ID" data-row-ignore>⧉</button></div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="a-pager">
+        <div class="a-pager__info">显示 <b>1–20</b>，共 <b>18,204</b> 条</div>
+        <div class="a-pager__controls"><button class="a-pager__btn" disabled>‹</button><button class="a-pager__btn is-active">1</button><button class="a-pager__btn">2</button><button class="a-pager__btn">3</button><button class="a-pager__btn">…</button><button class="a-pager__btn">911</button><button class="a-pager__btn">›</button></div>
+        <div class="a-pager__size"><span>每页</span><select><option>20</option><option>50</option><option>100</option></select></div>
+      </div>
+    </section>
+
+    <div class="a-grid a-grid--3" style="margin-top:16px">
+      <section class="a-panel a-panel--pad"><div class="a-section-title" style="margin:0"><h2>路由模型调用量</h2><span class="a-hint">今日</span></div>
+        <div class="a-dist"><div class="a-dist__row"><span>Plus Image</span><div class="a-dist__bar"><i style="width:78%"></i></div><b>8,412</b></div><div class="a-dist__row"><span>Pro Image</span><div class="a-dist__bar"><i style="width:52%"></i></div><b>5,603</b></div><div class="a-dist__row"><span>Base Image</span><div class="a-dist__bar"><i style="width:34%"></i></div><b>3,668</b></div><div class="a-dist__row"><span>图片编辑</span><div class="a-dist__bar"><i style="width:12%"></i></div><b>1,284</b></div></div>
+      </section>
+      <section class="a-panel a-panel--pad"><div class="a-section-title" style="margin:0"><h2>底层账号调用量</h2><span class="a-hint">今日</span></div>
+        <div class="a-dist"><div class="a-dist__row"><span>acc-east-1</span><div class="a-dist__bar"><i style="width:64%"></i></div><b>6,882</b></div><div class="a-dist__row"><span>acc-east-2</span><div class="a-dist__bar"><i style="width:46%"></i></div><b>4,921</b></div><div class="a-dist__row"><span>acc-west-1</span><div class="a-dist__bar"><i style="width:22%"></i></div><b>2,341</b></div><div class="a-dist__row"><span>openrouter</span><div class="a-dist__bar"><i style="width:8%"></i></div><b>823</b></div></div>
+      </section>
+      <section class="a-panel a-panel--pad"><div class="a-section-title" style="margin:0"><h2>错误分布</h2><span class="a-hint">今日 447 失败</span></div>
+        <div class="a-dist"><div class="a-dist__row"><span>无可用候选</span><div class="a-dist__bar"><i style="width:42%;background:var(--a-danger)"></i></div><b>188</b></div><div class="a-dist__row"><span>上游不可用</span><div class="a-dist__bar"><i style="width:26%;background:var(--a-warn)"></i></div><b>116</b></div><div class="a-dist__row"><span>余额不足</span><div class="a-dist__bar"><i style="width:18%;background:var(--a-warn)"></i></div><b>81</b></div><div class="a-dist__row"><span>缺价格</span><div class="a-dist__bar"><i style="width:9%;background:var(--a-info)"></i></div><b>39</b></div></div>
+      </section>
+    </div>
+  </main>
+</div></div>
+
+<!-- task detail drawer -->
+<div class="a-scrim"></div>
+<aside class="a-drawer a-drawer--wide" id="task-detail" role="dialog" aria-modal="true" aria-label="图片任务详情">
+  <header class="a-drawer__head">
+    <div><h2>图片任务详情</h2><p>task_8f21c4e0 · 2026-10-22 18:42:11 · 用户 Web</p></div>
+    <div class="a-drawer__spacer"></div>
+    <span class="a-badge a-badge--ok"><i></i>成功</span>
+    <button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </header>
+  <div class="a-drawer__body" style="padding-bottom:0">
+    <div class="a-tabs" data-tabs="task">
+      <button class="a-tab is-active" data-tab="task-overview">概览</button>
+      <button class="a-tab" data-tab="task-attempts">调用尝试 <span class="a-tab__count">2</span></button>
+      <button class="a-tab" data-tab="task-billing">计费快照</button>
+      <button class="a-tab" data-tab="task-raw">原始数据</button>
+    </div>
+    <div data-tab-panels="task">
+      <div data-panel="task-overview" style="display:grid;gap:16px">
+        <div class="a-grid a-grid--2" style="align-items:start">
+          <div class="a-panel" style="overflow:hidden;box-shadow:none">
+            <img src="https://picsum.photos/seed/task-result/640/800" data-seed="task-result" alt="任务结果" style="width:100%;max-height:360px;object-fit:contain;background:var(--a-surface-2)">
+          </div>
+          <div style="display:grid;gap:12px">
+            <dl class="a-kv">
+              <div><dt>用户</dt><dd><button class="a-cell-entity" type="button" data-open="#user-peek"><span class="a-cell-entity__avatar" style="width:24px;height:24px;border-radius:6px;font-size:9px">岑</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name" style="font-size:12.5px">岑屿</span><span class="a-cell-entity__meta">cenyu@atelier.moe</span></span></button></dd></div>
+              <div><dt>入口</dt><dd>用户 Web · Chrome 141</dd></div>
+              <div><dt>路由模型</dt><dd>Plus Image <span class="a-tag">plus-image</span></dd></div>
+              <div><dt>真实模型</dt><dd>seedream-4.0 <span class="a-tag">acc-east-2</span></dd></div>
+              <div><dt>任务类型</dt><dd>文生图</dd></div>
+              <div><dt>尺寸</dt><dd>2K · 4:5 · 1120 × 1400</dd></div>
+              <div><dt>耗时</dt><dd>9.4 秒 · 2 次尝试</dd></div>
+            </dl>
+            <div class="a-banner a-banner--info" style="font-size:12.5px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg><div><strong style="font-size:12.5px">第 2 次尝试成功</strong><div class="a-hint">第 1 次因上游 504 超时，自动切换候选账号后成功。</div></div></div>
+          </div>
+        </div>
+        <section class="a-drawer__section">
+          <h3>提示词与参数</h3>
+          <div class="a-panel" style="box-shadow:none;padding:14px;font-size:13px;line-height:1.7;color:var(--a-ink-2)">黄昏时分的玻璃温室，暖金色斜光穿过锈蚀的钢架，空气中有细小尘埃悬浮。前景是几株叶片卷曲的热带植物，背景虚化成深绿。胶片颗粒，柔和的高光溢出，安静的叙事感，中画幅质感。</div>
+          <dl class="a-kv">
+            <div><dt>质量</dt><dd>high</dd></div>
+            <div><dt>输出格式</dt><dd>PNG</dd></div>
+            <div><dt>参考图</dt><dd>2 张（见原始数据 image_ids）</dd></div>
+            <div><dt>输出数量</dt><dd>4</dd></div>
+            <div><dt>审核等级</dt><dd>标准</dd></div>
+          </dl>
+        </section>
+        <section class="a-drawer__section">
+          <h3>用户归属</h3>
+          <div class="a-panel" style="box-shadow:none;padding:14px;display:flex;flex-wrap:wrap;align-items:center;gap:10px">
+            <span class="a-cell-entity__avatar">岑</span>
+            <div style="flex:1;min-width:180px"><strong style="display:block;font-size:13px">岑屿</strong><span class="a-hint">cenyu@atelier.moe · #10241 · plus</span></div>
+            <a class="a-row-btn" href="users.html">打开用户</a>
+            <button class="a-row-btn" type="button" data-open="#user-peek">摘要</button>
+          </div>
+        </section>
+      </div>
+
+      <div data-panel="task-attempts" hidden style="display:grid;gap:12px">
+        <div class="it-attempt">
+          <div class="it-attempt__head"><strong>尝试 1 · acc-east-1 / seedream-4.0</strong><span class="a-badge a-badge--bad"><i></i>上游 504</span></div>
+          <dl class="a-kv" style="margin-top:2px">
+            <div><dt>开始 / 结束</dt><dd>18:42:11.204 → 18:42:29.881</dd></div>
+            <div><dt>适配器</dt><dd>openai-compatible</dd></div>
+            <div><dt>账号模型</dt><dd>#4021 · acc-east-1 / seedream-4.0</dd></div>
+            <div><dt>错误</dt><dd style="color:var(--a-danger)">UPSTREAM_TIMEOUT</dd></div>
+            <div><dt>错误明细</dt><dd><code>upstream request exceeded 18s; retry with fallback candidate</code></dd></div>
+          </dl>
+        </div>
+        <div class="it-attempt" style="border-color:var(--a-accent-line)">
+          <div class="it-attempt__head"><strong>尝试 2 · acc-east-2 / seedream-4.0</strong><span class="a-badge a-badge--ok"><i></i>成功</span></div>
+          <dl class="a-kv" style="margin-top:2px">
+            <div><dt>开始 / 结束</dt><dd>18:42:30.112 → 18:42:39.204</dd></div>
+            <div><dt>适配器</dt><dd>openai-compatible</dd></div>
+            <div><dt>账号模型</dt><dd>#4088 · acc-east-2 / seedream-4.0</dd></div>
+            <div><dt>结果</dt><dd>4 张 · 实际 1120 × 1400</dd></div>
+          </dl>
+        </div>
+      </div>
+
+      <div data-panel="task-billing" hidden style="display:grid;gap:14px">
+        <div class="a-metrics" style="grid-template-columns:repeat(3,1fr)">
+          <div class="a-metric"><div class="a-metric__label">预估积分</div><div class="a-metric__value" style="font-size:22px">24.00</div></div>
+          <div class="a-metric"><div class="a-metric__label">实际扣除</div><div class="a-metric__value" style="font-size:22px">24.00</div></div>
+          <div class="a-metric"><div class="a-metric__label">上游成本</div><div class="a-metric__value" style="font-size:22px">¥ 0.62</div></div>
+        </div>
+        <div class="a-panel" style="box-shadow:none;padding:16px">
+          <dl class="a-kv">
+            <div><dt>价格配置</dt><dd>Plus Image · 2K · 文生图 · 4:5</dd></div>
+            <div><dt>基础积分</dt><dd>6.00 / 张</dd></div>
+            <div><dt>参考图倍率</dt><dd>1.0</dd></div>
+            <div><dt>输出数量</dt><dd>4 张</dd></div>
+            <div><dt>计费倍率</dt><dd>plus 分组 × 1.0</dd></div>
+            <div><dt>结算状态</dt><dd><span class="a-badge a-badge--ok"><i></i>已结算</span></dd></div>
+          </dl>
+        </div>
+        <div class="a-banner a-banner--info" style="font-size:12.5px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg><span>计费按任务最终成功输出数量结算，失败尝试不重复扣费。</span></div>
+      </div>
+
+      <div data-panel="task-raw" hidden style="display:grid;gap:12px">
+        <div class="a-section-title" style="margin:0"><h2>请求快照</h2><button class="a-row-btn" type="button" data-copy='{"model":"plus-image","quality":"high"}'>复制 JSON</button></div>
+        <pre class="it-snapshot">{
+  "task_id": "task_8f21c4e0",
+  "user_id": 10241,
+  "route_model_code": "plus-image",
+  "account_model_id": 4088,
+  "model_account_id": 12,
+  "entry": "web",
+  "status": "succeeded",
+  "actual_params": {
+    "width": 1120,
+    "height": 1400,
+    "quality": "high",
+    "format": "png",
+    "n": 4
+  }
+}</pre>
+      </div>
+    </div>
+  </div>
+  <footer class="a-drawer__foot">
+    <button class="a-btn a-btn--sm" type="button" data-toast="已复制任务 ID">复制任务 ID</button>
+    <a class="a-btn a-btn--sm" href="users.html">查看用户</a>
+    <a class="a-btn a-btn--sm a-btn--primary" href="routing.html">检查路由</a>
+  </footer>
+</aside>
+
+<!-- user peek -->
+<div class="a-modal" id="user-peek" role="dialog" aria-modal="true" aria-label="用户摘要">
+  <div class="a-modal__head">
+    <div style="display:flex;align-items:center;gap:11px">
+      <span class="a-cell-entity__avatar" style="width:42px;height:42px;border-radius:11px;font-size:14px">岑</span>
+      <div><h2>岑屿</h2><p class="a-hint" style="font-family:var(--font-admin-mono);font-size:11px">#10241 · plus · 正常</p></div>
+    </div>
+    <button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </div>
+  <dl class="a-kv">
+    <div><dt>邮箱</dt><dd>cenyu@atelier.moe</dd></div>
+    <div><dt>积分余额</dt><dd><span class="a-num">3,280.00</span> · 冻结 24.00</dd></div>
+    <div><dt>本月生成</dt><dd>184 次 · 成功 181 · 失败 3</dd></div>
+    <div><dt>最近活跃</dt><dd>2 分钟前 · IP 203.0.113.24</dd></div>
+    <div><dt>注册时间</dt><dd>2026-08-14</dd></div>
+  </dl>
+  <div class="a-modal__foot">
+    <button class="a-btn a-btn--sm" type="button" data-close>关闭</button>
+    <a class="a-btn a-btn--sm a-btn--primary" href="users.html">打开用户管理</a>
+  </div>
+</div>
+<script src="../assets/shell.js"></script>
+</body>
+</html>

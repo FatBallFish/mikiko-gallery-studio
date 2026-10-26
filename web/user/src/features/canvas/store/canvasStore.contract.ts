@@ -55,3 +55,27 @@ const snapshot: CanvasDraftSnapshot = { schema_version: 1, user_id: 'user/1', ca
 if (decideCanvasDraftRecovery(snapshot, 7, false) !== 'recover_local') throw new Error('matching dirty draft must be recoverable')
 if (decideCanvasDraftRecovery(snapshot, 8, false) !== 'conflict') throw new Error('remote revision advance must create an explicit conflict')
 if (decideCanvasDraftRecovery(snapshot, 7, true) !== 'discard_local') throw new Error('identical clean remote document must discard stale draft')
+
+const mixedDocument: CanvasDocument = {
+  ...document,
+  nodes: [...document.nodes, { id: 'legacy', type: 'prompt', position: { x: 100, y: 100 }, size: { width: 200, height: 140 } }],
+}
+const mixedStore = createCanvasStore(mixedDocument, 1)
+mixedStore.getState().select(['legacy'])
+const pristine = mixedStore.getState().command
+mixedStore.getState().moveSelected({ x: 30, y: 30 })
+mixedStore.getState().resizeNode('legacy', { width: 900, height: 900 })
+mixedStore.getState().updateNode('legacy', () => { throw new Error('legacy updater invoked') })
+mixedStore.getState().autoLayoutSelected()
+if (mixedStore.getState().command !== pristine) throw new Error('legacy-only operations must not dirty store or add history')
+mixedStore.getState().copySelected()
+if (mixedStore.getState().clipboard?.nodes.length) throw new Error('legacy selection must not enter clipboard')
+mixedStore.getState().select(['note', 'legacy'])
+mixedStore.getState().moveSelected({ x: 40, y: 40 })
+if (mixedStore.getState().command.present.nodes[1].position.x !== 100 || mixedStore.getState().command.present.nodes[0].position.x !== 40) throw new Error('mixed selection moves editable nodes only')
+mixedStore.getState().copySelected()
+mixedStore.getState().pasteClipboard()
+if (mixedStore.getState().selectedIDs.length !== 1 || !mixedStore.getState().selectedIDs[0].startsWith('note-copy-')) throw new Error('paste must select only copied editable nodes')
+mixedStore.getState().select(['legacy'])
+mixedStore.getState().deleteSelected()
+if (mixedStore.getState().command.present.nodes.some((node) => node.id === 'legacy')) throw new Error('legacy remains deletable in store')

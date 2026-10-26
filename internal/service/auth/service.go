@@ -611,7 +611,7 @@ func (s *Service) Refresh(refreshToken string) (domainauth.User, domainauth.Sess
 	if user.Status == "closed" {
 		return domainauth.User{}, domainauth.Session{}, errs.New(403, errs.CodeForbidden, "user account has been closed")
 	}
-	if user.PasswordHash == "" || current.TokenVersion != user.TokenVersion {
+	if (user.PasswordHash == "" && !s.hasOIDCIdentityLocked(user.ID)) || current.TokenVersion != user.TokenVersion {
 		current.Status = "revoked"
 		s.persistRefreshTokenStateLocked(*current)
 		if s.store != nil {
@@ -1058,4 +1058,25 @@ func verifyPassword(encodedHash string, password string) bool {
 		return false
 	}
 	return bcrypt.CompareHashAndPassword([]byte(strings.TrimPrefix(encodedHash, "bcrypt$")), []byte(password)) == nil
+}
+
+// hasOIDCIdentityLocked preserves refresh for verified federated accounts while
+// retaining the password-setup barrier for legacy local passwordless sessions.
+func (s *Service) hasOIDCIdentityLocked(id int64) bool {
+	if s.store != nil {
+		lookup, ok := s.store.(interface {
+			HasOIDCIdentity(context.Context, int64) (bool, error)
+		})
+		if !ok {
+			return false
+		}
+		linked, err := lookup.HasOIDCIdentity(context.Background(), id)
+		return err == nil && linked
+	}
+	for _, identity := range s.identitiesByKey {
+		if identity.UserID == id && identity.Provider == OIDCProviderKey {
+			return true
+		}
+	}
+	return false
 }

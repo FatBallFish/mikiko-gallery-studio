@@ -38,18 +38,21 @@ import (
 	clusterservice "github.com/fatballfish/pic-gallery/internal/service/cluster"
 	galleryexportservice "github.com/fatballfish/pic-gallery/internal/service/galleryexport"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
+	imagetitleservice "github.com/fatballfish/pic-gallery/internal/service/imagetitle"
 	mediaassetservice "github.com/fatballfish/pic-gallery/internal/service/mediaasset"
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
 	objectcleanupservice "github.com/fatballfish/pic-gallery/internal/service/objectcleanup"
+	oidcservice "github.com/fatballfish/pic-gallery/internal/service/oidc"
 	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	promptoptimizerservice "github.com/fatballfish/pic-gallery/internal/service/promptoptimizer"
+	publicfeedservice "github.com/fatballfish/pic-gallery/internal/service/publicfeed"
 	redeemservice "github.com/fatballfish/pic-gallery/internal/service/redeem"
-	oidcservice "github.com/fatballfish/pic-gallery/internal/service/oidc"
 	secureconfigservice "github.com/fatballfish/pic-gallery/internal/service/secureconfig"
 	storageconfigservice "github.com/fatballfish/pic-gallery/internal/service/storageconfig"
 	textmodelservice "github.com/fatballfish/pic-gallery/internal/service/textmodel"
 	videocallbackservice "github.com/fatballfish/pic-gallery/internal/service/videocallback"
 	videopricingservice "github.com/fatballfish/pic-gallery/internal/service/videopricing"
+	videopublicationservice "github.com/fatballfish/pic-gallery/internal/service/videopublication"
 	videoroutingservice "github.com/fatballfish/pic-gallery/internal/service/videorouting"
 	videotaskservice "github.com/fatballfish/pic-gallery/internal/service/videotask"
 	"github.com/fatballfish/pic-gallery/internal/setup"
@@ -135,7 +138,7 @@ func Run() error {
 }
 
 func runAPI(dependencies apiRunDependencies) error {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	configureDefaultLogging()
 	if dependencies.runtimeEnvPath == nil {
 		dependencies.runtimeEnvPath = configuredRuntimeEnvPath
 	}
@@ -332,6 +335,7 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	adminSvc := adminconfigservice.NewServiceWithStore(cfg, entstore.NewAdminConfigStore(client))
 	billingStore := entstore.NewBillingStore(client, cfg.Billing.PointsScale)
 	billingSvc := billingservice.NewServiceWithStore(cfg.Billing, billingStore)
+	billingSvc.SetGenerationLimits(cfg.GenerationLimits)
 	billingSvc.SetAdminConfigResolver(adminSvc)
 	assetSvc := assetservice.NewServiceWithStoreAndRouter(cfg.GenerationLimits, entstore.NewAssetsStore(client), storageRegistry)
 	projectSvc := projectservice.NewService(entstore.NewProjectStore(client))
@@ -362,6 +366,7 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	modelAdminSvc := modeladminservice.NewServiceWithStore(modelAdminStore)
 	textModelStore := entstore.NewTextModelStore(client)
 	textModelSvc := textmodelservice.NewService(textModelStore, cfg.Security.SecureConfigEncryptionKey)
+	taskSvc.SetTitleGenerator(imagetitleservice.NewService(textModelSvc))
 	promptOptimizerSvc := promptoptimizerservice.NewService(textModelSvc, textModelStore, cfg.Security.PromptOptimizationQuoteSigningKey, nil)
 	slog.Info("database-backed stores enabled")
 
@@ -380,14 +385,20 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 		},
 	})
 	api.SetMediaAssetService(mediaAssetSvc)
+	api.SetPublicFeed(publicfeedservice.NewService(entstore.NewPublicFeedStore(client)))
+	api.SetVideoPublications(videopublicationservice.NewService(entstore.NewVideoPublicationStore(client), mediaAssetSvc))
 	videoConfigStore := entstore.NewVideoConfigStore(client)
 	videoRoutingSvc := videoroutingservice.NewService(videoConfigStore)
 	videoQuoteKey := sha256.Sum256([]byte("video-quote:" + cfg.Security.PromptOptimizationQuoteSigningKey))
 	videoQuoteSvc := videotaskservice.NewQuoteService(videoRoutingSvc, videopricingservice.NewService(adminVideoSvc, nil), videoQuoteKey[:], nil)
 	videoTaskSvc := videotaskservice.NewService(entstore.NewVideoTaskStore(client, billingStore), videoQuoteSvc, projectSvc, mediaAssetSvc, nil)
 	api.SetVideoServices(videoRoutingSvc, videoQuoteSvc, videoTaskSvc)
+	if err := configureDeveloperServices(cfg, client, api, authSvc, apiKeySvc, billingSvc, taskSvc, assetSvc, mediaAssetSvc, projectSvc, videoRoutingSvc, videoTaskSvc); err != nil {
+		return err
+	}
 	api.SetAdminVideoService(adminVideoSvc)
 	canvasGenerator := canvasservice.NewTaskGenerator(taskSvc, canvasservice.NewImageBillingEstimator(billingSvc), videoTaskSvc)
+	canvasGenerator.SetReferenceAssets(assetSvc, mediaAssetSvc)
 	canvasSvc := canvasservice.NewService(entstore.NewCanvasStore(client), canvasGenerator, nil)
 	canvasSvc.SetObserver(observability.DefaultMetrics())
 	api.SetCanvasService(canvasSvc)
@@ -656,12 +667,8 @@ func validatePromptOptimizationQuoteSigningKey(cfg config.Config) error {
 	return nil
 }
 
-func newRuntimeAPIKeyService(cfg config.Config, store apikeyservice.Store) (*apikeyservice.Service, error) {
-	signingSecretEncryptionKey := strings.TrimSpace(cfg.APIKey.SigningSecretEncryptionKey)
-	if isProductionEnv(cfg.App.Env) && isWeakAPIKeySigningSecretEncryptionKey(signingSecretEncryptionKey) {
-		return nil, fmt.Errorf("api key signing secret encryption key must be set to a non-development value in %s env", cfg.App.Env)
-	}
-	return apikeyservice.NewServiceWithSigningSecretKey(store, signingSecretEncryptionKey), nil
+func newRuntimeAPIKeyService(_ config.Config, store apikeyservice.Store) (*apikeyservice.Service, error) {
+	return apikeyservice.NewService(store), nil
 }
 
 func isProductionEnv(env string) bool {

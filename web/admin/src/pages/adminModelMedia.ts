@@ -1,3 +1,4 @@
+import { nativeImageProfile, type NativeImageProfile } from '../../../shared/native-image'
 import type { ModelAccount, ModelAccountModel } from '../../../shared/api-types'
 
 export type AdminModelMediaTab = "image" | "video" | "audio" | "text";
@@ -53,4 +54,9 @@ export function modelMediaType(
   const explicit = model.extra?.media_type;
   if (explicit === 'image' || explicit === 'video' || explicit === 'audio' || explicit === 'text') return explicit;
   return modelAccountMediaType(account);
+}
+
+export function adminNativeImageProfile(model: Pick<ModelAccountModel, 'extra' | 'model_code'>): NativeImageProfile | undefined {
+  const native = model.extra?.native_image as { model?: string; profile?: NativeImageProfile } | undefined
+  return native?.profile ?? nativeImageProfile(native?.model ?? model.model_code)
 }

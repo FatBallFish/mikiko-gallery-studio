@@ -42,6 +42,9 @@ import {
   RefreshCw,
   Save,
   Palette,
+  Bell,
+  Film,
+  Coins,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -57,4 +60,5 @@ export {
   Download, Copy, Edit, Globe, FolderPlus, FolderKanban, Trash2, Check, Plus, Minus,
   RotateCcw, Wallet, QrCode, Route, ShieldCheck, Layers, Image, Search, Filter,
   ArrowLeft, ArrowRight, ExternalLink, RefreshCw, Save, Palette,
+  Bell, Film, Coins,
 }

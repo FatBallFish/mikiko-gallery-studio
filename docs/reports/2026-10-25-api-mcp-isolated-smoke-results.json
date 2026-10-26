@@ -1,0 +1,28 @@
+{
+  "environment": "isolated fake-provider; not real upstream",
+  "command": "GOMAXPROCS=2 GOFLAGS=-p=2 ./scripts/workflow/api-smoke.sh",
+  "exit_code": 0,
+  "result": "PASS",
+  "isolated_base_url": "http://127.0.0.1:63437",
+  "log_path": "/tmp/api-key-acceptance-20261025/isolated-smoke.log",
+  "resources_cleaned": true,
+  "paid_real_provider_calls": 0,
+  "covered": [
+    "9 PostgreSQL integration command groups",
+    "setup/readiness/docs",
+    "Bearer developer model catalogue",
+    "Open API upload and proxy multipart completion",
+    "Open API image preflight/create and worker-driven succeeded status",
+    "image private gallery persisted results",
+    "uploaded image full download SHA256 check",
+    "video generation and artifact download ffprobe validation",
+    "artifact-loss failure handling"
+  ],
+  "not_covered": [
+    "OpenAI compatibility /v1/images/generations sync success",
+    "OpenAI compatibility /v1/images/generations SSE success",
+    "OpenAI compatibility /v1/images/edits success",
+    "new real-provider generation completion"
+  ],
+  "coverage_basis": "Inspected scripts/test/api_contract_smoke.sh; no /v1/images/generations or /v1/images/edits calls found. Do not infer compatibility coverage from model catalogue alone."
+}

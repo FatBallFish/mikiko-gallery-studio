@@ -1,5 +1,5 @@
 import type { Capability } from '../../../shared/api-types'
-import { consumeWorkspaceCreationDraft, normalizeWorkspaceCreationDraft, stageWorkspaceCreationDraft, workspaceCreationDraftFromSnapshot, workspaceCreationDraftStorageKey } from './workspaceCreationDraft'
+import { mergeWorkspaceReferenceRefresh, createWorkspaceRestoreGeneration, consumeWorkspaceCreationDraft, normalizeWorkspaceCreationDraft, stageWorkspaceCreationDraft, workspaceCreationDraftFromSnapshot, workspaceCreationDraftStorageKey } from './workspaceCreationDraft'
 
 const storage = new Map<string, string>()
 const session = { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => { storage.set(key, value) }, removeItem: (key: string) => { storage.delete(key) } }
@@ -21,8 +21,12 @@ const capability: Capability = {
   model_groups: [{ id: 'plus', code: 'plus', name: 'Plus', task_types: ['text_to_image', 'image_edit'], base_resolution: ['1K', '2K'], size_modes: ['ratio'], aspect_ratios: ['1:1'], quality: ['auto'], output_format: ['png'], moderation: ['auto'], supports_output_compression: false, max_output_image_count: 2, max_reference_image_count: 2, prices: [], supports_reference: true }],
 }
 const normalized = normalizeWorkspaceCreationDraft(consumed, capability)
-if (normalized.values.route_model_code !== 'plus' || normalized.values.base_resolution !== '1K' || normalized.values.aspect_ratio !== '1:1' || normalized.values.quality !== 'auto' || normalized.values.output_format !== 'png' || normalized.values.image_count !== 3) throw new Error(`creation draft fallbacks drifted: ${JSON.stringify(normalized)}`)
-if (normalized.notices.length < 4) throw new Error('every unsupported restored field should produce a fallback notice')
+if (normalized.values.route_model_code !== 'missing' || normalized.values.reference_asset_ids.join(',') !== 'ref-1' || normalized.values.image_count !== 3) throw new Error(`unavailable explicit model and references must be preserved: ${JSON.stringify(normalized)}`)
+if (!normalized.notices.some((notice) => notice.includes('missing'))) throw new Error('unavailable model needs an explanatory notice')
+const overLimit = normalizeWorkspaceCreationDraft({ ...consumed, route_model_code: 'plus', reference_asset_ids: ['a', 'b', 'c'] }, capability)
+if (overLimit.values.reference_asset_ids.join(',') !== 'a,b,c') throw new Error('restored references must never be sliced')
+const incompatible = normalizeWorkspaceCreationDraft({ ...consumed, route_model_code: 'custom' }, { ...capability, model_groups: [{ ...capability.model_groups[0], code: 'custom', task_types: ['text_to_image'] }] })
+if (incompatible.values.route_model_code !== 'custom' || incompatible.values.reference_asset_ids.length !== 1) throw new Error('unsupported task must keep explicit model and refs')
 
 const fanOutCount = normalizeWorkspaceCreationDraft({
   version: 1, prompt: 'fan out twelve images', task_type: 'text_to_image', route_model_code: 'plus',
@@ -111,7 +115,7 @@ const reused = workspaceCreationDraftFromSnapshot({
   output_format: 'webp', output_compression: 72, moderation: 'low', requested_output_image_count: 4,
   reference_asset_ids: ['ref-1', 'ref-2'],
 })
-if (reused.pixel_size !== '1536x1024' || reused.image_count !== 4 || reused.output_format !== 'webp' || reused.output_compression !== 72 || reused.reference_asset_ids?.length !== 0) {
+if (reused.pixel_size !== '1536x1024' || reused.image_count !== 4 || reused.output_format !== 'webp' || reused.output_compression !== 72 || reused.reference_asset_ids?.join(',') !== 'ref-1,ref-2') {
   throw new Error(`reused creation snapshot lost generation fields: ${JSON.stringify(reused)}`)
 }
 
@@ -124,3 +128,63 @@ try {
   throw new Error(`malformed stored drafts must not crash the workspace: ${String(error)}`)
 }
 if (malformed !== null) throw new Error('malformed stored drafts must be discarded')
+
+const quietAssetEdit = { version: 1 as const, intent: 'asset-edit' as const, prompt: '', task_type: 'image_edit' as const, reference_asset_ids: ['ref-1'] }
+stageWorkspaceCreationDraft(quietAssetEdit, session, history)
+const restoredEdit = consumeWorkspaceCreationDraft(session, history)
+if (restoredEdit?.intent !== 'asset-edit') throw new Error('asset-edit intent must survive staging and consumption')
+const editDefaults = normalizeWorkspaceCreationDraft(restoredEdit, capability)
+if (editDefaults.notices.length || editDefaults.values.task_type !== 'image_edit' || editDefaults.values.route_model_code !== 'plus' || editDefaults.values.reference_asset_ids[0] !== 'ref-1') throw new Error(`asset edits should quietly choose usable current defaults: ${JSON.stringify(editDefaults)}`)
+const historicalMissing = normalizeWorkspaceCreationDraft({ ...quietAssetEdit, intent: 'restore' }, capability)
+if (!historicalMissing.notices.some((notice) => notice.includes('未指定'))) throw new Error('historical restore must keep missing configuration notices')
+const explicitUnavailable = normalizeWorkspaceCreationDraft({ ...quietAssetEdit, route_model_code: 'removed' }, capability)
+if (!explicitUnavailable.notices.some((notice) => notice.includes('removed'))) throw new Error('asset edit must still warn about explicitly unavailable settings')
+const missingEditSource = normalizeWorkspaceCreationDraft({ ...quietAssetEdit, reference_asset_ids: [] }, capability)
+if (!missingEditSource.notices.length) throw new Error('asset edit must not suppress missing reference warnings')
+
+const generation = createWorkspaceRestoreGeneration()
+let currentContext = { project: 'p:1', user: 'u', model: 'model', references: 'existing' }
+let committed = 'existing'
+function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done }); return { promise, resolve } }
+async function restoreDeferred(promise: Promise<string>) {
+  const ticket = generation.begin({ ...currentContext })
+  const value = await promise
+  if (generation.current(ticket, currentContext)) committed = value
+  generation.finish(ticket)
+}
+const slowA = deferred<string>(), fastB = deferred<string>()
+const a = restoreDeferred(slowA.promise), b = restoreDeferred(fastB.promise)
+if (!generation.pending(currentContext)) throw new Error('pending restore must lock reference admission')
+fastB.resolve('B'); await b; slowA.resolve('A'); await a
+if (committed !== 'B') throw new Error('slow A must not overwrite newer B')
+for (const field of ['project', 'user', 'model', 'references'] as const) {
+  const delayed = deferred<string>()
+  const work = restoreDeferred(delayed.promise)
+  currentContext = { ...currentContext, [field]: currentContext[field] + '-changed' }
+  delayed.resolve('stale'); await work
+  if (committed !== 'B') throw new Error(`changed ${field} must invalidate restore`)
+}
+const modelB = deferred<string>(), modelC = deferred<string>()
+currentContext = { ...currentContext, model: 'B' }
+const choosingB = restoreDeferred(modelB.promise)
+currentContext = { ...currentContext, model: 'C' }
+const choosingC = restoreDeferred(modelC.promise)
+modelC.resolve('C'); await choosingC; modelB.resolve('B'); await choosingB
+if (String(committed) !== 'C') throw new Error('rapid model B/C selection must keep C')
+
+const beforeBounce = { ...currentContext }
+const bounceTicket = generation.begin(beforeBounce)
+generation.reconcile({ ...beforeBounce, model: 'temporary-other' })
+generation.reconcile(beforeBounce)
+if (generation.current(bounceTicket, beforeBounce)) throw new Error('context change then return must not revive a stale restore')
+
+// A stale-name refresh resolving concurrently with a 404 must keep the missing asset.
+const staleRename = deferred<{ id: string; name: string }>()
+const sourceAssets = [{ id: 'renamed', name: 'old' }, { id: 'missing', name: 'keep' }]
+// Rejected result models the getReferenceAsset 404 while the rename request is deferred.
+const missingResults = Promise.allSettled([staleRename.promise, Promise.reject({ status: 404 })])
+staleRename.resolve({ id: 'renamed', name: 'new' })
+const refreshed = mergeWorkspaceReferenceRefresh([...sourceAssets, { id: 'added', name: 'added' }], sourceAssets, await missingResults, (reason) => (reason as { status?: number }).status === 404)
+if (refreshed.map((asset) => asset.id).join(',') !== 'renamed,missing,added' || refreshed[0].name !== 'new' || !refreshed[1].reference_invalid_reason) throw new Error('stale refresh must retain and mark 404 references without dropping newer additions')
+const removedDuringRefresh = mergeWorkspaceReferenceRefresh([sourceAssets[1]], sourceAssets, await missingResults, () => true)
+if (removedDuringRefresh.length !== 1 || removedDuringRefresh[0].id !== 'missing') throw new Error('refresh must not resurrect references removed during request')

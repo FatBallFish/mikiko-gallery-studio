@@ -84,10 +84,13 @@ func TestImageTaskCreateOpenAPIResponsesDocumentCapabilityChanged(t *testing.T) 
 	if err := yaml.Unmarshal(openAPI, &spec); err != nil {
 		t.Fatalf("parse OpenAPI: %v", err)
 	}
-	for _, path := range []string{"/api/agent/image/v1/tasks", "/api/open/image/v1/tasks"} {
+	for path, conflict := range map[string]string{
+		"/api/agent/image/v1/tasks": "capability_changed",
+		"/api/open/v1/image-tasks":  "QUOTE_STALE",
+	} {
 		response, ok := spec.Paths[path].Post.Responses["409"]
-		if !ok || !strings.Contains(response.Description, "capability_changed") {
-			t.Errorf("POST %s must document 409 capability_changed, got %#v", path, response)
+		if !ok || !strings.Contains(response.Description, conflict) {
+			t.Errorf("POST %s must document 409 %s, got %#v", path, conflict, response)
 		}
 	}
 }

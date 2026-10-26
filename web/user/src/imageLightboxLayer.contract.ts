@@ -31,7 +31,7 @@ const zoomStart = source.indexOf('function ImageZoomViewer')
 const zoomEnd = source.indexOf('\nexport function PublicDetailIcon', zoomStart)
 const zoomSource = source.slice(zoomStart, zoomEnd)
 
-for (const required of ['<Modal', '<ImageZoomViewer', 'onPreviewImage={setZoomImage}']) {
+for (const required of ['<OverlayPortal>', "u-drawer is-open", '<ImageZoomViewer', 'onPreviewImage={setZoomImage}']) {
   if (!modalSource.includes(required)) {
     throw new Error(`ImageDetailModal should own the direct zoom lifecycle: ${required}`)
   }

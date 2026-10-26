@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>项目 — Mikiko Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Manrope:wght@300..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/user.css">
+</head>
+<body data-site="user" data-page="projects">
+<div class="u-shell"><div class="u-main">
+  <div class="u-content">
+    <div class="u-page-head">
+      <div class="u-page-head__copy">
+        <span class="u-eyebrow">Projects</span>
+        <h1 class="u-h1">项目</h1>
+        <p class="u-sub">项目是资产、任务与画布的归属边界。切换项目不会丢失其他项目的排队任务。</p>
+      </div>
+      <div class="u-page-head__actions">
+        <button class="u-btn u-btn--primary u-btn--sm" type="button" data-open="#new-project">新建项目</button>
+      </div>
+    </div>
+
+    <div class="u-plate">
+      <div class="u-list" style="padding:0 18px">
+        <div class="u-row">
+          <div class="u-row__main">
+            <span class="u-row__icon" style="color:var(--accent);background:var(--accent-soft)">◆</span>
+            <div class="u-row__copy"><strong>默认项目 <span class="u-chip u-chip--accent" style="height:19px;font-size:9px">当前</span></strong><span>862 项资产 · 128 个任务 · 3 张画布</span></div>
+          </div>
+          <div class="u-row__actions">
+            <button class="u-btn u-btn--sm" type="button" data-toast="已切换项目">切换</button>
+            <button class="u-icon-btn" type="button" aria-label="重命名" data-toast="默认项目不可重命名">✎</button>
+          </div>
+        </div>
+        <div class="u-row">
+          <div class="u-row__main">
+            <span class="u-row__icon">◈</span>
+            <div class="u-row__copy"><strong>夜航系列</strong><span>214 项资产 · 42 个任务 · 1 张画布</span></div>
+          </div>
+          <div class="u-row__actions">
+            <button class="u-btn u-btn--sm" type="button" data-toast="已切换到夜航系列">切换</button>
+            <button class="u-icon-btn" type="button" aria-label="重命名" data-toast="已打开重命名">✎</button>
+            <button class="u-icon-btn" type="button" aria-label="更多" data-toast="更多操作">⋯</button>
+          </div>
+        </div>
+        <div class="u-row">
+          <div class="u-row__main">
+            <span class="u-row__icon">◫</span>
+            <div class="u-row__copy"><strong>商业拍摄 · 2026Q4</strong><span>96 项资产 · 18 个任务 · 0 张画布</span></div>
+          </div>
+          <div class="u-row__actions">
+            <button class="u-btn u-btn--sm" type="button" data-toast="已切换到商业拍摄">切换</button>
+            <button class="u-icon-btn" type="button" aria-label="重命名" data-toast="已打开重命名">✎</button>
+            <button class="u-icon-btn" type="button" aria-label="删除" data-toast="删除前需选择资产转移目标">🗑</button>
+          </div>
+        </div>
+        <div class="u-row">
+          <div class="u-row__main">
+            <span class="u-row__icon">☾</span>
+            <div class="u-row__copy"><strong>灵感草稿</strong><span>32 项资产 · 6 个任务 · 2 张画布</span></div>
+          </div>
+          <div class="u-row__actions">
+            <button class="u-btn u-btn--sm" type="button" data-toast="已切换到灵感草稿">切换</button>
+            <button class="u-icon-btn" type="button" aria-label="重命名" data-toast="已打开重命名">✎</button>
+            <button class="u-icon-btn" type="button" aria-label="删除" data-toast="删除前需选择资产转移目标">🗑</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="u-empty" style="margin-top:20px">
+      <span class="u-empty__icon">＋</span>
+      <h3>再建一个项目</h3>
+      <p>把一个长期主题的所有资产、任务与画布收在同一个边界里，公开与私有设置互不影响。</p>
+      <button class="u-btn u-btn--primary u-btn--sm" type="button" data-open="#new-project">新建项目</button>
+    </div>
+  </div>
+</div></div>
+
+<div class="u-backdrop"></div>
+<div class="u-modal" id="new-project" role="dialog" aria-modal="true" aria-label="新建项目">
+  <div class="u-modal__head">
+    <div><h2 class="u-h2" style="font-size:22px">新建项目</h2><p class="u-sub" style="font-size:12.5px;margin-top:4px">项目名称最多 128 个字符。</p></div>
+    <button class="u-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </div>
+  <div style="display:grid;gap:14px">
+    <label class="u-field"><span class="u-label">项目名称</span><input class="u-input" placeholder="例如：品牌视觉 · 秋冬" autofocus></label>
+    <label class="u-field"><span class="u-label">描述 <span class="u-label__hint">可选</span></span><textarea class="u-textarea" placeholder="这个项目用来收集什么？"></textarea></label>
+    <label class="u-switch"><input type="checkbox"><span class="u-switch__track"></span>创建后立即切换到此项目</label>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px">
+      <button class="u-btn" type="button" data-close>取消</button>
+      <button class="u-btn u-btn--primary" type="button" data-close data-toast="项目已创建" data-tone="ok">创建项目</button>
+    </div>
+  </div>
+</div>
+<script src="../assets/shell.js"></script>
+</body>
+</html>

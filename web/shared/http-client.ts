@@ -201,6 +201,7 @@ export type RequestOptions = {
   query?: Record<string, QueryValue>
   body?: unknown
   serializedBody?: string
+  rawBody?: Blob
   formData?: FormData
   headers?: HeadersInit
   auth?: boolean
@@ -334,7 +335,9 @@ export class ApiClient {
     const sessionVersion = this.getSessionVersion?.()
     let body: BodyInit | undefined
 
-    if (options.formData) {
+    if (options.rawBody !== undefined) {
+      body = options.rawBody
+    } else if (options.formData) {
       body = options.formData
     } else if (options.serializedBody !== undefined) {
       headers.set('Content-Type', 'application/json')

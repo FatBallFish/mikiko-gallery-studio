@@ -3,7 +3,7 @@ package apikey
 import (
 	"context"
 	"errors"
-	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,12 +33,12 @@ func TestCreateKeyStoresOnlySecretHashAndAuthenticates(t *testing.T) {
 		t.Fatalf("expected stored key to contain only a hash, got %#v", created.Key)
 	}
 
-	identity, err := svc.AuthenticateNative(context.Background(), created.Key.AccessKey, "sk-task4-secret")
+	identity, err := svc.AuthenticateBearer(context.Background(), "sk-task4-secret")
 	if err != nil {
-		t.Fatalf("AuthenticateNative: %v", err)
+		t.Fatalf("AuthenticateBearer: %v", err)
 	}
 	if identity.UserID != 42 || identity.APIKeyID == 0 || identity.GroupCode != "plus" {
-		t.Fatalf("unexpected native identity %#v", identity)
+		t.Fatalf("unexpected bearer identity %#v", identity)
 	}
 
 	bearer, err := svc.AuthenticateBearer(context.Background(), "sk-task4-secret")
@@ -57,17 +57,17 @@ func TestAuthenticateRejectsMissingInvalidDisabledAndExpiredKeys(t *testing.T) {
 		t.Fatalf("CreateKey: %v", err)
 	}
 
-	if _, err := svc.AuthenticateNative(context.Background(), "ak-missing", "sk-reject"); err == nil {
-		t.Fatal("expected missing access key to be rejected")
+	if _, err := svc.AuthenticateBearer(context.Background(), "sk-missing"); err == nil {
+		t.Fatal("expected unknown bearer token to be rejected")
 	}
-	if _, err := svc.AuthenticateNative(context.Background(), created.Key.AccessKey, "wrong-secret"); err == nil {
-		t.Fatal("expected invalid signature to be rejected")
+	if _, err := svc.AuthenticateBearer(context.Background(), "wrong-secret"); err == nil {
+		t.Fatal("expected invalid bearer token to be rejected")
 	}
 
 	if err := svc.SetStatusForTest(context.Background(), created.Key.ID, "disabled"); err != nil {
 		t.Fatalf("SetStatusForTest disabled: %v", err)
 	}
-	if _, err := svc.AuthenticateNative(context.Background(), created.Key.AccessKey, "sk-reject"); err == nil {
+	if _, err := svc.AuthenticateBearer(context.Background(), "sk-reject"); err == nil {
 		t.Fatal("expected disabled key to be rejected")
 	}
 
@@ -196,10 +196,10 @@ func TestDeleteRevokesAndResetSecretRotatesCredentials(t *testing.T) {
 	if reset.Secret == "" || reset.Secret == "sk-old" || reset.Key.SecretHash == created.Key.SecretHash {
 		t.Fatalf("expected rotated secret and hash, got %#v", reset)
 	}
-	if _, err := svc.AuthenticateNative(ctx, created.Key.AccessKey, "sk-old"); err == nil {
+	if _, err := svc.AuthenticateBearer(ctx, "sk-old"); err == nil {
 		t.Fatal("expected old secret to stop authenticating after reset")
 	}
-	if _, err := svc.AuthenticateNative(ctx, created.Key.AccessKey, reset.Secret); err != nil {
+	if _, err := svc.AuthenticateBearer(ctx, reset.Secret); err != nil {
 		t.Fatalf("expected reset secret to authenticate: %v", err)
 	}
 
@@ -212,109 +212,57 @@ func TestDeleteRevokesAndResetSecretRotatesCredentials(t *testing.T) {
 	if _, err := svc.GetByID(ctx, 42, created.Key.ID); err == nil {
 		t.Fatal("expected deleted key to be hidden from scoped lookup")
 	}
-	if _, err := svc.AuthenticateNative(ctx, created.Key.AccessKey, reset.Secret); err == nil {
+	if _, err := svc.AuthenticateBearer(ctx, reset.Secret); err == nil {
 		t.Fatal("expected revoked/deleted key to stop authenticating")
 	}
 }
 
-func TestVerifyCanonicalHMACChecksTimestampBodyHashAndSignature(t *testing.T) {
+func TestScopesDefaultsExplicitEmptyValidationAndRotation(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(nil)
-	created, err := svc.CreateKey(ctx, CreateRequest{UserID: 42, Secret: "sk-hmac"})
+	legacy, err := svc.CreateKey(ctx, CreateRequest{UserID: 42})
 	if err != nil {
-		t.Fatalf("CreateKey: %v", err)
+		t.Fatal(err)
 	}
-
-	body := []byte(`{"prompt":"cat"}`)
-	now := time.Now().UTC()
-	bodyHash := BodySHA256(body)
-	signature := SignCanonicalHMAC("sk-hmac", "POST", "/v1/images?size=1", now, bodyHash)
-	identity, err := svc.VerifyCanonicalHMAC(ctx, HMACRequest{
-		AccessKey:  created.Key.AccessKey,
-		Method:     "post",
-		Path:       "/v1/images?size=1",
-		Timestamp:  now,
-		Body:       body,
-		BodySHA256: bodyHash,
-		Signature:  signature,
-	})
+	if len(legacy.Key.Scopes) != 4 {
+		t.Fatalf("legacy scopes: %v", legacy.Key.Scopes)
+	}
+	for _, scope := range legacy.Key.Scopes {
+		if strings.HasSuffix(scope, ":delete") || strings.HasPrefix(scope, "videos:") {
+			t.Fatal("legacy key gained permissions")
+		}
+	}
+	if legacy.Key.SecretCiphertext != "" || legacy.Key.SigningSecret != "" {
+		t.Fatal("key must persist only hash")
+	}
+	empty := []string{}
+	updated, err := svc.Update(ctx, 42, legacy.Key.ID, UpdateRequest{Scopes: &empty})
 	if err != nil {
-		t.Fatalf("VerifyCanonicalHMAC: %v", err)
+		t.Fatal(err)
 	}
-	if identity.UserID != 42 || identity.APIKeyID != created.Key.ID {
-		t.Fatalf("unexpected identity %#v", identity)
+	if updated.Scopes == nil || len(updated.Scopes) != 0 {
+		t.Fatalf("explicit empty scopes lost: %#v", updated.Scopes)
 	}
-
-	if _, err := svc.VerifyCanonicalHMAC(ctx, HMACRequest{AccessKey: created.Key.AccessKey, Method: "POST", Path: "/v1/images?size=1", Timestamp: now.Add(-10 * time.Minute), Body: body, BodySHA256: bodyHash, Signature: signature}); err == nil {
-		t.Fatal("expected stale timestamp to be rejected")
+	scopes := []string{"assets:read", "assets:read", "assets:delete"}
+	if _, err = svc.Update(ctx, 42, legacy.Key.ID, UpdateRequest{Scopes: &scopes}); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := svc.VerifyCanonicalHMAC(ctx, HMACRequest{AccessKey: created.Key.AccessKey, Method: "POST", Path: "/v1/images?size=1", Timestamp: now, Body: []byte(`{}`), BodySHA256: bodyHash, Signature: signature}); err == nil {
-		t.Fatal("expected mismatched body hash to be rejected")
-	}
-	hashAsSecretSignature := signCanonicalHMACWithKey(created.Key.SecretHash, "POST", "/v1/images?size=1", now, bodyHash)
-	if _, err := svc.VerifyCanonicalHMAC(ctx, HMACRequest{AccessKey: created.Key.AccessKey, Method: "POST", Path: "/v1/images?size=1", Timestamp: now, Body: body, BodySHA256: bodyHash, Signature: hashAsSecretSignature}); err == nil {
-		t.Fatal("expected stored secret hash to be rejected as an HMAC signing credential")
-	}
-}
-
-func TestCanonicalHMACPreparationDefersUsageUntilBodyHashMatches(t *testing.T) {
-	ctx := context.Background()
-	rpmLimit := 1
-	svc := NewService(nil)
-	created, err := svc.CreateKey(ctx, CreateRequest{
-		UserID: 1, Name: "hmac-stream", GroupCode: "plus", Secret: "sk-hmac-stream", RPMLimit: &rpmLimit,
-	})
+	reset, err := svc.ResetSecret(ctx, 42, legacy.Key.ID)
 	if err != nil {
-		t.Fatalf("CreateKey: %v", err)
+		t.Fatal(err)
 	}
-	timestamp := time.Now().UTC()
-	body := []byte(`{"prompt":"stream me"}`)
-	bodyHash := BodySHA256(body)
-	prepared, err := svc.PrepareCanonicalHMAC(ctx, HMACRequest{
-		AccessKey:  created.Key.AccessKey,
-		Method:     http.MethodPost,
-		Path:       "/api/open/image/v1/tasks",
-		Timestamp:  timestamp,
-		BodySHA256: bodyHash,
-		Signature:  SignCanonicalHMAC("sk-hmac-stream", http.MethodPost, "/api/open/image/v1/tasks", timestamp, bodyHash),
-	})
+	identity, err := svc.AuthenticateBearer(ctx, reset.Secret)
 	if err != nil {
-		t.Fatalf("PrepareCanonicalHMAC: %v", err)
+		t.Fatal(err)
 	}
-	if _, err := svc.CompleteCanonicalHMAC(ctx, prepared, BodySHA256([]byte("tampered"))); err == nil {
-		t.Fatal("expected streamed body hash mismatch")
+	if len(identity.Scopes) != 2 {
+		t.Fatalf("rotation lost scopes: %v", identity.Scopes)
 	}
-	identity, err := svc.CompleteCanonicalHMAC(ctx, prepared, bodyHash)
-	if err != nil {
-		t.Fatalf("valid completion should retain the first RPM slot: %v", err)
+	if _, err = svc.AuthenticateBearer(ctx, legacy.Secret); err == nil {
+		t.Fatal("old key authenticated")
 	}
-	if identity.APIKeyID != created.Key.ID || identity.UserID != created.Key.UserID {
-		t.Fatalf("unexpected identity: %#v", identity)
-	}
-	if _, err := svc.CompleteCanonicalHMAC(ctx, prepared, bodyHash); err == nil {
-		t.Fatal("expected second valid completion to exceed RPM limit")
-	}
-}
-
-func TestCanonicalHMACCrossLanguageVector(t *testing.T) {
-	const (
-		secret            = "contract-signing-secret"
-		method            = "POST"
-		requestURI        = "/api/open/image/v1/tasks"
-		timestampRFC3339  = "2026-07-17T00:00:00Z"
-		body              = `{"task_type":"image_edit","route_model_code":"plus-image","requested_quality":"2k","requested_size":"2560x1440","requested_output_image_count":2,"reference_image_count":1,"prompt":"Paint a quiet harbor","reference_asset_ids":["ref-open-1"],"response_mode":"async"}`
-		expectedBodyHash  = "F-y2oZ4DbiAMUoV5nPDNiDF-sPoMo4wRRW-4e6LPvK0"
-		expectedSignature = "KFATqBMyGGl_aUHTGx052h5_mK04hszt0csDxqen2sA"
-	)
-	timestamp, err := time.Parse(time.RFC3339, timestampRFC3339)
-	if err != nil {
-		t.Fatalf("parse timestamp: %v", err)
-	}
-	if got := BodySHA256([]byte(body)); got != expectedBodyHash {
-		t.Fatalf("cross-language body hash mismatch: got %q", got)
-	}
-	if got := SignCanonicalHMAC(secret, method, requestURI, timestamp, expectedBodyHash); got != expectedSignature {
-		t.Fatalf("cross-language signature mismatch: got %q", got)
+	if _, err = svc.CreateKey(ctx, CreateRequest{UserID: 42, Scopes: []string{"*"}}); err == nil {
+		t.Fatal("wildcard scope accepted")
 	}
 }
 
@@ -324,7 +272,7 @@ func TestAPIKeyRPMAndQuotaAreEnforced(t *testing.T) {
 	totalQuota := "10.00000"
 	dailyQuota := "6.00000"
 	rpmLimit := 2
-	created, err := svc.CreateKey(ctx, CreateRequest{
+	_, err := svc.CreateKey(ctx, CreateRequest{
 		UserID:           42,
 		Secret:           "sk-limits",
 		TotalQuotaPoints: &totalQuota,
@@ -334,14 +282,14 @@ func TestAPIKeyRPMAndQuotaAreEnforced(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateKey: %v", err)
 	}
-	first, err := svc.AuthenticateNative(ctx, created.Key.AccessKey, "sk-limits")
+	first, err := svc.AuthenticateBearer(ctx, "sk-limits")
 	if err != nil {
 		t.Fatalf("first auth: %v", err)
 	}
-	if _, err := svc.AuthenticateNative(ctx, created.Key.AccessKey, "sk-limits"); err != nil {
+	if _, err := svc.AuthenticateBearer(ctx, "sk-limits"); err != nil {
 		t.Fatalf("second auth within RPM: %v", err)
 	}
-	if _, err := svc.AuthenticateNative(ctx, created.Key.AccessKey, "sk-limits"); err == nil {
+	if _, err := svc.AuthenticateBearer(ctx, "sk-limits"); err == nil {
 		t.Fatalf("expected third auth to exceed RPM")
 	}
 
@@ -403,14 +351,14 @@ func TestAPIKeyRPMAndQuotaPersistAcrossServiceInstances(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateKey: %v", err)
 	}
-	identity, err := svc1.AuthenticateNative(ctx, created.Key.AccessKey, "sk-persist")
+	identity, err := svc1.AuthenticateBearer(ctx, "sk-persist")
 	if err != nil {
 		t.Fatalf("first auth: %v", err)
 	}
-	if _, err := svc1.AuthenticateNative(ctx, created.Key.AccessKey, "sk-persist"); err != nil {
+	if _, err := svc1.AuthenticateBearer(ctx, "sk-persist"); err != nil {
 		t.Fatalf("second auth: %v", err)
 	}
-	if _, err := svc2.AuthenticateNative(ctx, created.Key.AccessKey, "sk-persist"); !isServiceAppErrorCode(err, errs.CodeRateLimited) {
+	if _, err := svc2.AuthenticateBearer(ctx, "sk-persist"); !isServiceAppErrorCode(err, errs.CodeRateLimited) {
 		t.Fatalf("expected persisted RPM limit across service instances, got %v", err)
 	}
 
@@ -438,3 +386,81 @@ func isServiceAppErrorCode(err error, code string) bool {
 }
 
 func stringPtr(value string) *string { return &value }
+
+func TestCheckQuotaDoesNotReserveAndIncludesExistingReservations(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(nil)
+	total := "10.00000"
+	daily := "4.00000"
+	created, err := svc.CreateKey(ctx, CreateRequest{UserID: 42, TotalQuotaPoints: &total, DailyQuotaPoints: &daily})
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := svc.AuthenticateBearer(ctx, created.Secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := svc.CheckQuota(ctx, identity, "4.00000"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := svc.ReserveQuota(ctx, identity, "task", "3.00000"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.CheckQuota(ctx, identity, "2.00000"); err == nil {
+		t.Fatal("daily reservation ignored")
+	}
+	if err := svc.CheckQuota(ctx, identity, "11.00000"); err == nil {
+		t.Fatal("total limit ignored")
+	}
+	if err := svc.CheckQuota(ctx, identity, "1.00000"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.CheckQuota(ctx, identity, "-1"); err == nil {
+		t.Fatal("negative points allowed")
+	}
+	if err := svc.SetStatusForTest(ctx, created.Key.ID, "disabled"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.CheckQuota(ctx, identity, "0"); err == nil {
+		t.Fatal("disabled key accepted")
+	}
+}
+
+type keyUsageReaderStub struct {
+	total, daily string
+	err          error
+}
+
+func (s keyUsageReaderStub) APIKeyUsage(ctx context.Context, keyID int64, since *time.Time) (string, error) {
+	if since != nil {
+		return s.daily, s.err
+	}
+	return s.total, s.err
+}
+func TestCheckQuotaIncludesCanonicalBillingUsage(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(nil)
+	total := "10.00000"
+	daily := "4.00000"
+	created, err := svc.CreateKey(ctx, CreateRequest{UserID: 42, TotalQuotaPoints: &total, DailyQuotaPoints: &daily})
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := svc.AuthenticateBearer(ctx, created.Secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.SetUsageReader(keyUsageReaderStub{total: "9.00000", daily: "3.00000"})
+	if err := svc.CheckQuota(ctx, identity, "1.00000"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.CheckQuota(ctx, identity, "2.00000"); err == nil {
+		t.Fatal("canonical usage ignored")
+	}
+	svc.SetUsageReader(keyUsageReaderStub{err: errors.New("offline")})
+	if err := svc.CheckQuota(ctx, identity, "0"); err == nil {
+		t.Fatal("usage reader failure bypassed quota")
+	}
+}

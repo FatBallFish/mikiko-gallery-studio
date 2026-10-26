@@ -1,3 +1,4 @@
+import { nativeImageFields } from './native-image'
 import type {
   ApiKey,
   Balance,
@@ -56,7 +57,7 @@ import type {
   VideoTask,
 } from './api-types'
 import { API_PATHS } from './api-types'
-import { fillPath, getDefaultBaseUrl, normalizePage, sharedApiClient, withQuery } from './http-client'
+import { fillPath, normalizePage, sharedApiClient, withQuery } from './http-client'
 import { mediaAssetURL } from './media-url'
 import { normalizeCreativeCanvas } from './canvas-document'
 
@@ -222,6 +223,7 @@ export function toTask(raw: any): ImageTask {
 export function buildEstimateWireRequest(req: EstimateRequest): BackendEstimateRequest {
 	const sizeMode = req.size_mode === 'auto' ? 'auto' : req.size_mode === 'pixel' ? 'pixel' : 'ratio'
 	return {
+		...nativeImageFields(req),
 		task_type: toBackendTaskType(req.task_type),
 		route_model_code: req.route_model_code,
 		size_mode: sizeMode,
@@ -234,6 +236,7 @@ export function buildEstimateWireRequest(req: EstimateRequest): BackendEstimateR
 		moderation: req.moderation ?? 'auto',
 		requested_output_image_count: req.image_count,
 		reference_image_count: req.reference_asset_ids?.length ?? 0,
+		...(req.reference_asset_ids?.length ? { reference_asset_ids: [...req.reference_asset_ids] } : {}),
   }
 }
 
@@ -301,6 +304,17 @@ export function toGalleryImage(raw: any): GalleryImage {
   }
 }
 
+function optionalNativeImageCapabilities(source: unknown): Pick<CapabilityTaskOptions, 'native_image_profile' | 'native_image_layer_pricing_confirmed' | 'native_image_layer_unavailable_reason'> {
+	const profile = pick<CapabilityTaskOptions['native_image_profile']>(source, 'native_image_profile', 'NativeImageProfile')
+	const layerPricingConfirmed = pick<unknown>(source, 'native_image_layer_pricing_confirmed', 'NativeImageLayerPricingConfirmed')
+	const layerUnavailableReason = pick<unknown>(source, 'native_image_layer_unavailable_reason', 'NativeImageLayerUnavailableReason')
+	return {
+		...(profile ? { native_image_profile: profile } : {}),
+		...(typeof layerPricingConfirmed === 'boolean' ? { native_image_layer_pricing_confirmed: layerPricingConfirmed } : {}),
+		...(typeof layerUnavailableReason === 'string' ? { native_image_layer_unavailable_reason: layerUnavailableReason } : {}),
+	}
+}
+
 function optionalOutputCapabilities(source: any) {
 	const result: {
 		quality?: string[]
@@ -343,11 +357,12 @@ function optionalOutputCapabilities(source: any) {
     )
   }
   if (moderation !== undefined) result.moderation = moderation
-  return result
+  return { ...result, ...optionalNativeImageCapabilities(source) }
 }
 
 function normalizeTaskCapability(source: unknown): CapabilityTaskOptions {
 	const result: CapabilityTaskOptions = {
+    ...optionalNativeImageCapabilities(source),
     auto_base_resolution: String(pick(source, 'auto_base_resolution', 'AutoBaseResolution') ?? '').trim().toLowerCase() || undefined,
     supports_output_compression: Boolean(pick(source, 'supports_output_compression', 'SupportsOutputCompression')),
 		supports_custom_size: Boolean(pick(source, 'supports_custom_size', 'SupportsCustomSize')),
@@ -438,6 +453,7 @@ export function normalizeCapabilities(raw: any): Capability {
       supports_reference: Boolean(pick(item, 'supports_reference', 'SupportsReference', 'supports_image_input', 'SupportsImageInput') ?? ((maxReference > 0) || normalizedTaskTypes.includes('image_edit'))),
       display_points: pick<string>(item, 'display_points', 'DisplayPoints') ?? prices[0]?.display_points,
       ...optionalOutputCapabilities(item),
+      ...(item.native_image_profile ? { native_image_profile: item.native_image_profile } : {}),
     }]
   })
   const qualities = pick<string[]>(raw, 'qualities', 'Qualities', 'supported_qualities', 'SupportedQualities') ?? normalizedModels[0]?.qualities ?? ['auto', '1K', '2K', '4K']
@@ -487,6 +503,7 @@ export function normalizeVideoCapabilities(raw: VideoCapabilityListWire): VideoC
 				const combinations = group.combinations.filter((item) => item.task_type === taskType)
 				if (combinations.length === 0) return []
 				return [[taskType, {
+					inputs: group.input_capabilities_by_task_type?.[taskType],
 					durations: uniqueValues(combinations.map((item) => item.duration_seconds)),
 					resolutions: uniqueValues(combinations.map((item) => item.resolution)),
 					aspect_ratios: uniqueValues(combinations.map((item) => item.aspect_ratio)),
@@ -511,6 +528,7 @@ export function normalizeVideoCapabilities(raw: VideoCapabilityListWire): VideoC
 					aspect_ratio: first.aspect_ratio,
 					generate_audio: first.audio_mode === 'generated',
 				},
+				input_capabilities_by_task_type: group.input_capabilities_by_task_type,
 				options_by_task_type: optionsByTaskType,
 			}]
 		}),
@@ -608,12 +626,14 @@ export const userApi = {
   cancelCashierOrder: (order_id: string | number) => sharedApiClient.request<CashierOrder>(API_PATHS.agent.cashierOrderCancel, { method: 'POST', pathParams: { order_id } }),
   mockPayCashierOrder: (order_id: string | number) => sharedApiClient.request<CashierOrder>(API_PATHS.agent.cashierOrderMockPay, { method: 'POST', pathParams: { order_id } }),
   redeemCode: (code: string, idempotencyKey = crypto.randomUUID()) => sharedApiClient.request(API_PATHS.agent.redeemCode, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: { code } }),
+  getImageLayers: (id: string) => sharedApiClient.request<{ version: 1; task_id: string; operation: string; layers: ImageResult[] }>(`/api/agent/image/v1/tasks/${encodeURIComponent(id)}/layers`),
+  downloadImageLayers: (id: string) => sharedApiClient.blob(`/api/agent/image/v1/tasks/${encodeURIComponent(id)}/layers/archive`),
   getCapabilities: async (): Promise<Capability> => normalizeCapabilities(await sharedApiClient.request(API_PATHS.agent.capabilities)),
 	getVideoCapabilities: async (): Promise<VideoCapability> => normalizeVideoCapabilities(await sharedApiClient.request<VideoCapabilityListWire>(API_PATHS.agent.videoCapabilities)),
 	estimateVideo: (req: VideoEstimateRequest, signal?: AbortSignal) => sharedApiClient.request<VideoEstimate>(API_PATHS.agent.videoEstimates, { method: 'POST', body: buildVideoEstimateWireRequest(req), signal }),
 	createVideoTask: (req: VideoCreateTaskRequest, idempotencyKey: string = crypto.randomUUID()) => sharedApiClient.request<VideoTask>(API_PATHS.agent.videoTasks, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: { ...buildVideoEstimateWireRequest(req), quote_token: req.quote_token } }),
   listVideoTasks: async (filters: { project_id: string; status?: string; cursor?: string; limit?: number }) => {
-    const response = await sharedApiClient.request<{ items?: VideoTask[]; next_cursor?: string } | VideoTask[]>(API_PATHS.agent.videoTasks, { query: filters })
+    const response = await sharedApiClient.request<{ items?: VideoTask[]; next_cursor?: string } | VideoTask[]>('/api/agent/video/v1/history/tasks', { query: filters })
     const raw = Array.isArray(response) ? response : response.items ?? []
     // Older projections serialize empty inputs/items as null; normalize so
     // every consumer can map over them safely.
@@ -630,11 +650,12 @@ export const userApi = {
 	duplicateCanvas: async (canvas_id: string, input: { name?: string; project_id?: string } = {}) => normalizeCreativeCanvas(await sharedApiClient.request<CreativeCanvas>('/api/agent/canvas/v1/canvases/{canvas_id}:duplicate', { method: 'POST', pathParams: { canvas_id }, body: input })),
 	transferCanvas: async (canvas_id: string, target_project_id: string, expected_metadata_version: number) => normalizeCreativeCanvas(await sharedApiClient.request<CreativeCanvas>('/api/agent/canvas/v1/canvases/{canvas_id}:transfer-project', { method: 'POST', pathParams: { canvas_id }, body: { target_project_id, expected_metadata_version } })),
 	saveCanvasDocument: async (canvas_id: string, expected_revision: number, document: CanvasDocument) => normalizeCreativeCanvas(await sharedApiClient.request<CreativeCanvas>('/api/agent/canvas/v1/canvases/{canvas_id}/document', { method: 'PUT', pathParams: { canvas_id }, body: { expected_revision, document } })),
-	estimateCanvasNode: (canvas_id: string, node_id: string) => sharedApiClient.request<{ points: string; detail?: Record<string, unknown> }>('/api/agent/canvas/v1/canvases/{canvas_id}/nodes/{node_id}:estimate', { method: 'POST', pathParams: { canvas_id, node_id } }),
+	estimateCanvasNode: (canvas_id: string, node_id: string, signal?: AbortSignal) => sharedApiClient.request<{ points: string; detail?: Record<string, unknown> }>('/api/agent/canvas/v1/canvases/{canvas_id}/nodes/{node_id}:estimate', { method: 'POST', pathParams: { canvas_id, node_id }, signal }),
 	generateCanvasNode: (canvas_id: string, node_id: string, idempotencyKey = crypto.randomUUID()) => sharedApiClient.request<CanvasRun>('/api/agent/canvas/v1/canvases/{canvas_id}/nodes/{node_id}:generate', { method: 'POST', pathParams: { canvas_id, node_id }, headers: { 'Idempotency-Key': idempotencyKey } }),
 	listCanvasRuns: async (canvas_id: string, refresh = false) => (await sharedApiClient.request<{ items: CanvasRun[] }>('/api/agent/canvas/v1/canvases/{canvas_id}/runs', { pathParams: { canvas_id }, query: { refresh } })).items ?? [],
 	attachCanvasRun: (canvas_id: string, run_id: string, recovery_position?: { x: number; y: number }) => sharedApiClient.request<CanvasRun>('/api/agent/canvas/v1/canvases/{canvas_id}/runs/{run_id}:attach-results', { method: 'POST', pathParams: { canvas_id, run_id }, body: recovery_position ? { recovery_position } : undefined }),
 	cancelCanvasRun: (canvas_id: string, run_id: string) => sharedApiClient.request<CanvasRun>('/api/agent/canvas/v1/canvases/{canvas_id}/runs/{run_id}:cancel', { method: 'POST', pathParams: { canvas_id, run_id } }),
+  listMediaGroups: (projectID?: string) => sharedApiClient.request<string[]>('/api/agent/media/v1/groups', { query: projectID ? { project_id: projectID } : undefined }),
   listMediaAssets: async (filters: MediaAssetFilters) => {
     const response = await sharedApiClient.request<MediaAssetPage | MediaAsset[]>(API_PATHS.agent.mediaAssets, { query: filters })
     return Array.isArray(response) ? { items: response } : { items: response.items ?? [], next_cursor: response.next_cursor }
@@ -656,30 +677,24 @@ export const userApi = {
   }),
   getMediaExportJob: (job_id: string, signal?: AbortSignal) => sharedApiClient.request<MediaExportStatus>(API_PATHS.agent.mediaExportJob, { pathParams: { job_id }, signal }),
   downloadMediaExport: (job_id: string, signal?: AbortSignal) => sharedApiClient.blob(API_PATHS.agent.mediaExportDownload, { pathParams: { job_id }, signal }),
-  initMediaUpload: (input: MediaUploadInit, idempotencyKey: string) => sharedApiClient.request<MediaUploadSession>(API_PATHS.agent.mediaUploads, {
-    method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: input,
+  initMediaUpload: (input: MediaUploadInit, idempotencyKey: string, signal?: AbortSignal) => sharedApiClient.request<MediaUploadSession>(API_PATHS.agent.mediaUploads, {
+    method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: input, signal,
   }),
-  getMediaUpload: (upload_id: string) => sharedApiClient.request<MediaUploadSession>(API_PATHS.agent.mediaUploadDetail, { pathParams: { upload_id } }),
-  signMediaUploadPart: (upload_id: string, part_number: number, checksum: string) => sharedApiClient.request<MediaPartTarget>(API_PATHS.agent.mediaUploadPartSign, {
-    method: 'POST', pathParams: { upload_id, part_number }, body: { checksum },
+  getMediaUpload: (upload_id: string, signal?: AbortSignal) => sharedApiClient.request<MediaUploadSession>(API_PATHS.agent.mediaUploadDetail, { pathParams: { upload_id }, signal }),
+  signMediaUploadPart: (upload_id: string, part_number: number, checksum: string, signal?: AbortSignal) => sharedApiClient.request<MediaPartTarget>(API_PATHS.agent.mediaUploadPartSign, {
+    method: 'POST', pathParams: { upload_id, part_number }, body: { checksum }, signal,
   }),
-  uploadMediaProxyPart: async (upload_id: string, part_number: number, chunk: Blob, checksum: string, accessToken?: string | null, signal?: AbortSignal) => {
-    const path = fillPath(API_PATHS.agent.mediaUploadPart, { upload_id, part_number })
-    const response = await fetch(`${getDefaultBaseUrl()}${path}`, {
-      method: 'PUT', credentials: 'include', body: chunk, signal,
-      headers: { 'Content-Type': 'application/octet-stream', 'X-Content-SHA256': checksum, ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
-    })
-    const payload = await response.json()
-    if (!response.ok) throw Object.assign(new Error(payload?.error?.message ?? '分片上传失败'), { status: response.status })
-    return (payload?.data ?? payload) as MediaCompletedPart
-  },
-  completeMediaUpload: (upload_id: string, parts: MediaCompletedPart[]) => sharedApiClient.request<MediaAsset>(API_PATHS.agent.mediaUploadComplete, {
-    method: 'POST', pathParams: { upload_id }, body: { parts },
+  uploadMediaProxyPart: (upload_id: string, part_number: number, chunk: Blob, checksum: string, _accessToken?: string | null, signal?: AbortSignal) => sharedApiClient.request<MediaCompletedPart>(API_PATHS.agent.mediaUploadPart, {
+    method: 'PUT', pathParams: { upload_id, part_number }, rawBody: chunk, signal,
+    headers: { 'Content-Type': 'application/octet-stream', 'X-Content-SHA256': checksum },
+  }),
+  completeMediaUpload: (upload_id: string, parts: MediaCompletedPart[], signal?: AbortSignal) => sharedApiClient.request<MediaAsset>(API_PATHS.agent.mediaUploadComplete, {
+    method: 'POST', pathParams: { upload_id }, body: { parts }, signal,
   }),
   abortMediaUpload: (upload_id: string) => sharedApiClient.request<{ status: string }>(API_PATHS.agent.mediaUploadDetail, { method: 'DELETE', pathParams: { upload_id } }),
   estimatePromptOptimization: (prompt: string, mediaType?: 'image' | 'video', routeModelCode?: string) => sharedApiClient.request<PromptOptimizationEstimate>(API_PATHS.agent.promptOptimizationEstimate, { method: 'POST', body: { prompt, ...(mediaType ? { media_type: mediaType } : {}), ...(routeModelCode ? { route_model_code: routeModelCode } : {}) } }),
   optimizePrompt: (prompt: string, quote: string, mediaType?: 'image' | 'video', routeModelCode?: string) => sharedApiClient.request<PromptOptimizationResult>(API_PATHS.agent.promptOptimizations, { method: 'POST', body: { prompt, quote, ...(mediaType ? { media_type: mediaType } : {}), ...(routeModelCode ? { route_model_code: routeModelCode } : {}) } }),
-  estimate: async (req: EstimateRequest) => toEstimate(await sharedApiClient.request(API_PATHS.agent.estimate, { query: buildEstimateWireRequest(req) }), req),
+  estimate: async (req: EstimateRequest) => toEstimate(await sharedApiClient.request(API_PATHS.agent.estimate, { query: (() => { const { native_options, reference_asset_ids, ...fields } = buildEstimateWireRequest(req); return { ...fields, ...(reference_asset_ids?.length ? { reference_asset_ids: reference_asset_ids.join(',') } : {}), ...(native_options ? { native_options: JSON.stringify(native_options) } : {}) } })() }), req),
   uploadReferenceAsset: async (file: File | string, sizeBytes?: number) => {
     if (typeof file === 'string') {
       return { id: '', name: file, preview_url: '', status: 'ready', size_bytes: sizeBytes ?? 0, created_at: '' } satisfies ReferenceAsset
@@ -713,6 +728,7 @@ export const userApi = {
     sharedApiClient.request<MediaAccessProjection>(API_PATHS.open.galleryImageAccess, { pathParams: { image_id }, query: { purpose }, auth: false }),
   deleteReferenceAsset: (asset_id: string) => sharedApiClient.request<void>(API_PATHS.agent.referenceAssetDetail, { method: 'DELETE', pathParams: { asset_id } }),
   imageAssetUrl: (url: string, accessToken?: string | null) => mediaAssetURL(url, accessToken),
+  mediaAssetUrl: (url: string, accessToken?: string | null) => mediaAssetURL(url, accessToken),
   createTask: async (req: CreateTaskRequest) => {
     const wire = buildCreateTaskWireRequest(req)
     return toTask(await sharedApiClient.request(API_PATHS.agent.tasks, { method: 'POST', body: wire.body, headers: wire.headers }))
@@ -740,6 +756,11 @@ export const userApi = {
 	batchDownloadGalleryImages: (image_ids: string[], project_id: string) => sharedApiClient.blob(API_PATHS.agent.galleryBatchDownload, { method: 'POST', body: { image_ids, project_id } }) as Promise<Blob | GalleryExportStatus>,
 	getGalleryExportJob: (job_id: string, signal?: AbortSignal) => sharedApiClient.request<GalleryExportStatus>(API_PATHS.agent.galleryExportJob, { pathParams: { job_id }, signal }),
 	downloadGalleryExport: (job_id: string, signal?: AbortSignal) => sharedApiClient.blob(API_PATHS.agent.galleryExportDownload, { pathParams: { job_id }, signal }),
+  hideTaskHistory: (task_id: string) => sharedApiClient.request<void>(API_PATHS.agent.historyTaskDetail, { method: 'DELETE', pathParams: { task_id } }),
+  clearFailedTaskHistory: (filters: { project_id?: string } = {}) => sharedApiClient.request<{ hidden_count: number }>('/api/agent/image/v1/history/tasks/clear-failed', { method: 'POST', body: filters }),
+  hideVideoTaskHistory: (task_id: string) => sharedApiClient.request<void>('/api/agent/video/v1/history/tasks/{task_id}', { method: 'DELETE', pathParams: { task_id } }),
+  clearFailedVideoTaskHistory: (filters: { project_id?: string } = {}) => sharedApiClient.request<{ hidden_count: number }>('/api/agent/video/v1/history/tasks/clear-failed', { method: 'POST', body: filters }),
+  retryVideoTask: (task_id: string) => sharedApiClient.request<VideoTask>('/api/agent/video/v1/history/tasks/{task_id}/retry', { method: 'POST', pathParams: { task_id } }),
   retryTask: async (task_id: string) => toTask(await sharedApiClient.request(API_PATHS.agent.historyTaskRetry, { method: 'POST', pathParams: { task_id } })),
   deleteTask: (task_id: string) => sharedApiClient.request<void>(API_PATHS.agent.historyTaskDetail, { method: 'DELETE', pathParams: { task_id } }),
   deleteGalleryImage: (image_id: string) => sharedApiClient.request<void>(API_PATHS.agent.galleryImageDetail, { method: 'DELETE', pathParams: { image_id } }),
@@ -779,7 +800,7 @@ function toApiKey(raw: any): ApiKey {
     id: String(raw.id),
     access_key: raw.access_key ?? raw.key_prefix ?? '',
     secret_preview: raw.secret ?? raw.secret_preview,
-    scopes: raw.scopes ?? ['images:write', 'images:read'],
+    scopes: raw.scopes ?? ['account:read', 'models:read', 'images:read', 'images:write'],
     rpm_limit: Number(raw.rpm_limit ?? 0),
     expires_at: raw.expires_at ?? null,
     created_at: raw.created_at ?? '',

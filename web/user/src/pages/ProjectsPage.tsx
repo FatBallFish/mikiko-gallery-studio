@@ -1,33 +1,10 @@
 import { type FormEvent, useMemo, useState } from 'react'
 import type { Project } from '../../../shared/api-types'
-import { cn } from '../../../shared/classnames'
 import { ApiError } from '../../../shared/http-client'
-import { Button, EmptyState, ErrorState, Modal, useApp } from '../components'
+import { EmptyState, ErrorState, Modal, useApp } from '../components'
 import { useProjects } from '../ProjectContext'
-import { Check, Edit, FolderKanban, LockKeyhole, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { Check, Edit, FolderKanban, Plus, RefreshCw, Trash2 } from '../ui/icons'
 import { errorMessage } from '../useApiResource'
-
-const projectClasses = {
-  page: 'w-full flex-1 px-4 py-6 sm:px-6 md:px-10 md:py-8',
-  header: 'mb-8 flex flex-col gap-5 border-b border-[var(--border)] pb-7 sm:flex-row sm:items-end sm:justify-between',
-  title: 'm-0 text-4xl font-black leading-none md:text-5xl',
-  actions: 'flex flex-wrap gap-2',
-  list: 'grid gap-3',
-  row: 'grid min-w-0 gap-4 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center',
-  identity: 'flex min-w-0 items-center gap-3',
-  icon: 'grid size-10 shrink-0 place-items-center rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--accent)]',
-  name: 'flex min-w-0 flex-wrap items-center gap-2 text-base font-bold text-[var(--fg)]',
-  defaultBadge: 'inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--bg)] px-2 py-0.5 text-[11px] font-semibold text-[var(--muted)]',
-  meta: 'mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--muted)]',
-  rowActions: 'flex shrink-0 gap-2',
-  iconButton: 'grid size-10 place-items-center rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--fg)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40',
-  dangerButton: 'hover:border-[var(--accent-coral)] hover:text-[var(--accent-coral)]',
-  form: 'grid gap-4',
-  label: 'grid gap-2 text-sm font-semibold text-[var(--fg)]',
-  input: 'h-11 w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 text-sm text-[var(--fg)] outline-none focus:border-[var(--accent)]',
-  dialogActions: 'flex justify-end gap-2 max-[420px]:flex-col-reverse',
-  warning: 'rounded-lg border border-[color-mix(in_oklch,var(--accent-coral)_38%,var(--border))] bg-[color-mix(in_oklch,var(--accent-coral)_8%,transparent)] p-3 text-sm leading-6 text-[var(--fg)]',
-}
 
 type DeleteState = { project: Project; requiresTransfer: boolean; taskCount: number; assetCount: number }
 
@@ -48,6 +25,8 @@ export function ProjectsPage() {
   function normalizedName() {
     return nameDraft.trim().replace(/\s+/g, ' ')
   }
+
+  const nameValid = normalizedName().length > 0 && normalizedName().length <= 128
 
   function openCreate() {
     setNameDraft('')
@@ -126,80 +105,176 @@ export function ProjectsPage() {
   }
 
   return (
-    <div className={projectClasses.page}>
-      <header className={projectClasses.header}>
-        <h1 className={projectClasses.title}>项目</h1>
-        <div className={projectClasses.actions}>
-          <button className={projectClasses.iconButton} type="button" title="刷新项目" aria-label="刷新项目" disabled={projects.loading} onClick={() => void projects.refreshProjects().catch(() => undefined)}>
+    <div className="acct-page">
+      <div className="u-page-head">
+        <div className="u-page-head__copy">
+          <span className="u-eyebrow">Projects</span>
+          <h1 className="u-h1">项目</h1>
+          <p className="u-sub">项目是资产、任务与画布的归属边界。切换项目不会丢失其他项目的排队任务。</p>
+        </div>
+        <div className="u-page-head__actions">
+          <button
+            className="u-icon-btn"
+            type="button"
+            title="刷新项目"
+            aria-label="刷新项目"
+            disabled={projects.loading}
+            onClick={() => void projects.refreshProjects().catch(() => undefined)}
+          >
             <RefreshCw size={18} strokeWidth={1.6} aria-hidden="true" />
           </button>
-          <Button type="button" onClick={openCreate}><Plus size={17} strokeWidth={1.8} aria-hidden="true" />新建项目</Button>
+          <button className="u-btn u-btn--primary u-btn--sm" type="button" onClick={openCreate}>
+            <Plus size={16} strokeWidth={1.8} aria-hidden="true" />
+            新建项目
+          </button>
         </div>
-      </header>
-
-      {projects.error && !projects.projects.length ? <ErrorState message={projects.error} onRetry={() => void projects.refreshProjects().catch(() => undefined)} /> : null}
-      {!projects.loading && !projects.projects.length ? <EmptyState title="暂无项目" detail="" action={<Button onClick={openCreate}>新建项目</Button>} /> : null}
-      <div className={projectClasses.list} aria-busy={projects.loading}>
-        {projects.projects.map((project) => (
-          <section className={projectClasses.row} key={project.id}>
-            <div className={projectClasses.identity}>
-              <span className={projectClasses.icon} aria-hidden="true"><FolderKanban size={19} strokeWidth={1.6} /></span>
-              <div className="min-w-0">
-                <div className={projectClasses.name}>
-                  <span className="truncate">{project.name}</span>
-                  {project.is_default ? <span className={projectClasses.defaultBadge}><LockKeyhole size={12} />默认项目</span> : null}
-                  {projects.selectedProjectID === project.id ? <span className={projectClasses.defaultBadge}><Check size={12} />当前</span> : null}
-                </div>
-                <div className={projectClasses.meta}>
-                  <span>{project.task_count ?? 0} 个任务</span>
-                  <span>{project.asset_count ?? 0} 个资产</span>
-                </div>
-              </div>
-            </div>
-            <div className={projectClasses.rowActions}>
-              <button className={projectClasses.iconButton} type="button" title="切换到此项目" aria-label={`切换到项目 ${project.name}`} disabled={projects.selectedProjectID === project.id} onClick={() => projects.selectProject(project.id)}>
-                <Check size={17} strokeWidth={1.7} aria-hidden="true" />
-              </button>
-              <button className={projectClasses.iconButton} type="button" title={project.is_default ? '默认项目不可更名' : '修改名称'} aria-label={`修改项目 ${project.name}`} disabled={project.is_default} onClick={() => openRename(project)}>
-                <Edit size={17} strokeWidth={1.7} aria-hidden="true" />
-              </button>
-              <button className={cn(projectClasses.iconButton, projectClasses.dangerButton)} type="button" title={project.is_default ? '默认项目不可删除' : '删除项目'} aria-label={`删除项目 ${project.name}`} disabled={project.is_default} onClick={() => openDelete(project)}>
-                <Trash2 size={17} strokeWidth={1.7} aria-hidden="true" />
-              </button>
-            </div>
-          </section>
-        ))}
       </div>
 
+      {projects.error && !projects.projects.length ? <ErrorState message={projects.error} onRetry={() => void projects.refreshProjects().catch(() => undefined)} /> : null}
+      {!projects.loading && !projects.projects.length ? <EmptyState title="暂无项目" detail="创建第一个项目，开始整理资产与任务。" action={<button className="u-btn u-btn--primary u-btn--sm" type="button" onClick={openCreate}>新建项目</button>} /> : null}
+
+      {projects.projects.length ? (
+        <div className="u-plate" aria-busy={projects.loading}>
+          <div className="u-list" style={{ padding: '0 18px' }}>
+            {projects.projects.map((project) => {
+              const current = projects.selectedProjectID === project.id
+              return (
+                <div className="u-row acct-project-row" key={project.id}>
+                  <div className="u-row__main">
+                    <span
+                      className="u-row__icon"
+                      aria-hidden="true"
+                      style={current ? { color: 'var(--accent)', background: 'var(--accent-soft)' } : undefined}
+                    >
+                      <FolderKanban size={18} strokeWidth={1.6} />
+                    </span>
+                    <div className="u-row__copy acct-project-copy">
+                      <strong>
+                        {project.name}
+                        {current ? <span className="u-chip u-chip--accent" style={{ marginLeft: 8, height: 19, fontSize: 9 }}>当前</span> : null}
+                        {project.is_default ? <span className="u-chip" style={{ marginLeft: 6, height: 19, fontSize: 9 }}>默认</span> : null}
+                      </strong>
+                      <span>{project.asset_count ?? 0} 项资产 · {project.task_count ?? 0} 个任务</span>
+                    </div>
+                  </div>
+                  <div className="u-row__actions acct-project-actions">
+                    {current ? (
+                      <span className="u-status u-status--ok"><span className="u-dot" aria-hidden="true" />使用中</span>
+                    ) : (
+                      <button className="u-btn u-btn--sm" type="button" onClick={() => projects.selectProject(project.id)}>
+                        <Check size={14} strokeWidth={1.7} aria-hidden="true" />
+                        切换
+                      </button>
+                    )}
+                    <button
+                      className="u-icon-btn"
+                      type="button"
+                      title={project.is_default ? '默认项目不可重命名' : '重命名'}
+                      aria-label={`重命名项目 ${project.name}`}
+                      disabled={project.is_default}
+                      onClick={() => openRename(project)}
+                    >
+                      <Edit size={16} strokeWidth={1.6} aria-hidden="true" />
+                    </button>
+                    <button
+                      className="u-icon-btn u-icon-btn--danger"
+                      type="button"
+                      title={project.is_default ? '默认项目不可删除' : '删除'}
+                      aria-label={`删除项目 ${project.name}`}
+                      disabled={project.is_default}
+                      onClick={() => openDelete(project)}
+                    >
+                      <Trash2 size={16} strokeWidth={1.6} aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ) : null}
+
+      {projects.loading && !projects.projects.length ? (
+        <div className="u-plate" aria-hidden="true">
+          <div className="u-list" style={{ padding: '0 18px' }}>
+            {Array.from({ length: 3 }).map((_, index) => (
+              <div className="u-row" key={index}>
+                <div className="u-row__main">
+                  <span className="pg-skeleton size-9 rounded-xl" />
+                  <div className="u-row__copy" style={{ flex: 1 }}>
+                    <span className="pg-skeleton h-4 w-40 rounded-xl" />
+                    <span className="pg-skeleton mt-1 h-3 w-56 rounded-xl" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {projects.projects.length ? (
+        <div className="u-empty" style={{ marginTop: 20 }}>
+          <span className="u-empty__icon" aria-hidden="true"><Plus size={22} strokeWidth={1.5} /></span>
+          <h3>再建一个项目</h3>
+          <p>把一个长期主题的所有资产、任务与画布收在同一个边界里，公开与私有设置互不影响。</p>
+          <button className="u-btn u-btn--primary u-btn--sm" type="button" onClick={openCreate}>新建项目</button>
+        </div>
+      ) : null}
+
       {createOpen ? (
-        <Modal title="新建项目" onClose={() => setCreateOpen(false)}>
-          <form className={projectClasses.form} onSubmit={create}>
-            <label className={projectClasses.label}>名称<input className={projectClasses.input} value={nameDraft} maxLength={128} autoFocus onChange={(event) => setNameDraft(event.target.value)} /></label>
-            <div className={projectClasses.dialogActions}><Button tone="ghost" type="button" onClick={() => setCreateOpen(false)}>取消</Button><Button type="submit" busy={busy} disabled={!normalizedName()}>创建</Button></div>
+        <Modal title="新建项目" onClose={() => setCreateOpen(false)} className="acct-modal">
+          <form style={{ display: 'grid', gap: 14 }} onSubmit={create}>
+            <label className="u-field">
+              <span className="u-label">项目名称 <span className="u-label__hint">最多 128 个字符</span></span>
+              <input className="u-input" value={nameDraft} maxLength={128} autoFocus placeholder="例如：品牌视觉 · 秋冬" onChange={(event) => setNameDraft(event.target.value)} />
+            </label>
+            {!nameValid && nameDraft.length ? <span className="u-field__error" role="alert">项目名称不能为空且不能超过 128 个字符</span> : null}
+            <span className="u-meta">创建后会自动切换到此项目。</span>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+              <button className="u-btn" type="button" onClick={() => setCreateOpen(false)}>取消</button>
+              <button className="u-btn u-btn--primary" type="submit" disabled={!nameValid || busy}>{busy ? '创建中...' : '创建项目'}</button>
+            </div>
           </form>
         </Modal>
       ) : null}
 
       {renameTarget ? (
-        <Modal title="修改项目名称" onClose={() => setRenameTarget(null)}>
-          <form className={projectClasses.form} onSubmit={rename}>
-            <label className={projectClasses.label}>名称<input className={projectClasses.input} value={nameDraft} maxLength={128} autoFocus onChange={(event) => setNameDraft(event.target.value)} /></label>
-            <div className={projectClasses.dialogActions}><Button tone="ghost" type="button" onClick={() => setRenameTarget(null)}>取消</Button><Button type="submit" busy={busy} disabled={!normalizedName() || normalizedName() === renameTarget.name}>保存</Button></div>
+        <Modal title="重命名项目" onClose={() => setRenameTarget(null)} className="acct-modal">
+          <form style={{ display: 'grid', gap: 14 }} onSubmit={rename}>
+            <label className="u-field">
+              <span className="u-label">项目名称 <span className="u-label__hint">最多 128 个字符</span></span>
+              <input className="u-input" value={nameDraft} maxLength={128} autoFocus onChange={(event) => setNameDraft(event.target.value)} />
+            </label>
+            {!nameValid && nameDraft.length ? <span className="u-field__error" role="alert">项目名称不能为空且不能超过 128 个字符</span> : null}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+              <button className="u-btn" type="button" onClick={() => setRenameTarget(null)}>取消</button>
+              <button className="u-btn u-btn--primary" type="submit" disabled={!nameValid || normalizedName() === renameTarget.name || busy}>{busy ? '保存中...' : '保存'}</button>
+            </div>
           </form>
         </Modal>
       ) : null}
 
       {deleteState ? (
-        <Modal title={deleteState.requiresTransfer ? '转移并删除项目' : '删除项目'} onClose={() => setDeleteState(null)}>
-          <div className={projectClasses.form}>
-            <p className="m-0 text-sm leading-6 text-[var(--muted)]">确认删除「{deleteState.project.name}」？</p>
+        <Modal title={deleteState.requiresTransfer ? '转移并删除项目' : '删除项目'} onClose={() => setDeleteState(null)} className="acct-modal">
+          <div style={{ display: 'grid', gap: 14 }}>
+            <p className="u-sub" style={{ margin: 0 }}>确认删除「{deleteState.project.name}」？此操作不可撤销。</p>
             {deleteState.requiresTransfer ? (
               <>
-                <div className={projectClasses.warning}>项目内有 {deleteState.taskCount} 个任务、{deleteState.assetCount} 个资产，删除前将全部转移。</div>
-                <label className={projectClasses.label}>转移到<select className={projectClasses.input} value={targetProjectID} onChange={(event) => setTargetProjectID(event.target.value)}>{transferTargets.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+                <div className="u-banner" role="note">项目内有 {deleteState.taskCount} 个任务、{deleteState.assetCount} 个资产，删除前将全部转移。</div>
+                <label className="u-field">
+                  <span className="u-label">转移到</span>
+                  <select className="u-select" value={targetProjectID} onChange={(event) => setTargetProjectID(event.target.value)}>
+                    {transferTargets.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                  </select>
+                </label>
               </>
             ) : null}
-            <div className={projectClasses.dialogActions}><Button tone="ghost" type="button" onClick={() => setDeleteState(null)}>取消</Button><Button tone="danger" type="button" busy={busy} disabled={deleteState.requiresTransfer && !targetProjectID} onClick={() => void remove()}>{deleteState.requiresTransfer ? '转移并删除' : '删除'}</Button></div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+              <button className="u-btn" type="button" disabled={busy} onClick={() => setDeleteState(null)}>取消</button>
+              <button className="u-btn u-btn--danger" type="button" disabled={busy || (deleteState.requiresTransfer && !targetProjectID)} onClick={() => void remove()}>
+                {busy ? '处理中...' : deleteState.requiresTransfer ? '转移并删除' : '删除'}
+              </button>
+            </div>
           </div>
         </Modal>
       ) : null}

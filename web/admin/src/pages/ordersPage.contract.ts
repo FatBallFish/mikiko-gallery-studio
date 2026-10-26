@@ -27,7 +27,7 @@ for (const orderProjectionContract of ['user_email', 'user_nickname', 'bonus_poi
   }
 }
 
-for (const packageContract of ['adminApi.listCashierPlans', 'adminApi.createCashierPlan', 'adminApi.updateCashierPlan', '<CashierPlanEditorDialog', 'cashierPlanStatusBadge', 'cashierPlanPurchaseBadge']) {
+for (const packageContract of ['adminApi.listCashierPlans', 'adminApi.createCashierPlan', 'adminApi.updateCashierPlan', '<PackageForm', 'cashierPlanStatusBadge', 'cashierPlanPurchaseBadge']) {
   if (!packagesSource.includes(packageContract)) {
     throw new Error(`packages redesign must preserve ${packageContract}`)
   }

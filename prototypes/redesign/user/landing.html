@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mikiko Studio — 连接灵感，也连接模型</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Manrope:wght@300..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/user.css">
+<style>
+  .lg-mode { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .lg-mode article { position: relative; height: 420px; overflow: hidden; border-radius: 18px; border: 1px solid var(--line); }
+  .lg-mode article img { width: 100%; height: 100%; object-fit: cover; transition: transform 900ms var(--ease-out); }
+  .lg-mode article:hover img { transform: scale(1.05); }
+  .lg-mode article::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to top, rgba(6,7,11,.94) 8%, rgba(6,7,11,.25) 55%, transparent); }
+  .lg-mode__copy { position: absolute; left: 20px; right: 20px; bottom: 20px; z-index: 2; display: grid; gap: 7px; }
+  .lg-mode__copy b { font-family: var(--font-display); font-size: 21px; font-weight: 400; }
+  .lg-mode__copy p { color: rgba(245,240,231,.62); font-size: 12px; line-height: 1.6; }
+  .lg-workflow { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 20px; height: 340px; }
+  .lg-workflow img { width: 100%; height: 100%; object-fit: cover; opacity: .62; }
+  .lg-workflow__quote { position: absolute; left: 30px; right: 30px; bottom: 26px; max-width: 720px; font-family: var(--font-display); font-size: clamp(20px, 2.2vw, 30px); line-height: 1.28; color: #f6f1e8; }
+  .lg-workflow__quote em { color: var(--accent); font-style: italic; }
+</style>
+</head>
+<body data-site="user" data-page="landing">
+<div class="u-landing">
+  <header class="u-landing__nav">
+    <a class="u-landing__brand" href="landing.html"><i>M</i>Mikiko Studio</a>
+    <nav class="u-landing__nav-links">
+      <a href="#capabilities">能力</a>
+      <a href="#workflow">流程</a>
+      <a href="#developers">开发者</a>
+    </nav>
+    <div style="flex:1"></div>
+    <a class="u-btn u-btn--quiet u-btn--sm" href="login.html">登录</a>
+    <a class="u-btn u-btn--primary u-btn--sm" href="home.html">进入工作室</a>
+  </header>
+
+  <div class="u-landing__wrap">
+    <section class="u-hero">
+      <div class="u-hero__copy">
+        <span class="u-eyebrow">Image &amp; Video Generation Platform</span>
+        <h1>连接灵感，<br>也连接<em>模型</em></h1>
+        <p>面向创作者与开发者的统一生成平台。图片、视频、参考图编辑与创意画布共用同一条链路：配置意图、确认预估、跟随状态、归档资产。</p>
+        <div class="u-hero__actions">
+          <a class="u-btn u-btn--primary u-btn--lg" href="genpic.html">开始创作</a>
+          <a class="u-btn u-btn--lg" href="public-gallery.html">浏览公开广场</a>
+        </div>
+        <div class="u-hero__proof">
+          <div><b>14</b><span>可用抽象模型</span></div>
+          <div><b>6</b><span>视频生成方式</span></div>
+          <div><b>1.8s</b><span>平均估价响应</span></div>
+          <div><b>100%</b><span>结果可追溯</span></div>
+        </div>
+      </div>
+      <div class="u-hero__art">
+        <img src="https://picsum.photos/seed/mikiko-hero-portrait/1100/1180" data-seed="mikiko-hero" alt="由平台生成的暖色人像作品">
+        <div class="u-hero__float">
+          <span>Recent asset</span>
+          <strong>午夜花园 · 02</strong>
+          <span class="u-status u-status--ok"><span class="u-dot"></span>已归档 · 4 张</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="capabilities" data-reveal>
+      <div class="u-landing__section-head">
+        <h2>从意图到结果，<br>能力各有边界</h2>
+        <p>平台把上游模型差异收敛成可控参数。提交前就能看到能力校验、尺寸约束与积分预估，不会在看不见的地方失败。</p>
+      </div>
+      <div class="u-bento">
+        <article class="u-bento__item u-bento__item--hero" data-reveal>
+          <img src="https://picsum.photos/seed/mikiko-cap-studio/1200/900" data-seed="cap-studio" alt="创作工作台截图">
+          <h3>文生图，从一句描述开始</h3>
+          <p>选择抽象模型、质量、比例与数量，不必先理解每个上游的参数差异。</p>
+        </article>
+        <article class="u-bento__item u-bento__item--wide" data-reveal data-reveal-delay="1">
+          <img src="https://picsum.photos/seed/mikiko-cap-edit/900/620" data-seed="cap-edit" alt="图片编辑示例">
+          <h3>图片编辑，沿用已有画面</h3>
+          <p>上传图片并描述修改目标，能力不支持时会在提交前明确阻止。</p>
+        </article>
+        <article class="u-bento__item u-bento__item--half" data-reveal data-reveal-delay="2">
+          <img src="https://picsum.photos/seed/mikiko-cap-ref/800/560" data-seed="cap-ref" alt="参考图生成示例">
+          <h3>参考图生成</h3>
+          <p>用一张或多张参考图约束主体与方向。</p>
+        </article>
+        <article class="u-bento__item u-bento__item--small" data-reveal data-reveal-delay="3">
+          <img src="https://picsum.photos/seed/mikiko-cap-video/800/560" data-seed="cap-video" alt="视频生成示例">
+          <h3>视频任务</h3>
+          <p>文生、首帧、首尾帧、参考生与延长，统一在工作台里跟踪。</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="workflow" data-reveal>
+      <div class="u-landing__section-head">
+        <h2>一次配置，<br>完整走完生成链路</h2>
+        <p>创作不是一堆散落的弹窗。参数、预估、任务状态和结果归档在同一条阅读路径里，失败也能定位到具体环节。</p>
+      </div>
+      <div class="lg-workflow" data-reveal>
+        <img src="https://picsum.photos/seed/mikiko-workflow/1600/700" data-seed="workflow" alt="创作流程背景">
+        <p class="lg-workflow__quote">选择任务类型与抽象模型，配置质量、比例和数量；平台先完成能力校验与积分预估，再进入排队、生成、保存，结果最终回到你的<em>历史资产</em>。</p>
+      </div>
+      <div class="u-steps" style="margin-top:24px">
+        <div class="u-step"><b>01</b><strong>配置意图</strong><p>模型、尺寸模式、质量与参考图，一次性确认。</p></div>
+        <div class="u-step"><b>02</b><strong>确认预估</strong><p>提交前看见本次消耗与最大预留积分。</p></div>
+        <div class="u-step"><b>03</b><strong>跟随状态</strong><p>参数校验 → 路由 → 排队 → 生成 → 入库 → 结算。</p></div>
+        <div class="u-step"><b>04</b><strong>归档结果</strong><p>复用参数、公开分享或纳入项目资产。</p></div>
+      </div>
+    </section>
+
+    <section data-reveal>
+      <div class="u-landing__section-head">
+        <h2>三种表达方式，<br>同一套控制面</h2>
+        <p>文字、编辑与参考图不是三套界面，而是同一组参数的不同入口。</p>
+      </div>
+      <div class="lg-mode">
+        <article data-reveal><img src="https://picsum.photos/seed/mikiko-mode-text/800/1100" data-seed="mode-text" alt="文字生图作品"><div class="lg-mode__copy"><b>从文字构建画面</b><p>中文与英文提示词均可用于文生图，尺寸、质量与数量按当前模型能力开放。</p></div></article>
+        <article data-reveal data-reveal-delay="1"><img src="https://picsum.photos/seed/mikiko-mode-edit/800/1100" data-seed="mode-edit" alt="图片编辑作品"><div class="lg-mode__copy"><b>在原图上继续</b><p>图片编辑需要图片输入；不兼容的模型不会进入扣费与生成流程。</p></div></article>
+        <article data-reveal data-reveal-delay="2"><img src="https://picsum.photos/seed/mikiko-mode-ref/800/1100" data-seed="mode-ref" alt="参考图生成作品"><div class="lg-mode__copy"><b>让参考图参与表达</b><p>参考图数量、格式和大小先校验，输入数量与最终输出数量分别计算。</p></div></article>
+      </div>
+    </section>
+
+    <section id="developers" data-reveal>
+      <div class="u-code">
+        <div style="display:grid;gap:16px">
+          <span class="u-eyebrow">Developers</span>
+          <h2 style="font-family:var(--font-display);font-size:clamp(26px,2.8vw,38px);font-weight:400;line-height:1.1;letter-spacing:-.025em">前端创作与程序接入，<br>共用同一套能力边界</h2>
+          <p class="u-sub">使用平台原生接口创建与查询任务，或通过 OpenAI 兼容接口接入现有应用。AK/SK、任务状态和积分流水保持可追踪。</p>
+          <div><a class="u-btn u-btn--sm" href="api-keys.html">查看 API 密钥</a></div>
+        </div>
+        <div>
+<pre><span class="c"># 创建任务（异步）</span>
+curl -X POST https://api.mikiko.studio/v1/images/generations \
+  -H <span class="s">"Authorization: Bearer $MIKIKO_SK"</span> \
+  -d <span class="s">'{
+    "model": "plus-image",
+    "prompt": "黄昏光线下的玻璃温室，胶片质感",
+    "size": "1536x1024",
+    "quality": "high",
+    "n": 2
+  }'</span>
+
+<span class="c"># 查询任务与积分结算</span>
+GET /v1/tasks/<span class="n">{task_id}</span></pre>
+          <div class="u-marquee" style="margin-top:14px">
+            <div>
+              <span>原生生成 API</span><span>OpenAI 兼容</span><span>异步任务查询</span><span>AK / SK</span><span>模型能力</span><span>积分预估</span>
+              <span>原生生成 API</span><span>OpenAI 兼容</span><span>异步任务查询</span><span>AK / SK</span><span>模型能力</span><span>积分预估</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section data-reveal>
+      <div class="u-cta">
+        <h2>灵感已经就位，剩下的交给一条清晰链路</h2>
+        <div class="u-hero__actions">
+          <a class="u-btn u-btn--primary u-btn--lg" href="genpic.html">开始生成</a>
+          <a class="u-btn u-btn--lg" href="home.html">查看我的工作台</a>
+        </div>
+      </div>
+    </section>
+
+    <footer class="u-landing__foot">
+      <div style="display:flex;align-items:center;gap:10px"><span class="u-landing__brand" style="font-size:14px"><i style="width:26px;height:26px;font-size:12px">M</i>Mikiko Studio</span></div>
+      <div class="u-landing__foot-links">
+        <a href="public-gallery.html">公开广场</a>
+        <a href="api-keys.html">API 文档</a>
+        <a href="settings.html">服务协议</a>
+        <a href="settings.html">隐私条款</a>
+      </div>
+      <span class="u-meta">© 2026 Mikiko Studio</span>
+    </footer>
+  </div>
+</div>
+<script src="../assets/shell.js"></script>
+</body>
+</html>

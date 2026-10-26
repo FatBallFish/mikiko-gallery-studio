@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>价格策略 · 已并入路由模型 — Mikiko Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/admin.css">
+</head>
+<body data-site="admin" data-page="pricing" data-title="价格策略">
+<div class="a-shell"><div class="a-main">
+  <main class="a-content">
+    <header class="a-page-head">
+      <div class="a-page-head__copy">
+        <span class="a-kicker">Pricing · Moved</span>
+        <h1>价格策略已并入路由模型</h1>
+        <p>价格不再作为独立菜单维护。每个路由在编辑抽屉的“价格策略”页签内统一配置图片与视频售价。</p>
+      </div>
+      <div class="a-page-head__actions">
+        <a class="a-btn a-btn--sm a-btn--primary" href="routing.html">前往路由模型</a>
+      </div>
+    </header>
+
+    <div class="a-banner a-banner--info" style="margin-bottom:16px">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg>
+      <div><strong style="font-size:13px">统一入口</strong><div class="a-hint">路由模型 → 编辑路由 → 价格策略。在那里同时维护计费口径、分组倍率、图片按张价格与视频按秒价格。</div></div>
+    </div>
+
+    <section class="a-panel a-panel--pad">
+      <div class="a-section-title"><div><h2>价格配置的新位置</h2><p>价格与路由、候选、视频参数在同一个抽屉中，缺价会直接阻断对应能力。</p></div></div>
+      <div class="a-grid a-grid--3">
+        <div class="a-panel" style="box-shadow:none;padding:15px"><div class="a-hint">图片价格</div><strong style="font-size:15px">按基础分辨率</strong><div class="a-hint" style="margin-top:5px">1K / 2K / 4K 单张积分。</div></div>
+        <div class="a-panel" style="box-shadow:none;padding:15px"><div class="a-hint">视频价格</div><strong style="font-size:15px">按秒与分辨率</strong><div class="a-hint" style="margin-top:5px">480p / 720p / 1080p 每秒积分。</div></div>
+        <div class="a-panel" style="box-shadow:none;padding:15px"><div class="a-hint">缺价阻断</div><strong style="font-size:15px">提交前校验</strong><div class="a-hint" style="margin-top:5px">缺少组合价格时用户端不展示该能力。</div></div>
+      </div>
+      <div style="margin-top:16px"><a class="a-btn a-btn--sm" href="routing.html">返回路由模型</a></div>
+    </section>
+  </main>
+</div></div>
+<script src="../assets/shell.js"></script>
+</body>
+</html>

@@ -39,9 +39,9 @@ func TestOpenAPISpecCoversP0Paths(t *testing.T) {
 		"/api/agent/gallery/v1/images/{image_id}/publish",
 		"/api/agent/image/v1/capabilities",
 		"/api/agent/image/v1/tasks",
-		"/api/open/image/v1/reference-assets/uploads",
-		"/api/open/image/v1/tasks",
-		"/api/open/image/v1/estimate",
+		"/api/open/v1/uploads",
+		"/api/open/v1/image-tasks",
+		"/api/open/v1/image-tasks/preflight",
 		"/api/open/image/v1/gallery/images",
 		"/api/open/image/v1/payments/webhooks/{channel}",
 		"/api/ops/admin/v1/config-tabs/{tab_key}",
@@ -1620,17 +1620,17 @@ func TestOpenAPISpecDocumentsOpenImageAuthAndUploadContract(t *testing.T) {
 		t.Fatalf("unmarshal openapi spec: %v", err)
 	}
 	for path, method := range map[string]string{
-		"/api/open/image/v1/reference-assets/uploads": "post",
-		"/api/open/image/v1/tasks":                    "post",
-		"/api/open/image/v1/estimate":                 "get",
+		"/api/open/v1/uploads":               "post",
+		"/api/open/v1/image-tasks":           "post",
+		"/api/open/v1/image-tasks/preflight": "post",
 	} {
 		operation := doc.Paths[path][method]
-		if len(operation.Security) != 1 || operation.Security[0]["accessKeyAuth"] == nil || operation.Security[0]["accessSignature"] == nil {
-			t.Fatalf("expected %s %s to require both accessKeyAuth and accessSignature, got %#v", method, path, operation.Security)
+		if len(operation.Security) != 1 || operation.Security[0]["developerBearerAuth"] == nil {
+			t.Fatalf("expected %s %s to require developerBearerAuth, got %#v", method, path, operation.Security)
 		}
 	}
 	taskParams := map[string]bool{}
-	for _, param := range doc.Paths["/api/open/image/v1/tasks"]["post"].Parameters {
+	for _, param := range doc.Paths["/api/open/v1/image-tasks"]["post"].Parameters {
 		taskParams[param.In+":"+param.Name] = true
 		taskParams[param.Ref] = true
 	}
@@ -1643,12 +1643,12 @@ func TestOpenAPISpecDocumentsOpenImageAuthAndUploadContract(t *testing.T) {
 		"/v1/models":             "get",
 	} {
 		operation := doc.Paths[path][method]
-		if len(operation.Security) != 1 || operation.Security[0]["compatBearerAuth"] == nil {
-			t.Fatalf("expected %s %s to use compatBearerAuth, got %#v", method, path, operation.Security)
+		if len(operation.Security) != 1 || operation.Security[0]["developerBearerAuth"] == nil {
+			t.Fatalf("expected %s %s to use developerBearerAuth, got %#v", method, path, operation.Security)
 		}
 	}
-	if doc.Components.SecuritySchemes["compatBearerAuth"].BearerFormat != "sk-*" {
-		t.Fatalf("expected compatBearerAuth bearerFormat sk-*, got %#v", doc.Components.SecuritySchemes["compatBearerAuth"])
+	if doc.Components.SecuritySchemes["developerBearerAuth"].BearerFormat != "API Key" {
+		t.Fatalf("expected developerBearerAuth bearerFormat API Key, got %#v", doc.Components.SecuritySchemes["developerBearerAuth"])
 	}
 
 	schemaContent, err := os.ReadFile("components/schemas/openapi.yaml")
@@ -1683,7 +1683,7 @@ func TestOpenAPISpecDocumentsNativeTaskAsyncOnlyContract(t *testing.T) {
 	if err := yaml.Unmarshal(content, &doc); err != nil {
 		t.Fatalf("unmarshal openapi spec: %v", err)
 	}
-	for _, path := range []string{"/api/agent/image/v1/tasks", "/api/open/image/v1/tasks"} {
+	for _, path := range []string{"/api/agent/image/v1/tasks", "/api/open/v1/image-tasks"} {
 		if _, ok := doc.Paths[path]["post"].Responses["400"]; !ok {
 			t.Fatalf("expected %s post to document 400 for unsupported sync response_mode", path)
 		}
@@ -1882,7 +1882,7 @@ func TestOpenAPISpecDocumentsRouteModelSelectionContract(t *testing.T) {
 	if err := yaml.Unmarshal(content, &rootDoc); err != nil {
 		t.Fatalf("unmarshal openapi spec: %v", err)
 	}
-	for _, path := range []string{"/api/agent/billing/v1/estimate", "/api/open/image/v1/estimate"} {
+	for _, path := range []string{"/api/agent/billing/v1/estimate"} {
 		parameters := rootDoc.Paths[path]["get"].Parameters
 		if len(parameters) < 2 || parameters[0].Ref != "./components/parameters/common.yaml#/components/parameters/RouteModelCode" {
 			t.Fatalf("expected %s to prefer RouteModelCode, got %#v", path, parameters)

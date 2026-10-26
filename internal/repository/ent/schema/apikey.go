@@ -16,6 +16,7 @@ func (APIKey) Fields() []ent.Field {
 		field.String("access_key").MaxLen(64).NotEmpty(),
 		field.String("secret_hash").MaxLen(128).NotEmpty(),
 		field.String("secret_ciphertext").MaxLen(512).Optional().Nillable(),
+		field.JSON("scopes", []string{}).Default([]string{"account:read", "models:read", "images:read", "images:write"}),
 		field.String("name").MaxLen(64).NotEmpty(),
 		field.String("status").MaxLen(32).Default("active"),
 		field.String("group_code").MaxLen(32).Default("default"),

@@ -8,6 +8,8 @@ import (
 	"math"
 	"sort"
 	"strings"
+
+	"github.com/fatballfish/pic-gallery/internal/domain/nativeimage"
 )
 
 const maxCanvasCoordinate = 1_000_000
@@ -42,10 +44,14 @@ func ValidateDocument(document DocumentV1, limits Limits) *ValidationError {
 			return graphError("invalid_node_position", node.ID, "", "canvas node position is outside the safety range")
 		}
 		minimum := minimumNodeSize(node.Type)
-		if !isFinite(node.Size.Width) || !isFinite(node.Size.Height) || node.Size.Width < minimum.Width || node.Size.Height < minimum.Height {
+		layer, layerErr := validLayerGeometry(node)
+		if layerErr != nil {
+			return graphError("invalid_layer_geometry", node.ID, "", layerErr.Error())
+		}
+		if !isFinite(node.Size.Width) || !isFinite(node.Size.Height) || node.Size.Width <= 0 || node.Size.Height <= 0 || (!layer && (node.Size.Width < minimum.Width || node.Size.Height < minimum.Height || (IsIntegrated(node.Type) && math.Max(node.Size.Width, node.Size.Height) < 80))) {
 			return graphError("invalid_node_size", node.ID, "", "canvas node size is below the supported minimum")
 		}
-		if isMediaNode(node.Type) && node.Type != NodeTypeImage && strings.TrimSpace(node.AssetID) == "" {
+		if isMediaNode(node.Type) && !IsIntegrated(node.Type) && node.Type != NodeTypeImage && strings.TrimSpace(node.AssetID) == "" {
 			return graphError("asset_required", node.ID, "", "media node must reference an asset")
 		}
 		if limits.MaxNodeBytes > 0 && len(node.Payload) > limits.MaxNodeBytes {
@@ -65,6 +71,7 @@ func ValidateDocument(document DocumentV1, limits Limits) *ValidationError {
 	edges := make(map[string]struct{}, len(document.Edges))
 	arcs := make([]GraphArc, 0, len(document.Edges))
 	roleTargets := make(map[string]string)
+	integratedInputs := make(map[string]bool)
 	for _, edge := range document.Edges {
 		if strings.TrimSpace(edge.ID) == "" || len(edge.ID) > 64 {
 			return graphError("invalid_edge_id", "", edge.ID, "canvas edge ID is invalid")
@@ -80,6 +87,16 @@ func ValidateDocument(document DocumentV1, limits Limits) *ValidationError {
 		}
 		if !isLegalConnection(source.Type, target.Type, edge.InputRole) {
 			return graphError("illegal_connection", "", edge.ID, "canvas connection is not allowed")
+		}
+		if IsIntegrated(source.Type) && source.AssetID == "" {
+			return graphError("illegal_connection", "", edge.ID, "integrated inputs require filled sources")
+		}
+		if IsIntegrated(target.Type) {
+			key := edge.Target + "/" + string(edge.InputRole) + "/" + strings.TrimSpace(source.AssetID)
+			if edge.Ordinal < 0 || integratedInputs[key] {
+				return graphError("input_role_conflict", target.ID, edge.ID, "duplicate media input or invalid ordinal")
+			}
+			integratedInputs[key] = true
 		}
 		if edge.InputRole == InputRoleFirstFrame || edge.InputRole == InputRoleLastFrame {
 			key := edge.Target + "/" + string(edge.InputRole)
@@ -171,8 +188,47 @@ func isHexColor(value string) bool {
 	return true
 }
 
+// validLayerGeometry permits small image crops without weakening ordinary media
+// node minimums. Raw pixel dimensions and bbox remain bounded and well formed.
+func validLayerGeometry(node Node) (bool, error) {
+	if node.Type != NodeTypeImageV2 || len(node.Payload) == 0 {
+		return false, nil
+	}
+	var payload struct {
+		Layer  *nativeimage.LayerMetadata `json:"layer"`
+		Width  int                        `json:"width"`
+		Height int                        `json:"height"`
+	}
+	if json.Unmarshal(node.Payload, &payload) != nil || payload.Layer == nil {
+		return false, nil
+	}
+	if strings.TrimSpace(node.AssetID) == "" || payload.Width <= 0 || payload.Height <= 0 || payload.Width > maxCanvasCoordinate || payload.Height > maxCanvasCoordinate || node.Size.Width > maxCanvasCoordinate || node.Size.Height > maxCanvasCoordinate {
+		return false, fmt.Errorf("canvas layer dimensions are outside the safety range")
+	}
+	if b := payload.Layer.BoundingBox; b != nil {
+		for _, coordinate := range b.Absolute {
+			if coordinate < 0 || coordinate > maxCanvasCoordinate {
+				return false, fmt.Errorf("canvas layer bounding box is outside the safety range")
+			}
+		}
+		for _, coordinate := range b.Normalized {
+			if coordinate < 0 || coordinate > 1000 {
+				return false, fmt.Errorf("canvas layer normalized bounding box is outside the safety range")
+			}
+		}
+		if b.Absolute[2] <= b.Absolute[0] || b.Absolute[3] <= b.Absolute[1] || b.Normalized[2] < b.Normalized[0] || b.Normalized[3] < b.Normalized[1] {
+			return false, fmt.Errorf("canvas layer bounding box ordering is invalid")
+		}
+	} else if !payload.Layer.IsBase {
+		return false, fmt.Errorf("canvas layer requires a bounding box")
+	}
+	return true, nil
+}
+
 func minimumNodeSize(nodeType NodeType) Size {
 	switch nodeType {
+	case NodeTypeImageV2, NodeTypeVideoV2:
+		return Size{Width: 1, Height: 1}
 	case NodeTypeImage, NodeTypeVideo:
 		return Size{Width: 220, Height: 160}
 	case NodeTypeAudio:
@@ -253,7 +309,7 @@ func StableResultNodeID(runID, assetID string) string {
 
 func isNodeType(nodeType NodeType) bool {
 	switch nodeType {
-	case NodeTypePrompt, NodeTypeImage, NodeTypeVideo, NodeTypeAudio, NodeTypeImageGeneration, NodeTypeVideoGeneration, NodeTypeNote:
+	case NodeTypeImageV2, NodeTypeVideoV2, NodeTypePrompt, NodeTypeImage, NodeTypeVideo, NodeTypeAudio, NodeTypeImageGeneration, NodeTypeVideoGeneration, NodeTypeNote:
 		return true
 	default:
 		return false
@@ -261,11 +317,19 @@ func isNodeType(nodeType NodeType) bool {
 }
 
 func isMediaNode(nodeType NodeType) bool {
-	return nodeType == NodeTypeImage || nodeType == NodeTypeVideo || nodeType == NodeTypeAudio
+	return IsIntegrated(nodeType) || nodeType == NodeTypeImage || nodeType == NodeTypeVideo || nodeType == NodeTypeAudio
 }
 
 func isLegalConnection(source, target NodeType, role InputRole) bool {
 	switch {
+	case (source == NodeTypeImageV2 || source == NodeTypeImage) && target == NodeTypeImageV2:
+		return role == InputRoleReference
+	case (source == NodeTypeImageV2 || source == NodeTypeImage) && target == NodeTypeVideoV2:
+		return role == InputRoleFirstFrame || role == InputRoleLastFrame || role == InputRoleReferenceImage
+	case (source == NodeTypeVideoV2 || source == NodeTypeVideo) && target == NodeTypeVideoV2:
+		return role == InputRoleReferenceVideo
+	case source == NodeTypeAudio && target == NodeTypeVideoV2:
+		return role == InputRoleReferenceAudio
 	case source == NodeTypePrompt && (target == NodeTypeImageGeneration || target == NodeTypeVideoGeneration):
 		return role == InputRolePrompt
 	case source == NodeTypeImage && target == NodeTypeImageGeneration:
@@ -285,4 +349,46 @@ func isLegalConnection(source, target NodeType, role InputRole) bool {
 
 func graphError(code, nodeID, edgeID, detail string) *ValidationError {
 	return &ValidationError{Code: code, NodeID: nodeID, EdgeID: edgeID, Detail: fmt.Sprintf("%s", detail)}
+}
+
+// IsIntegrated identifies schema-1 media nodes that can also hold an inline generation draft.
+func IsIntegrated(t NodeType) bool { return t == NodeTypeImageV2 || t == NodeTypeVideoV2 }
+
+func IsDeprecated(t NodeType) bool {
+	return t == NodeTypePrompt || t == NodeTypeImage || t == NodeTypeVideo || t == NodeTypeImageGeneration || t == NodeTypeVideoGeneration
+}
+
+// ValidateMutation permits historical nodes to be retained verbatim or deleted.
+func ValidateMutation(previous, next DocumentV1) *ValidationError {
+	old := make(map[string]Node, len(previous.Nodes))
+	for _, n := range previous.Nodes {
+		old[n.ID] = n
+	}
+	for _, n := range next.Nodes {
+		prior, exists := old[n.ID]
+		if IsDeprecated(n.Type) || (exists && IsDeprecated(prior.Type)) {
+			a, _ := json.Marshal(prior)
+			b, _ := json.Marshal(n)
+			var av, bv any
+			_ = json.Unmarshal(a, &av)
+			_ = json.Unmarshal(b, &bv)
+			a, _ = json.Marshal(av)
+			b, _ = json.Marshal(bv)
+			if !exists || string(a) != string(b) {
+				return graphError("deprecated_node", n.ID, "", "legacy nodes can only be retained unchanged or deleted")
+			}
+		}
+	}
+	oldEdges := make(map[string]Edge, len(previous.Edges))
+	for _, e := range previous.Edges {
+		oldEdges[e.ID] = e
+	}
+	for _, e := range next.Edges {
+		if IsDeprecated(old[e.Source].Type) || IsDeprecated(old[e.Target].Type) {
+			if prior, ok := oldEdges[e.ID]; !ok || prior != e {
+				return graphError("deprecated_node", "", e.ID, "legacy connections cannot be created or edited")
+			}
+		}
+	}
+	return nil
 }

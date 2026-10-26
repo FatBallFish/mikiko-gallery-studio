@@ -78,6 +78,8 @@ type Canvas struct {
 	UpdatedAt         time.Time               `json:"updated_at"`
 }
 type Run struct {
+	ProgressStage     string          `json:"progress_stage,omitempty"`
+	ProgressMessage   string          `json:"progress_message,omitempty"`
 	ID                uuid.UUID       `json:"id"`
 	CanvasID          uuid.UUID       `json:"canvas_id"`
 	UserID            int64           `json:"-"`
@@ -177,6 +179,7 @@ type GenerationSubmission struct {
 	CanvasID            uuid.UUID
 	NodeID              string
 	Kind                TaskKind
+	Revision            int64
 	IdempotencyKey      string
 	Node                domaincanvas.Node
 	Inputs              []GenerationInput
@@ -192,10 +195,12 @@ type GenerationTask struct {
 	Status RunStatus
 }
 type TaskStatus struct {
-	Status         RunStatus
-	ResultAssetIDs []uuid.UUID
-	ErrorCode      string
-	ErrorMessage   string
+	ProgressStage   string
+	ProgressMessage string
+	Status          RunStatus
+	ResultAssetIDs  []uuid.UUID
+	ErrorCode       string
+	ErrorMessage    string
 }
 type Generator interface {
 	Estimate(context.Context, GenerationSubmission) (Estimate, error)
@@ -269,6 +274,9 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Canvas, error)
 	normalized, raw, refs, err := normalizeDocument(doc, s.limits)
 	if err != nil {
 		return Canvas{}, err
+	}
+	if validation := domaincanvas.ValidateMutation(domaincanvas.DocumentV1{}, normalized); validation != nil {
+		return Canvas{}, validation
 	}
 	now := s.now().UTC()
 	item := Canvas{ID: uuid.New(), UserID: req.UserID, ProjectID: req.ProjectID, Name: name, SchemaVersion: 1, Revision: 1, MetadataVersion: 1, Document: normalized, DocumentBytes: len(raw), NodeCount: len(normalized.Nodes), EdgeCount: len(normalized.Edges), AssetReferences: refs, Status: CanvasStatusActive, LastSavedAt: now, CreatedAt: now, UpdatedAt: now}
@@ -350,6 +358,15 @@ func (s *Service) Generate(ctx context.Context, req GenerateRequest) (Run, error
 	if strings.TrimSpace(req.IdempotencyKey) == "" || len(req.IdempotencyKey) > 128 {
 		return Run{}, fmt.Errorf("valid idempotency key is required")
 	}
+	existing, err := s.store.ListRuns(ctx, req.UserID, req.CanvasID)
+	if err != nil {
+		return Run{}, err
+	}
+	for _, run := range existing {
+		if run.NodeID == req.NodeID && run.IdempotencyKey == req.IdempotencyKey {
+			return run, nil
+		}
+	}
 	submission, err := s.submission(ctx, req)
 	if err != nil {
 		return Run{}, err
@@ -357,10 +374,9 @@ func (s *Service) Generate(ctx context.Context, req GenerateRequest) (Run, error
 	if s.generator == nil {
 		return Run{}, errors.New("canvas generation is unavailable")
 	}
-	canvas, _ := s.store.Get(ctx, req.UserID, req.CanvasID)
 	snapshot, _ := json.Marshal(map[string]any{"node": submission.Node, "inputs": submission.Inputs})
 	now := s.now().UTC()
-	run := Run{ID: uuid.New(), CanvasID: req.CanvasID, UserID: req.UserID, NodeID: req.NodeID, SubmittedRevision: canvas.Revision, TaskKind: submission.Kind, TaskID: uuid.New(), NodeSnapshot: snapshot, Status: RunStatusSubmitting, IdempotencyKey: req.IdempotencyKey, CreatedAt: now, UpdatedAt: now}
+	run := Run{ID: uuid.New(), CanvasID: req.CanvasID, UserID: req.UserID, NodeID: req.NodeID, SubmittedRevision: submission.Revision, TaskKind: submission.Kind, TaskID: uuid.New(), NodeSnapshot: snapshot, Status: RunStatusSubmitting, IdempotencyKey: req.IdempotencyKey, CreatedAt: now, UpdatedAt: now}
 	created, replayed, err := s.store.CreateRun(ctx, run)
 	if err != nil || replayed {
 		return created, err
@@ -421,10 +437,11 @@ func (s *Service) RefreshRun(ctx context.Context, userID int64, canvasID, runID 
 		return Run{}, err
 	}
 	updated, err := s.store.UpdateRun(ctx, RunUpdate{UserID: userID, CanvasID: canvasID, RunID: runID, Status: status.Status, ResultAssetIDs: status.ResultAssetIDs, ErrorCode: status.ErrorCode, ErrorMessage: status.ErrorMessage})
-	if err != nil || updated.Status != RunStatusSucceeded {
-		return updated, err
+	if err == nil && updated.Status == RunStatusSucceeded {
+		updated, err = s.attachSucceededResults(ctx, updated)
 	}
-	return s.attachSucceededResults(ctx, updated)
+	updated.ProgressStage, updated.ProgressMessage = status.ProgressStage, status.ProgressMessage
+	return updated, err
 }
 func (s *Service) CancelRun(ctx context.Context, userID int64, canvasID, runID uuid.UUID) (Run, error) {
 	run, err := s.store.GetRun(ctx, userID, canvasID, runID)
@@ -457,7 +474,16 @@ func (s *Service) AttachResults(ctx context.Context, req AttachResultsRequest) (
 		if !validRecoveryPosition(*req.RecoveryPosition) {
 			return Run{}, fmt.Errorf("invalid recovery position")
 		}
+		layers, err := s.runLayers(ctx, run)
+		if err != nil {
+			return Run{}, err
+		}
 		nodes := recoveredResultPlacement(run, *req.RecoveryPosition)
+		if len(layers) > 0 {
+			const width = 320.0
+			height := width * float64(layers[0].result.Height) / float64(layers[0].result.Width)
+			nodes = layerPlacement(run, layers, domaincanvas.Point{X: req.RecoveryPosition.X - width/2, Y: req.RecoveryPosition.Y - height/2}, width)
+		}
 		return s.store.AttachResults(ctx, AttachRecord{UserID: run.UserID, CanvasID: run.CanvasID, RunID: run.ID, Nodes: nodes, RecoverUnplaced: true})
 	}
 	if run.Status != RunStatusSucceeded {
@@ -478,8 +504,20 @@ func (s *Service) attachSucceededResults(ctx context.Context, run Run) (Run, err
 		return Run{}, err
 	}
 	source, ok := findNode(canvas.Document, run.NodeID)
-	if !ok {
+	if !ok || !CanAttachToSource(run, canvas.Document) {
 		return s.store.AttachResults(ctx, AttachRecord{UserID: run.UserID, CanvasID: run.CanvasID, RunID: run.ID})
+	}
+	layers, err := s.runLayers(ctx, run)
+	if err != nil {
+		return Run{}, err
+	}
+	if len(layers) > 0 {
+		width := source.Size.Width
+		if width <= 0 {
+			width = 320
+		}
+		nodes := layerPlacement(run, layers, domaincanvas.Point{X: source.Position.X + source.Size.Width + 80, Y: source.Position.Y}, width)
+		return s.store.AttachResults(ctx, AttachRecord{UserID: run.UserID, CanvasID: run.CanvasID, RunID: run.ID, ExpectedRevision: canvas.Revision, Nodes: nodes})
 	}
 	runs, err := s.store.ListRuns(ctx, run.UserID, run.CanvasID)
 	if err != nil {
@@ -505,10 +543,16 @@ func (s *Service) submission(ctx context.Context, req GenerateRequest) (Generati
 		return GenerationSubmission{}, ErrNotFound
 	}
 	kind := TaskKindImage
-	if node.Type == domaincanvas.NodeTypeVideoGeneration {
+	if node.Type == domaincanvas.NodeTypeVideoV2 {
 		kind = TaskKindVideo
-	} else if node.Type != domaincanvas.NodeTypeImageGeneration {
+	} else if node.Type != domaincanvas.NodeTypeImageV2 {
 		return GenerationSubmission{}, fmt.Errorf("node is not a generation node")
+	}
+	if strings.TrimSpace(node.AssetID) != "" {
+		return GenerationSubmission{}, fmt.Errorf("filled media nodes cannot generate")
+	}
+	if validation := domaincanvas.ValidateDocument(canvas.Document, s.limits); validation != nil {
+		return GenerationSubmission{}, validation
 	}
 	inputs := make([]GenerationInput, 0)
 	for _, edge := range canvas.Document.Edges {
@@ -518,7 +562,13 @@ func (s *Service) submission(ctx context.Context, req GenerateRequest) (Generati
 			}
 		}
 	}
-	return GenerationSubmission{UserID: req.UserID, UserGroupCode: req.UserGroupCode, UserGroupCodes: append([]string(nil), req.UserGroupCodes...), UserGroupMultiplier: req.UserGroupMultiplier, ProjectID: canvas.ProjectID, CanvasID: canvas.ID, NodeID: node.ID, Kind: kind, IdempotencyKey: req.IdempotencyKey, Node: node, Inputs: inputs}, nil
+	sort.SliceStable(inputs, func(i, j int) bool {
+		if inputs[i].Ordinal != inputs[j].Ordinal {
+			return inputs[i].Ordinal < inputs[j].Ordinal
+		}
+		return inputs[i].Node.ID < inputs[j].Node.ID
+	})
+	return GenerationSubmission{UserID: req.UserID, UserGroupCode: req.UserGroupCode, UserGroupCodes: append([]string(nil), req.UserGroupCodes...), UserGroupMultiplier: req.UserGroupMultiplier, ProjectID: canvas.ProjectID, CanvasID: canvas.ID, NodeID: node.ID, Kind: kind, Revision: canvas.Revision, IdempotencyKey: req.IdempotencyKey, Node: node, Inputs: inputs}, nil
 }
 
 func normalizeDocument(doc domaincanvas.DocumentV1, limits domaincanvas.Limits) (domaincanvas.DocumentV1, []byte, []uuid.UUID, error) {
@@ -542,8 +592,8 @@ func normalizeDocument(doc domaincanvas.DocumentV1, limits domaincanvas.Limits) 
 	raw, _ = json.Marshal(normalized)
 	refs := parseAssetReferences(normalized)
 	for _, node := range normalized.Nodes {
-		if node.Type == domaincanvas.NodeTypeImage || node.Type == domaincanvas.NodeTypeVideo || node.Type == domaincanvas.NodeTypeAudio {
-			if node.Type == domaincanvas.NodeTypeImage && strings.TrimSpace(node.AssetID) == "" {
+		if domaincanvas.IsIntegrated(node.Type) || node.Type == domaincanvas.NodeTypeImage || node.Type == domaincanvas.NodeTypeVideo || node.Type == domaincanvas.NodeTypeAudio {
+			if (domaincanvas.IsIntegrated(node.Type) || node.Type == domaincanvas.NodeTypeImage) && strings.TrimSpace(node.AssetID) == "" {
 				continue
 			}
 			if _, err := uuid.Parse(strings.TrimSpace(node.AssetID)); err != nil {
@@ -624,6 +674,22 @@ func cloneDocument(doc domaincanvas.DocumentV1) domaincanvas.DocumentV1 {
 	return result
 }
 func resultPlacement(run Run, source domaincanvas.Node, document domaincanvas.DocumentV1, consumeEmptySlots bool, batchIndex int) ([]domaincanvas.Node, []domaincanvas.Node, []domaincanvas.Edge) {
+	if domaincanvas.IsIntegrated(source.Type) {
+		updated := make([]domaincanvas.Node, 0, 1)
+		siblings := make([]domaincanvas.Node, 0)
+		for i, assetID := range run.ResultAssetIDs {
+			if i == 0 {
+				source.AssetID = assetID.String()
+				updated = append(updated, source)
+				continue
+			}
+			id := domaincanvas.StableResultNodeID(run.ID.String(), assetID.String())
+			payload, _ := json.Marshal(map[string]any{"name": id, "title": resultNodeName(source.Type, 0, i)})
+			siblings = append(siblings, domaincanvas.Node{ID: id, Type: source.Type, AssetID: assetID.String(), Position: domaincanvas.Point{X: source.Position.X + float64(i)*(source.Size.Width+48), Y: source.Position.Y}, Size: source.Size, Payload: payload})
+		}
+		return updated, siblings, nil
+	}
+
 	updatedNodes := make([]domaincanvas.Node, 0)
 	nodes := make([]domaincanvas.Node, 0, len(run.ResultAssetIDs))
 	edges := make([]domaincanvas.Edge, 0, len(run.ResultAssetIDs))
@@ -692,6 +758,13 @@ func recoveredResultPlacement(run Run, center domaincanvas.Point) []domaincanvas
 	if run.TaskKind == TaskKindVideo {
 		mediaType = domaincanvas.NodeTypeVideo
 	}
+	var snapshot struct {
+		Node domaincanvas.Node `json:"node"`
+	}
+	_ = json.Unmarshal(run.NodeSnapshot, &snapshot)
+	if domaincanvas.IsIntegrated(snapshot.Node.Type) {
+		mediaType = snapshot.Node.Type
+	}
 	nodes := make([]domaincanvas.Node, 0, len(run.ResultAssetIDs))
 	for index, assetID := range run.ResultAssetIDs {
 		nodes = append(nodes, domaincanvas.Node{
@@ -706,12 +779,17 @@ func recoveredResultPlacement(run Run, center domaincanvas.Point) []domaincanvas
 			Payload: ensureResultNodeName(nil, resultNodeName(mediaType, 0, index)),
 		})
 	}
+	if domaincanvas.IsIntegrated(mediaType) {
+		for i := range nodes {
+			nodes[i].Payload, _ = json.Marshal(map[string]any{"name": nodes[i].ID, "title": resultNodeName(mediaType, 0, i)})
+		}
+	}
 	return nodes
 }
 
 func resultNodeName(mediaType domaincanvas.NodeType, batchIndex, resultIndex int) string {
 	kind := "图片"
-	if mediaType == domaincanvas.NodeTypeVideo {
+	if mediaType == domaincanvas.NodeTypeVideo || mediaType == domaincanvas.NodeTypeVideoV2 {
 		kind = "视频"
 	}
 	return fmt.Sprintf("生成%s %d-%d", kind, batchIndex+1, resultIndex+1)
@@ -732,11 +810,69 @@ func templateDocument(template Template) domaincanvas.DocumentV1 {
 	doc := domaincanvas.DocumentV1{SchemaVersion: 1, Viewport: domaincanvas.Viewport{Zoom: 1}, Nodes: make([]domaincanvas.Node, 0), Edges: make([]domaincanvas.Edge, 0)}
 	switch template {
 	case TemplateImageExploration:
-		doc.Nodes = []domaincanvas.Node{{ID: "prompt", Type: domaincanvas.NodeTypePrompt, Position: domaincanvas.Point{X: 40, Y: 80}, Size: domaincanvas.Size{Width: 280, Height: 180}}, {ID: "image-generation", Type: domaincanvas.NodeTypeImageGeneration, Position: domaincanvas.Point{X: 400, Y: 80}, Size: domaincanvas.Size{Width: 320, Height: 240}}}
-		doc.Edges = []domaincanvas.Edge{{ID: "prompt-to-image", Source: "prompt", Target: "image-generation", InputRole: domaincanvas.InputRolePrompt}}
+		doc.Nodes = []domaincanvas.Node{{ID: "image-generation", Type: domaincanvas.NodeTypeImageV2, Position: domaincanvas.Point{X: 40, Y: 80}, Size: domaincanvas.Size{Width: 320, Height: 240}, Payload: json.RawMessage(`{"name":"image_1","title":"图片","draft":{"prompt_template":"","variables":{}}}`)}}
 	case TemplateImageToVideo:
-		doc.Nodes = []domaincanvas.Node{{ID: "prompt", Type: domaincanvas.NodeTypePrompt, Position: domaincanvas.Point{X: 40, Y: 80}, Size: domaincanvas.Size{Width: 280, Height: 180}}, {ID: "video-generation", Type: domaincanvas.NodeTypeVideoGeneration, Position: domaincanvas.Point{X: 440, Y: 140}, Size: domaincanvas.Size{Width: 320, Height: 240}}}
-		doc.Edges = []domaincanvas.Edge{{ID: "prompt-to-video", Source: "prompt", Target: "video-generation", InputRole: domaincanvas.InputRolePrompt}}
+		doc.Nodes = []domaincanvas.Node{{ID: "video-generation", Type: domaincanvas.NodeTypeVideoV2, Position: domaincanvas.Point{X: 40, Y: 80}, Size: domaincanvas.Size{Width: 320, Height: 240}, Payload: json.RawMessage(`{"name":"video_1","title":"视频","draft":{"prompt_template":"","variables":{}}}`)}}
+	}
+	if template == TemplateImageExploration {
+		first := doc.Nodes[0]
+		for i := 1; i < 4; i++ {
+			node := first
+			node.ID = fmt.Sprintf("image-%d", i+1)
+			node.Position.X += float64(i) * 368
+			node.Payload = json.RawMessage(fmt.Sprintf(`{"name":"image_%d","title":"图片 %d","draft":{"prompt_template":"","variables":{}}}`, i+1, i+1))
+			doc.Nodes = append(doc.Nodes, node)
+		}
+	}
+	if template == TemplateImageToVideo {
+		doc.Nodes = append(doc.Nodes, domaincanvas.Node{ID: "image-reference", Type: domaincanvas.NodeTypeImageV2, Position: domaincanvas.Point{X: 408, Y: 80}, Size: domaincanvas.Size{Width: 320, Height: 240}, Payload: json.RawMessage(`{"name":"image_1","title":"图片参考","draft":{"prompt_template":"","variables":{}}}`)})
 	}
 	return doc
+}
+
+// CanAttachToSource prevents an old task from replacing a newer draft or media selection.
+// Historical runs retain their original recovery semantics.
+func CanAttachToSource(run Run, document domaincanvas.DocumentV1) bool {
+	var snapshot struct {
+		Node   domaincanvas.Node `json:"node"`
+		Inputs []GenerationInput `json:"inputs"`
+	}
+	if json.Unmarshal(run.NodeSnapshot, &snapshot) != nil {
+		return false
+	}
+	if !domaincanvas.IsIntegrated(snapshot.Node.Type) {
+		return documentHasNode(document, run.NodeID)
+	}
+	current, ok := findNode(document, run.NodeID)
+	if !ok || current.Type != snapshot.Node.Type || strings.TrimSpace(current.AssetID) != "" {
+		return false
+	}
+	// Position, size and display title can change while a task runs.
+	signature := func(node domaincanvas.Node) string {
+		var payload map[string]any
+		_ = json.Unmarshal(node.Payload, &payload)
+		delete(payload, "title")
+		raw, _ := json.Marshal(payload)
+		return node.AssetID + "\x00" + string(raw)
+	}
+	if signature(current) != signature(snapshot.Node) {
+		return false
+	}
+	inputs := make(map[string]GenerationInput)
+	for _, input := range snapshot.Inputs {
+		inputs[input.Node.ID+"/"+string(input.Role)+fmt.Sprint(input.Ordinal)] = input
+	}
+	count := 0
+	for _, edge := range document.Edges {
+		if edge.Target != current.ID || edge.InputRole == domaincanvas.InputRoleResult {
+			continue
+		}
+		input, exists := inputs[edge.Source+"/"+string(edge.InputRole)+fmt.Sprint(edge.Ordinal)]
+		node, found := findNode(document, edge.Source)
+		if !exists || !found || node.Type != input.Node.Type || signature(node) != signature(input.Node) {
+			return false
+		}
+		count++
+	}
+	return count == len(snapshot.Inputs)
 }

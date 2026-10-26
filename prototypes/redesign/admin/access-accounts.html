@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>接入账号 — Mikiko Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/admin.css">
+<style>
+  .aa-account { display: flex; align-items: center; gap: 11px; min-width: 0; }
+  .aa-account__logo { display: grid; place-items: center; width: 34px; height: 34px; flex: none; border-radius: 8px; background: var(--a-accent-soft); color: var(--a-accent); font-weight: 700; font-size: 13px; }
+  .aa-model-grid { display: grid; gap: 10px; }
+  .aa-model { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 14px; padding: 14px 15px; border: 1px solid var(--a-line); border-radius: 10px; background: var(--a-surface); }
+  .aa-model[hidden] { display: none !important; }
+  .aa-model__copy { display: grid; gap: 3px; min-width: 0; }
+  .aa-model__copy strong { font-size: 13.5px; }
+  .aa-model__copy span { color: var(--a-ink-3); font-family: var(--font-admin-mono); font-size: 10.5px; }
+  .aa-model__tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 3px; }
+  .aa-model__actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+  .aa-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  .aa-summary > div { display: grid; gap: 3px; padding: 12px 13px; border: 1px solid var(--a-line); border-radius: 9px; background: var(--a-surface); }
+  .aa-summary span { color: var(--a-ink-3); font-size: 11px; font-weight: 600; }
+  .aa-summary strong { font-size: 14px; }
+  .aa-empty { display: grid; justify-items: start; gap: 8px; padding: 28px; border: 1px dashed var(--a-line-2); border-radius: 10px; background: var(--a-surface); }
+  .aa-empty strong { font-size: 15px; }
+  .aa-empty p { max-width: 56ch; color: var(--a-ink-3); font-size: 13px; line-height: 1.6; }
+  @media (max-width: 900px) { .aa-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 640px) {
+    .aa-model { grid-template-columns: 1fr; }
+    .aa-model__actions { justify-content: flex-start; }
+    .aa-summary { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body data-site="admin" data-page="access-accounts" data-title="接入账号">
+<div class="a-shell"><div class="a-main">
+  <main class="a-content">
+    <header class="a-page-head">
+      <div class="a-page-head__copy">
+        <span class="a-kicker">Provider Accounts</span>
+        <h1>接入账号</h1>
+        <p>图片与视频账号分开维护。账号只负责连接、调度与密钥；真实模型的「任务类型」和能力参数在模型配置抽屉中维护。</p>
+      </div>
+      <div class="a-page-head__actions">
+        <button class="a-btn a-btn--sm" type="button" data-toast="已刷新账号状态">刷新</button>
+        <button class="a-btn a-btn--sm a-btn--primary" type="button" data-open="#image-account-edit" id="aa-add-account">添加图片账号</button>
+      </div>
+    </header>
+
+    <div class="a-tabs" data-tabs="aa-media">
+      <button class="a-tab is-active" data-tab="aa-image">图片 <span class="a-tab__count">3</span></button>
+      <button class="a-tab" data-tab="aa-video">视频 <span class="a-tab__count">2</span></button>
+      <button class="a-tab" data-tab="aa-audio">音频</button>
+      <button class="a-tab" data-tab="aa-text">文本</button>
+    </div>
+
+    <div data-tab-panels="aa-media">
+      <div data-panel="aa-image">
+        <div class="a-metrics" style="margin-bottom:16px">
+          <div class="a-metric"><div class="a-metric__label">图片账号</div><div class="a-metric__value">3</div><div class="a-metric__foot">2 启用 · 1 异常</div></div>
+          <div class="a-metric"><div class="a-metric__label">图片真实模型</div><div class="a-metric__value">7</div><div class="a-metric__foot">覆盖 3 个厂商</div></div>
+          <div class="a-metric"><div class="a-metric__label">今日调用</div><div class="a-metric__value">18,204</div><div class="a-metric__foot">错误率 0.14%</div></div>
+          <div class="a-metric"><div class="a-metric__label">待完善</div><div class="a-metric__value">2</div><div class="a-metric__foot">缺基础分辨率 / 尺寸能力</div></div>
+        </div>
+        <section class="a-panel a-panel--flush">
+          <div class="a-panel__head">
+            <div><h2>图片接入账号</h2><p>图片模型只使用文生图与图片编辑任务类型。</p></div>
+            <div class="a-search" style="width:260px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="a-input" placeholder="搜索账号、适配器或 Base URL"></div>
+          </div>
+          <div class="a-table-wrap">
+            <table class="a-table" style="min-width:1180px">
+              <thead><tr><th>账号</th><th>接入方式</th><th>Base URL</th><th>密钥</th><th class="is-num">真实模型</th><th class="is-num">并发 / 超时</th><th>状态</th><th class="is-actions">操作</th></tr></thead>
+              <tbody>
+                <tr data-row-open="#image-account-edit" style="cursor:pointer">
+                  <td><div class="aa-account"><span class="aa-account__logo">A</span><div class="a-cell-stack"><strong>acc-east-1</strong><span>OpenAI 兼容 · 主账号</span></div></div></td>
+                  <td>OpenAI 兼容 <span class="a-badge">API Key</span></td>
+                  <td class="a-mono" style="font-size:11.5px">https://api.seedream.ai/v1</td>
+                  <td><span class="a-badge a-badge--ok"><i></i>已配置</span></td>
+                  <td class="is-num">3</td><td class="is-num">8 / 60s</td>
+                  <td><span class="a-badge a-badge--ok"><i></i>启用</span></td>
+                  <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn" type="button" data-open="#image-account-edit" data-row-ignore>编辑</button><button class="a-row-btn a-row-btn--primary" type="button" data-open="#image-account-models" data-row-ignore>模型配置</button><button class="a-row-btn" type="button" data-toast="已打开图片模型测试" data-row-ignore>测试</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="更多操作" data-row-ignore>⋯</button></div></td>
+                </tr>
+                <tr data-row-open="#image-account-edit" style="cursor:pointer">
+                  <td><div class="aa-account"><span class="aa-account__logo" style="background:var(--a-warn-soft);color:var(--a-warn)">A</span><div class="a-cell-stack"><strong>acc-east-2</strong><span>OpenAI 兼容 · 备用</span></div></div></td>
+                  <td>OpenAI 兼容 <span class="a-badge">API Key</span></td>
+                  <td class="a-mono" style="font-size:11.5px">https://api.seedream.ai/v1</td>
+                  <td><span class="a-badge a-badge--ok"><i></i>已配置</span></td>
+                  <td class="is-num">3</td><td class="is-num">4 / 60s</td>
+                  <td><span class="a-badge a-badge--warn"><i></i>异常</span></td>
+                  <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn" type="button" data-open="#image-account-edit" data-row-ignore>编辑</button><button class="a-row-btn a-row-btn--primary" type="button" data-open="#image-account-models" data-row-ignore>模型配置</button><button class="a-row-btn" type="button" data-toast="连通性测试：504 超时" data-row-ignore>测试</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="更多操作" data-row-ignore>⋯</button></div></td>
+                </tr>
+                <tr data-row-open="#image-account-edit" style="cursor:pointer">
+                  <td><div class="aa-account"><span class="aa-account__logo" style="background:var(--a-info-soft);color:var(--a-info)">O</span><div class="a-cell-stack"><strong>openrouter</strong><span>OpenRouter · 聚合</span></div></div></td>
+                  <td>OpenRouter <span class="a-badge">API Key</span></td>
+                  <td class="a-mono" style="font-size:11.5px">https://openrouter.ai/api/v1</td>
+                  <td><span class="a-badge a-badge--ok"><i></i>已配置</span></td>
+                  <td class="is-num">1</td><td class="is-num">2 / 90s</td>
+                  <td><span class="a-badge a-badge--ok"><i></i>启用</span></td>
+                  <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn" type="button" data-open="#image-account-edit" data-row-ignore>编辑</button><button class="a-row-btn a-row-btn--primary" type="button" data-open="#image-account-models" data-row-ignore>模型配置</button><button class="a-row-btn" type="button" data-toast="已打开图片模型测试" data-row-ignore>测试</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="更多操作" data-row-ignore>⋯</button></div></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div data-panel="aa-video" hidden>
+        <div class="a-metrics" style="margin-bottom:16px">
+          <div class="a-metric"><div class="a-metric__label">视频账号</div><div class="a-metric__value">2</div><div class="a-metric__foot">2 启用 · 0 异常</div></div>
+          <div class="a-metric"><div class="a-metric__label">视频真实模型</div><div class="a-metric__value">3</div><div class="a-metric__foot">Seedance / MiniMax</div></div>
+          <div class="a-metric"><div class="a-metric__label">今日视频任务</div><div class="a-metric__value">6,420</div><div class="a-metric__foot">错误率 0.31%</div></div>
+          <div class="a-metric"><div class="a-metric__label">待完善</div><div class="a-metric__value">1</div><div class="a-metric__foot">缺原生费率</div></div>
+        </div>
+        <section class="a-panel a-panel--flush">
+          <div class="a-panel__head">
+            <div><h2>视频接入账号</h2><p>视频账号按适配器区分；任务类型与时长/分辨率/音频能力在真实模型中配置。</p></div>
+            <div class="a-search" style="width:260px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="a-input" placeholder="搜索视频账号、适配器或 Base URL"></div>
+          </div>
+          <div class="a-table-wrap">
+            <table class="a-table" style="min-width:1180px">
+              <thead><tr><th>账号</th><th>适配器</th><th>Base URL</th><th>密钥</th><th class="is-num">真实模型</th><th class="is-num">并发 / 超时</th><th>状态</th><th class="is-actions">操作</th></tr></thead>
+              <tbody>
+                <tr data-row-open="#video-account-edit" style="cursor:pointer">
+                  <td><div class="aa-account"><span class="aa-account__logo" style="background:var(--a-info-soft);color:var(--a-info)">S</span><div class="a-cell-stack"><strong>seedance-main</strong><span>火山方舟 · 视频主账号</span></div></div></td>
+                  <td>Seedance <span class="a-badge">视频</span></td>
+                  <td class="a-mono" style="font-size:11.5px">https://ark.cn-beijing.volces.com/api/v3</td>
+                  <td><span class="a-badge a-badge--ok"><i></i>已配置</span></td>
+                  <td class="is-num">2</td><td class="is-num">4 / 300s</td>
+                  <td><span class="a-badge a-badge--ok"><i></i>启用</span></td>
+                  <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn" type="button" data-open="#video-account-edit" data-row-ignore>编辑</button><button class="a-row-btn a-row-btn--primary" type="button" data-open="#video-account-models" data-row-ignore>模型配置</button><button class="a-row-btn" type="button" data-toast="已打开视频模型测试" data-row-ignore>测试</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="更多操作" data-row-ignore>⋯</button></div></td>
+                </tr>
+                <tr data-row-open="#video-account-edit" style="cursor:pointer">
+                  <td><div class="aa-account"><span class="aa-account__logo" style="background:var(--a-warn-soft);color:var(--a-warn)">M</span><div class="a-cell-stack"><strong>minimax-main</strong><span>MiniMax · 视频备账号</span></div></div></td>
+                  <td>MiniMax <span class="a-badge">视频</span></td>
+                  <td class="a-mono" style="font-size:11.5px">https://api.minimax.chat/v1</td>
+                  <td><span class="a-badge a-badge--ok"><i></i>已配置</span></td>
+                  <td class="is-num">1</td><td class="is-num">2 / 300s</td>
+                  <td><span class="a-badge a-badge--ok"><i></i>启用</span></td>
+                  <td class="is-actions"><div class="a-row-actions"><button class="a-row-btn" type="button" data-open="#video-account-edit" data-row-ignore>编辑</button><button class="a-row-btn a-row-btn--primary" type="button" data-open="#video-account-models" data-row-ignore>模型配置</button><button class="a-row-btn" type="button" data-toast="已打开视频模型测试" data-row-ignore>测试</button><button class="a-icon-btn" style="width:32px;height:32px" type="button" data-toast="更多操作" data-row-ignore>⋯</button></div></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div data-panel="aa-audio" hidden>
+        <div class="aa-empty"><strong>音频接入暂未开放</strong><p>音频模型运行时接入后，可在此维护账号、真实模型与厂商原生费率。</p></div>
+      </div>
+      <div data-panel="aa-text" hidden>
+        <div class="aa-empty"><strong>文本模型使用默认账号</strong><p>文本能力不参与图片/视频路由候选；当前只在系统设置中维护默认文本模型。</p></div>
+      </div>
+    </div>
+  </main>
+</div></div>
+
+<div class="a-scrim"></div>
+
+<aside class="a-drawer a-drawer--wide" id="image-account-edit" role="dialog" aria-modal="true" aria-label="编辑图片接入账号">
+  <header class="a-drawer__head">
+    <div><h2>编辑图片接入账号</h2><p>acc-east-1 · 3 个图片真实模型 · 今日 12,480 次调用</p></div>
+    <div class="a-drawer__spacer"></div>
+    <span class="a-badge a-badge--ok"><i></i>启用</span>
+    <button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </header>
+  <div class="a-drawer__body">
+    <form class="a-form">
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">1</span>连接</h3><p>图片账号只接入图片生成与图片编辑模型。</p></div>
+        <label class="a-field"><span>账号名称 <span class="a-required">*</span></span><input class="a-input" value="acc-east-1"></label>
+        <label class="a-field"><span>接入方式</span><select class="a-select"><option>OpenAI 兼容</option><option>OpenRouter</option></select></label>
+        <label class="a-field"><span>Base URL <span class="a-required">*</span></span><input class="a-input" value="https://api.seedream.ai/v1" style="font-family:var(--font-admin-mono);font-size:12.5px"><span class="a-hint">代理或中转服务请填写到 /v1。</span></label>
+        <label class="a-field"><span>gpt-image-2 来源模式</span><select class="a-select"><option>Images API</option><option>Codex Responses</option></select><span class="a-hint">Codex 来源会强制 quality=auto，并按基础分辨率与比例计算 size。</span></label>
+        <label class="a-field"><span>账号状态</span><select class="a-select"><option>启用</option><option>停用</option><option>异常</option></select></label>
+      </section>
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">2</span>鉴权</h3><p>密钥只写不读，保存后显示掩码。</p></div>
+        <label class="a-field"><span>鉴权方式</span><select class="a-select"><option>API Key</option></select></label>
+        <label class="a-field"><span>API Key</span><input class="a-input" type="password" placeholder="已配置 · 留空表示保持不变"><span class="a-hint">当前密钥 sk-••••••••7d · 最后更新 10-02</span></label>
+        <button class="a-btn a-btn--sm" type="button" data-toast="密钥连通性测试通过（320ms）">测试连接</button>
+      </section>
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">3</span>调度</h3></div>
+        <div class="a-form__pair">
+          <label class="a-field"><span>优先级</span><input class="a-input" value="1" inputmode="numeric"><span class="a-hint">数值越小越优先作为候选账号。</span></label>
+          <label class="a-field"><span>权重</span><input class="a-input" value="100" inputmode="numeric"><span class="a-hint">同优先级内按权重分配。</span></label>
+        </div>
+        <div class="a-form__pair">
+          <label class="a-field"><span>并发上限</span><input class="a-input" value="8" inputmode="numeric"></label>
+          <label class="a-field"><span>超时（秒）</span><input class="a-input" value="60" inputmode="numeric"></label>
+        </div>
+        <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>启用该账号</label>
+      </section>
+    </form>
+  </div>
+  <footer class="a-drawer__foot">
+    <button class="a-btn a-btn--sm" type="button" data-toast="已探测账号，连通正常">探测</button>
+    <button class="a-btn a-btn--sm a-btn--danger" type="button" data-toast="删除前需确认无路由依赖" data-tone="bad">删除账号</button>
+    <div style="flex:1"></div>
+    <button class="a-btn a-btn--sm" type="button" data-close>取消</button>
+    <button class="a-btn a-btn--sm a-btn--primary" type="button" data-close data-toast="图片账号已保存" data-tone="ok">保存账号</button>
+  </footer>
+</aside>
+
+<aside class="a-drawer a-drawer--wide" id="video-account-edit" role="dialog" aria-modal="true" aria-label="编辑视频接入账号">
+  <header class="a-drawer__head">
+    <div><h2>编辑视频接入账号</h2><p>seedance-main · Seedance · 2 个视频真实模型</p></div>
+    <div class="a-drawer__spacer"></div>
+    <span class="a-badge a-badge--ok"><i></i>启用</span>
+    <button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </header>
+  <div class="a-drawer__body">
+    <form class="a-form">
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">1</span>连接</h3><p>视频账号按适配器接入；适配器决定厂商原生费率结构。</p></div>
+        <label class="a-field"><span>账号名称 <span class="a-required">*</span></span><input class="a-input" value="seedance-main"></label>
+        <label class="a-field"><span>适配器</span><select class="a-select"><option>Seedance</option><option>MiniMax</option><option>Gasic</option><option>阿里百炼</option></select><span class="a-hint">Seedance 按 Token、MiniMax/百炼按秒、Gasic 按次计费。</span></label>
+        <label class="a-field"><span>Base URL <span class="a-required">*</span></span><input class="a-input" value="https://ark.cn-beijing.volces.com/api/v3" style="font-family:var(--font-admin-mono);font-size:12.5px"></label>
+        <label class="a-field"><span>账号状态</span><select class="a-select"><option>启用</option><option>停用</option><option>异常</option></select></label>
+      </section>
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">2</span>鉴权</h3></div>
+        <label class="a-field"><span>API Key</span><input class="a-input" type="password" placeholder="已配置 · 留空表示保持不变"><span class="a-hint">密钥只写不读。</span></label>
+        <button class="a-btn a-btn--sm" type="button" data-toast="视频适配器连通性测试通过（480ms）">测试连接</button>
+      </section>
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">3</span>调度</h3></div>
+        <div class="a-form__pair">
+          <label class="a-field"><span>优先级</span><input class="a-input" value="1" inputmode="numeric"></label>
+          <label class="a-field"><span>权重</span><input class="a-input" value="100" inputmode="numeric"></label>
+        </div>
+        <div class="a-form__pair">
+          <label class="a-field"><span>并发上限</span><input class="a-input" value="4" inputmode="numeric"></label>
+          <label class="a-field"><span>超时（毫秒）</span><input class="a-input" value="300000" inputmode="numeric"></label>
+        </div>
+        <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>启用该账号</label>
+      </section>
+    </form>
+  </div>
+  <footer class="a-drawer__foot">
+    <button class="a-btn a-btn--sm" type="button" data-toast="已探测视频账号，连通正常">探测</button>
+    <button class="a-btn a-btn--sm a-btn--danger" type="button" data-toast="删除前需确认无路由依赖" data-tone="bad">删除账号</button>
+    <div style="flex:1"></div>
+    <button class="a-btn a-btn--sm" type="button" data-close>取消</button>
+    <button class="a-btn a-btn--sm a-btn--primary" type="button" data-close data-toast="视频账号已保存" data-tone="ok">保存账号</button>
+  </footer>
+</aside>
+
+<aside class="a-drawer a-drawer--wide" id="image-account-models" role="dialog" aria-modal="true" aria-label="图片模型配置">
+  <header class="a-drawer__head">
+    <div><h2>图片模型配置</h2><p id="image-models-subtitle">acc-east-1 · 3 个图片真实模型 · OpenAI 兼容</p></div>
+    <div class="a-drawer__spacer"></div>
+    <span class="a-badge a-badge--ok"><i></i>账号启用中</span>
+    <button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </header>
+  <div class="a-drawer__body">
+    <div class="aa-summary">
+      <div><span>图片模型</span><strong data-image-summary-models>3 个</strong></div>
+      <div><span>已验证</span><strong data-image-summary-verified>2 个</strong></div>
+      <div><span>任务类型</span><strong>文生图 / 图片编辑</strong></div>
+      <div><span>待完善</span><strong data-image-summary-pending>1 个</strong></div>
+    </div>
+    <div class="a-section-title" style="margin-bottom:0">
+      <div><h3 style="font-size:15px">图片真实模型</h3><p>能力字段包含基础分辨率、质量、尺寸模式、比例、像素尺寸、背景、压缩、输出格式与审核。</p></div>
+      <button class="a-btn a-btn--sm a-btn--primary" type="button" data-open="#image-model-edit">添加图片模型</button>
+    </div>
+    <div class="aa-model-grid">
+      <div class="aa-model" data-accounts="acc-east-1 acc-east-2">
+        <div class="aa-model__copy"><strong>Seedream 4.0 <span class="a-badge a-badge--ok" style="margin-left:6px"><i></i>可用</span></strong><span>seedream-4.0 · 文生图 / 图片编辑 · 1K–4K</span><div class="aa-model__tags"><span class="a-badge">质量 auto/low/medium/high</span><span class="a-badge">比例 1:1/4:3/3:4/16:9/9:16</span><span class="a-badge">输出 png/jpeg/webp</span></div></div>
+        <div class="aa-model__actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#image-model-edit">编辑</button><button class="a-row-btn" type="button" data-toast="图片测试：1K 标准尺寸">测试</button><button class="a-row-btn" type="button" data-toast="停用需确认无路由引用" data-tone="bad">停用</button></div>
+      </div>
+      <div class="aa-model" data-accounts="acc-east-1 acc-east-2 openrouter">
+        <div class="aa-model__copy"><strong>Flux 1.1 Pro <span class="a-badge a-badge--ok" style="margin-left:6px"><i></i>可用</span></strong><span>flux-1.1-pro · 文生图 · 1K–2K</span><div class="aa-model__tags"><span class="a-badge">质量 medium/high</span><span class="a-badge">像素 1024x1024/1536x1024</span><span class="a-badge">输出 jpeg</span></div></div>
+        <div class="aa-model__actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#image-model-edit">编辑</button><button class="a-row-btn" type="button" data-toast="图片测试">测试</button><button class="a-row-btn" type="button" data-toast="停用需确认无路由引用" data-tone="bad">停用</button></div>
+      </div>
+      <div class="aa-model" data-accounts="acc-east-1 acc-east-2">
+        <div class="aa-model__copy"><strong>Seedream Edit <span class="a-badge a-badge--warn" style="margin-left:6px"><i></i>待完善</span></strong><span>seedream-edit · 图片编辑 · 2K</span><div class="aa-model__tags"><span class="a-badge">缺基础分辨率</span><span class="a-badge">比例 1:1/4:5</span><span class="a-badge">输出 png</span></div></div>
+        <div class="aa-model__actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#image-model-edit">编辑</button><button class="a-row-btn" type="button" data-toast="图片测试">测试</button><button class="a-row-btn" type="button" data-toast="停用需确认无路由引用" data-tone="bad">停用</button></div>
+      </div>
+    </div>
+    <div class="a-banner a-banner--info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg><div><strong style="font-size:13px">图片模型能力会参与路由与估价校验</strong><div class="a-hint">任务类型、基础分辨率、质量、尺寸模式、比例、像素尺寸、背景、压缩与输出格式缺失时，对应能力会被阻断。</div></div></div>
+  </div>
+  <footer class="a-drawer__foot">
+    <button class="a-btn a-btn--sm" type="button" data-toast="已测试全部图片模型">测试全部</button>
+    <div style="flex:1"></div>
+    <button class="a-btn a-btn--sm" type="button" data-close>取消</button>
+    <button class="a-btn a-btn--sm a-btn--primary" type="button" data-close data-toast="图片模型配置已保存" data-tone="ok">保存配置</button>
+  </footer>
+</aside>
+
+<aside class="a-drawer a-drawer--wide" id="video-account-models" role="dialog" aria-modal="true" aria-label="视频模型配置">
+  <header class="a-drawer__head">
+    <div><h2>视频模型配置</h2><p id="video-models-subtitle">seedance-main · 2 个视频真实模型 · Seedance</p></div>
+    <div class="a-drawer__spacer"></div>
+    <span class="a-badge a-badge--ok"><i></i>账号启用中</span>
+    <button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </header>
+  <div class="a-drawer__body">
+    <div class="aa-summary">
+      <div><span>视频模型</span><strong data-video-summary-models>2 个</strong></div>
+      <div><span>任务类型</span><strong>6 种</strong></div>
+      <div><span>已验证</span><strong data-video-summary-verified>2 个</strong></div>
+      <div><span>待完善</span><strong data-video-summary-pending>0 个</strong></div>
+    </div>
+    <div class="a-section-title" style="margin-bottom:0">
+      <div><h3 style="font-size:15px">视频真实模型</h3><p>任务类型、时长、分辨率、比例、音频、输入格式与厂商原生费率在第二层抽屉维护。</p></div>
+      <button class="a-btn a-btn--sm a-btn--primary" type="button" data-open="#video-model-edit">添加视频模型</button>
+    </div>
+    <div class="aa-model-grid">
+      <div class="aa-model" data-accounts="seedance-main">
+        <div class="aa-model__copy"><strong>Seedance 1.5 Pro <span class="a-badge a-badge--ok" style="margin-left:6px"><i></i>可用</span></strong><span>seedance-1-5-pro · 文生视频 / 图生视频 / 首尾帧</span><div class="aa-model__tags"><span class="a-badge">5 / 10s</span><span class="a-badge">720p / 1080p</span><span class="a-badge">16:9 / 9:16 / 1:1</span><span class="a-badge">静音 / 生成音频</span><span class="a-badge">720p ¥46 / 百万 Token</span></div></div>
+        <div class="aa-model__actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#video-model-edit">编辑</button><button class="a-row-btn" type="button" data-toast="视频测试：5s / 720p">测试</button><button class="a-row-btn" type="button" data-toast="停用需确认无路由引用" data-tone="bad">停用</button></div>
+      </div>
+      <div class="aa-model" data-accounts="seedance-main">
+        <div class="aa-model__copy"><strong>Seedance 1.0 Lite <span class="a-badge a-badge--ok" style="margin-left:6px"><i></i>可用</span></strong><span>seedance-1-0-lite · 文生视频 / 图生视频</span><div class="aa-model__tags"><span class="a-badge">5 / 10s</span><span class="a-badge">720p</span><span class="a-badge">16:9 / 9:16</span><span class="a-badge">静音</span><span class="a-badge">720p ¥18 / 百万 Token</span></div></div>
+        <div class="aa-model__actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#video-model-edit">编辑</button><button class="a-row-btn" type="button" data-toast="视频测试">测试</button><button class="a-row-btn" type="button" data-toast="停用需确认无路由引用" data-tone="bad">停用</button></div>
+      </div>
+      <div class="aa-model" data-accounts="minimax-main">
+        <div class="aa-model__copy"><strong>MiniMax Hailuo 02 <span class="a-badge a-badge--ok" style="margin-left:6px"><i></i>可用</span></strong><span>minimax-hailuo-02 · 图生视频 / 首尾帧 / 参考生视频</span><div class="aa-model__tags"><span class="a-badge">5 / 10s</span><span class="a-badge">768p / 2k</span><span class="a-badge">16:9 / 9:16 / 1:1</span><span class="a-badge">生成音频</span><span class="a-badge">输出 ¥0.50/s</span></div></div>
+        <div class="aa-model__actions"><button class="a-row-btn a-row-btn--primary" type="button" data-open="#video-model-edit">编辑</button><button class="a-row-btn" type="button" data-toast="视频测试">测试</button><button class="a-row-btn" type="button" data-toast="停用需确认无路由引用" data-tone="bad">停用</button></div>
+      </div>
+    </div>
+    <div class="a-banner a-banner--info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg><div><strong style="font-size:13px">视频模型不配置图片侧能力</strong><div class="a-hint">质量、尺寸模式、支持背景、输出压缩、输出格式与审核等级只属于图片模型；视频模型使用任务类型、时长、分辨率、比例、音频和输入格式。</div></div></div>
+  </div>
+  <footer class="a-drawer__foot">
+    <button class="a-btn a-btn--sm" type="button" data-toast="已测试全部视频模型">测试全部</button>
+    <div style="flex:1"></div>
+    <button class="a-btn a-btn--sm" type="button" data-close>取消</button>
+    <button class="a-btn a-btn--sm a-btn--primary" type="button" data-close data-toast="视频模型配置已保存" data-tone="ok">保存配置</button>
+  </footer>
+</aside>
+
+<aside class="a-drawer" id="image-model-edit" data-stack="true" role="dialog" aria-modal="true" aria-label="图片真实模型配置">
+  <header class="a-drawer__head">
+    <div><h2>图片真实模型配置</h2><p id="image-model-subtitle">acc-east-1 · Seedream 4.0 · seedream-4.0</p></div>
+    <div class="a-drawer__spacer"></div>
+    <span class="a-badge a-badge--ok"><i></i>可用</span>
+    <button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </header>
+  <div class="a-drawer__body">
+    <form class="a-form">
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">1</span>模型标识</h3><p>图片模型的任务类型只有文生图与图片编辑。</p></div>
+        <label class="a-field"><span>模型代码 <span class="a-required">*</span></span><input class="a-input" value="seedream-4.0" style="font-family:var(--font-admin-mono)"></label>
+        <label class="a-field"><span>展示名称</span><input class="a-input" value="Seedream 4.0"></label>
+        <div class="a-form__pair">
+          <label class="a-field"><span>厂商</span><input class="a-input" value="Seedream"></label>
+          <label class="a-field"><span>验证状态</span><select class="a-select"><option>已验证</option><option>待验证</option></select></label>
+        </div>
+        <label class="a-field"><span>任务类型</span>
+          <div style="display:grid;gap:7px;padding:12px;border:1px solid var(--a-line);border-radius:8px">
+            <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>文生图 text_to_image</label>
+            <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>图片编辑 image_edit</label>
+          </div>
+        </label>
+        <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>启用该模型</label>
+      </section>
+
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">2</span>尺寸能力</h3><p>基础分辨率、质量、尺寸模式与像素尺寸共同决定用户可选参数。</p></div>
+        <div class="a-field"><span>基础分辨率</span>
+          <div class="a-multiselect" data-multiselect>
+            <button class="a-multiselect__control" type="button" data-ms-toggle><span class="a-multiselect__value" data-ms-summary>1K、2K、4K</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m6 9 6 6 6-6"/></svg></button>
+            <div class="a-multiselect__panel">
+              <div class="a-multiselect__options"><label><input type="checkbox" value="1K" checked>1K</label><label><input type="checkbox" value="2K" checked>2K</label><label><input type="checkbox" value="4K" checked>4K</label></div>
+              <div class="a-multiselect__custom"><input class="a-input" placeholder="自定义分辨率，如 8K"><button class="a-btn a-btn--sm" type="button" data-ms-add>添加</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="a-field"><span>质量参数</span>
+          <div class="a-multiselect" data-multiselect>
+            <button class="a-multiselect__control" type="button" data-ms-toggle><span class="a-multiselect__value" data-ms-summary>auto、low、medium、high</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m6 9 6 6 6-6"/></svg></button>
+            <div class="a-multiselect__panel">
+              <div class="a-multiselect__options"><label><input type="checkbox" value="auto" checked>auto</label><label><input type="checkbox" value="low">low</label><label><input type="checkbox" value="medium" checked>medium</label><label><input type="checkbox" value="high" checked>high</label></div>
+              <div class="a-multiselect__custom"><input class="a-input" placeholder="自定义质量值"><button class="a-btn a-btn--sm" type="button" data-ms-add>添加</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="a-field"><span>尺寸模式</span>
+          <div class="a-multiselect" data-multiselect>
+            <button class="a-multiselect__control" type="button" data-ms-toggle><span class="a-multiselect__value" data-ms-summary>自动尺寸、按比例、按像素</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m6 9 6 6 6-6"/></svg></button>
+            <div class="a-multiselect__panel">
+              <div class="a-multiselect__options"><label><input type="checkbox" value="自动尺寸" checked>自动尺寸</label><label><input type="checkbox" value="按比例" checked>按比例</label><label><input type="checkbox" value="按像素" checked>按像素</label></div>
+              <div class="a-multiselect__custom"><input class="a-input" placeholder="自定义尺寸模式"><button class="a-btn a-btn--sm" type="button" data-ms-add>添加</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="a-field"><span>支持比例</span>
+          <div class="a-multiselect" data-multiselect>
+            <button class="a-multiselect__control" type="button" data-ms-toggle><span class="a-multiselect__value" data-ms-summary>1:1、4:3、3:4、16:9、9:16</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m6 9 6 6 6-6"/></svg></button>
+            <div class="a-multiselect__panel">
+              <div class="a-multiselect__options"><label><input type="checkbox" value="1:1" checked>1:1</label><label><input type="checkbox" value="4:3" checked>4:3</label><label><input type="checkbox" value="3:4" checked>3:4</label><label><input type="checkbox" value="16:9" checked>16:9</label><label><input type="checkbox" value="9:16" checked>9:16</label></div>
+              <div class="a-multiselect__custom"><input class="a-input" placeholder="自定义比例"><button class="a-btn a-btn--sm" type="button" data-ms-add>添加</button></div>
+            </div>
+          </div>
+        </div>
+        <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>允许用户自定义比例</label>
+        <div class="a-field"><span>支持像素尺寸</span>
+          <div class="a-multiselect" data-multiselect>
+            <button class="a-multiselect__control" type="button" data-ms-toggle><span class="a-multiselect__value" data-ms-summary>1024x1024、1536x1024、1024x1536</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m6 9 6 6 6-6"/></svg></button>
+            <div class="a-multiselect__panel">
+              <div class="a-multiselect__options"><label><input type="checkbox" value="1024x1024" checked>1024x1024</label><label><input type="checkbox" value="1536x1024" checked>1536x1024</label><label><input type="checkbox" value="1024x1536" checked>1024x1536</label><label><input type="checkbox" value="1280x720">1280x720</label><label><input type="checkbox" value="720x1280">720x1280</label><label><input type="checkbox" value="1024x768">1024x768</label><label><input type="checkbox" value="768x1024">768x1024</label></div>
+              <div class="a-multiselect__custom"><input class="a-input" placeholder="自定义像素，如 2048x2048"><button class="a-btn a-btn--sm" type="button" data-ms-add>添加</button></div>
+            </div>
+          </div>
+        </div>
+        <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>允许用户自定义尺寸</label>
+        <div class="a-form__pair">
+          <label class="a-field"><span>最小宽度</span><input class="a-input" value="16" inputmode="numeric"></label>
+          <label class="a-field"><span>最大宽度</span><input class="a-input" value="3840" inputmode="numeric"></label>
+        </div>
+        <div class="a-form__pair">
+          <label class="a-field"><span>最小高度</span><input class="a-input" value="16" inputmode="numeric"></label>
+          <label class="a-field"><span>最大高度</span><input class="a-input" value="3840" inputmode="numeric"></label>
+        </div>
+      </section>
+
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">3</span>输出与审核</h3></div>
+        <div class="a-field"><span>输出格式</span>
+          <div class="a-multiselect" data-multiselect>
+            <button class="a-multiselect__control" type="button" data-ms-toggle><span class="a-multiselect__value" data-ms-summary>png、jpeg、webp</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m6 9 6 6 6-6"/></svg></button>
+            <div class="a-multiselect__panel">
+              <div class="a-multiselect__options"><label><input type="checkbox" value="png" checked>png</label><label><input type="checkbox" value="jpeg" checked>jpeg</label><label><input type="checkbox" value="webp" checked>webp</label></div>
+              <div class="a-multiselect__custom"><input class="a-input" placeholder="自定义格式"><button class="a-btn a-btn--sm" type="button" data-ms-add>添加</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="a-field"><span>支持背景</span>
+          <div class="a-multiselect" data-multiselect>
+            <button class="a-multiselect__control" type="button" data-ms-toggle><span class="a-multiselect__value" data-ms-summary>auto、opaque、transparent</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m6 9 6 6 6-6"/></svg></button>
+            <div class="a-multiselect__panel">
+              <div class="a-multiselect__options"><label><input type="checkbox" value="auto" checked>auto</label><label><input type="checkbox" value="opaque" checked>opaque</label><label><input type="checkbox" value="transparent">transparent</label></div>
+              <div class="a-multiselect__custom"><input class="a-input" placeholder="自定义背景值"><button class="a-btn a-btn--sm" type="button" data-ms-add>添加</button></div>
+            </div>
+          </div>
+        </div>
+        <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>支持输出压缩质量</label>
+        <label class="a-field"><span>压缩质量范围</span><input class="a-input" value="1–100" readonly><span class="a-hint">仅在 JPEG / WebP 输出格式下开放给用户。</span></label>
+        <div class="a-field"><span>审核等级</span>
+          <div class="a-multiselect" data-multiselect>
+            <button class="a-multiselect__control" type="button" data-ms-toggle><span class="a-multiselect__value" data-ms-summary>auto、low</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m6 9 6 6 6-6"/></svg></button>
+            <div class="a-multiselect__panel">
+              <div class="a-multiselect__options"><label><input type="checkbox" value="auto" checked>auto</label><label><input type="checkbox" value="low" checked>low</label></div>
+              <div class="a-multiselect__custom"><input class="a-input" placeholder="自定义审核等级"><button class="a-btn a-btn--sm" type="button" data-ms-add>添加</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="a-form__pair">
+          <label class="a-field"><span>最大出图数</span><input class="a-input" value="8" inputmode="numeric"></label>
+          <label class="a-field"><span>最大参考图</span><input class="a-input" value="4" inputmode="numeric"></label>
+        </div>
+      </section>
+
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">4</span>成本</h3></div>
+        <div class="a-form__pair">
+          <label class="a-field"><span>单图成本</span><input class="a-input" value="0.06" inputmode="decimal"></label>
+          <label class="a-field"><span>币种</span><input class="a-input" value="CNY"></label>
+        </div>
+      </section>
+    </form>
+  </div>
+  <footer class="a-drawer__foot">
+    <button class="a-btn a-btn--sm" type="button" data-toast="已打开图片测试">测试出图</button>
+    <button class="a-btn a-btn--sm" type="button" data-close>取消</button>
+    <button class="a-btn a-btn--sm a-btn--primary" type="button" data-close data-toast="图片真实模型已保存" data-tone="ok">保存模型</button>
+  </footer>
+</aside>
+
+<aside class="a-drawer" id="video-model-edit" data-stack="true" role="dialog" aria-modal="true" aria-label="视频真实模型配置">
+  <header class="a-drawer__head">
+    <div><h2>视频真实模型配置</h2><p id="video-model-subtitle">seedance-main · Seedance 1.5 Pro · seedance-1-5-pro</p></div>
+    <div class="a-drawer__spacer"></div>
+    <span class="a-badge a-badge--ok"><i></i>可用</span>
+    <button class="a-icon-btn" type="button" data-close aria-label="关闭">✕</button>
+  </header>
+  <div class="a-drawer__body">
+    <form class="a-form">
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">1</span>模型标识</h3><p>视频模型的任务类型是 6 种视频能力，不包含图片任务。</p></div>
+        <label class="a-field"><span>模型代码 <span class="a-required">*</span></span><input class="a-input" value="seedance-1-5-pro" style="font-family:var(--font-admin-mono)"></label>
+        <label class="a-field"><span>展示名称</span><input class="a-input" value="Seedance 1.5 Pro"></label>
+        <label class="a-field"><span>任务类型</span>
+          <div style="display:grid;gap:7px;padding:12px;border:1px solid var(--a-line);border-radius:8px">
+            <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>文生视频 text_to_video</label>
+            <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>图生视频 image_to_video</label>
+            <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>首尾帧生视频 first_last_frame_to_video</label>
+            <label class="a-switch"><input type="checkbox"><span class="a-switch__track"></span>参考生视频 reference_to_video</label>
+            <label class="a-switch"><input type="checkbox"><span class="a-switch__track"></span>视频编辑 video_edit</label>
+            <label class="a-switch"><input type="checkbox"><span class="a-switch__track"></span>视频延长 video_extend</label>
+          </div>
+        </label>
+        <div class="a-form__pair">
+          <label class="a-field"><span>能力验证状态</span><select class="a-select"><option>已验证</option><option>待验证</option></select></label>
+          <label class="a-field"><span>状态</span><select class="a-select"><option>启用</option><option>停用</option></select></label>
+        </div>
+      </section>
+
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">2</span>视频能力</h3><p>时长、分辨率、比例、音频与输入格式共同构成可用参数组合。</p></div>
+        <div class="a-form__pair">
+          <label class="a-field"><span>Provider 原生最大 n</span><input class="a-input" value="1" inputmode="numeric"></label>
+          <label class="a-field"><span>提示词最大字符数</span><input class="a-input" value="2000" inputmode="numeric"></label>
+        </div>
+        <div class="a-field"><span>支持时长（秒）</span>
+          <div class="a-multiselect" data-multiselect>
+            <button class="a-multiselect__control" type="button" data-ms-toggle><span class="a-multiselect__value" data-ms-summary>5、10</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m6 9 6 6 6-6"/></svg></button>
+            <div class="a-multiselect__panel">
+              <div class="a-multiselect__options"><label><input type="checkbox" value="5" checked>5</label><label><input type="checkbox" value="10" checked>10</label><label><input type="checkbox" value="12">12</label><label><input type="checkbox" value="15">15</label></div>
+              <div class="a-multiselect__custom"><input class="a-input" placeholder="自定义时长"><button class="a-btn a-btn--sm" type="button" data-ms-add>添加</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="a-field"><span>支持分辨率</span>
+          <div class="a-multiselect" data-multiselect>
+            <button class="a-multiselect__control" type="button" data-ms-toggle><span class="a-multiselect__value" data-ms-summary>720p、1080p</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m6 9 6 6 6-6"/></svg></button>
+            <div class="a-multiselect__panel">
+              <div class="a-multiselect__options"><label><input type="checkbox" value="480p">480p</label><label><input type="checkbox" value="720p" checked>720p</label><label><input type="checkbox" value="768p">768p</label><label><input type="checkbox" value="1080p" checked>1080p</label><label><input type="checkbox" value="2k">2k</label></div>
+              <div class="a-multiselect__custom"><input class="a-input" placeholder="自定义分辨率"><button class="a-btn a-btn--sm" type="button" data-ms-add>添加</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="a-field"><span>支持比例</span>
+          <div class="a-multiselect" data-multiselect>
+            <button class="a-multiselect__control" type="button" data-ms-toggle><span class="a-multiselect__value" data-ms-summary>16:9、9:16、1:1</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m6 9 6 6 6-6"/></svg></button>
+            <div class="a-multiselect__panel">
+              <div class="a-multiselect__options"><label><input type="checkbox" value="16:9" checked>16:9</label><label><input type="checkbox" value="9:16" checked>9:16</label><label><input type="checkbox" value="1:1" checked>1:1</label><label><input type="checkbox" value="4:3">4:3</label><label><input type="checkbox" value="3:4">3:4</label><label><input type="checkbox" value="21:9">21:9</label><label><input type="checkbox" value="adaptive">adaptive</label></div>
+              <div class="a-multiselect__custom"><input class="a-input" placeholder="自定义比例"><button class="a-btn a-btn--sm" type="button" data-ms-add>添加</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="a-field"><span>音频模式</span>
+          <div class="a-multiselect" data-multiselect>
+            <button class="a-multiselect__control" type="button" data-ms-toggle><span class="a-multiselect__value" data-ms-summary>静音、生成音频</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m6 9 6 6 6-6"/></svg></button>
+            <div class="a-multiselect__panel">
+              <div class="a-multiselect__options"><label><input type="checkbox" value="静音" checked>静音 silent</label><label><input type="checkbox" value="生成音频" checked>生成音频 generated</label></div>
+              <div class="a-multiselect__custom"><input class="a-input" placeholder="自定义音频模式"><button class="a-btn a-btn--sm" type="button" data-ms-add>添加</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="a-field"><span>输入图片格式</span>
+          <div class="a-multiselect" data-multiselect>
+            <button class="a-multiselect__control" type="button" data-ms-toggle><span class="a-multiselect__value" data-ms-summary>jpg、jpeg、png、webp</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m6 9 6 6 6-6"/></svg></button>
+            <div class="a-multiselect__panel">
+              <div class="a-multiselect__options"><label><input type="checkbox" value="jpg" checked>jpg</label><label><input type="checkbox" value="jpeg" checked>jpeg</label><label><input type="checkbox" value="png" checked>png</label><label><input type="checkbox" value="webp" checked>webp</label><label><input type="checkbox" value="bmp">bmp</label><label><input type="checkbox" value="tiff">tiff</label><label><input type="checkbox" value="gif">gif</label></div>
+              <div class="a-multiselect__custom"><input class="a-input" placeholder="自定义输入格式"><button class="a-btn a-btn--sm" type="button" data-ms-add>添加</button></div>
+            </div>
+          </div>
+        </div>
+        <label class="a-field"><span>单张输入上限（MB）</span><input class="a-input" value="30" inputmode="numeric"><span class="a-hint">参考图、首尾帧等输入素材统一使用该上限。</span></label>
+      </section>
+
+      <section class="a-form__section">
+        <div class="a-form__head"><h3><span class="a-form__num">3</span>厂商原生费率</h3><p>费率结构由账号适配器决定；这里以 Seedance Token 计费为例。</p></div>
+        <div class="a-table-wrap">
+          <table class="a-table" style="min-width:620px">
+            <thead><tr><th>分辨率</th><th class="is-num">不含输入视频 CNY / 百万 Token</th><th class="is-num">包含输入视频 CNY / 百万 Token</th></tr></thead>
+            <tbody>
+              <tr><td>720p</td><td class="is-num">46.00000</td><td class="is-num">—</td></tr>
+              <tr><td>1080p</td><td class="is-num">92.00000</td><td class="is-num">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="a-form__pair">
+          <label class="a-field"><span>费率模式</span><select class="a-select"><option>Seedance Token</option><option>MiniMax 按秒</option><option>百炼按秒</option><option>Gasic 按次</option></select><span class="a-hint">由账号适配器决定，切换后费率字段随之变化。</span></label>
+          <label class="a-field"><span>免费输入图片数（MiniMax）</span><input class="a-input" value="5" inputmode="numeric"></label>
+        </div>
+        <div class="a-form__pair">
+          <label class="a-field"><span>超额图片 CNY/张（MiniMax）</span><input class="a-input" value="0.10000" inputmode="decimal"></label>
+          <label class="a-field"><span>每条视频 CNY（Gasic）</span><input class="a-input" value="2.00000" inputmode="decimal"></label>
+        </div>
+        <div class="a-banner a-banner--warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 9v5M12 17h.01"/></svg><div><strong style="font-size:13px">MiniMax / 百炼使用按秒费率，Gasic 使用按次费率</strong><div class="a-hint">切换账号适配器后，费率表字段会变为「输出视频 CNY/秒 / 输入视频 CNY/秒」或「每条视频 CNY」。</div></div></div>
+      </section>
+    </form>
+  </div>
+  <footer class="a-drawer__foot">
+    <button class="a-btn a-btn--sm" type="button" data-toast="已打开视频测试">测试生成</button>
+    <button class="a-btn a-btn--sm" type="button" data-close>取消</button>
+    <button class="a-btn a-btn--sm a-btn--primary" type="button" data-close data-toast="视频真实模型已保存" data-tone="ok">保存模型</button>
+  </footer>
+</aside>
+
+<script src="../assets/shell.js"></script>
+<script>
+  document.addEventListener('click', function (event) {
+    const tab = event.target.closest('[data-tabs="aa-media"] [data-tab]');
+    if (!tab) return;
+    const button = document.getElementById('aa-add-account');
+    if (tab.dataset.tab === 'aa-video') {
+      button.textContent = '添加视频账号';
+      button.dataset.open = '#video-account-edit';
+    } else {
+      button.textContent = '添加图片账号';
+      button.dataset.open = '#image-account-edit';
+    }
+  });
+  function rowAccount(row) {
+    return row.querySelector('.aa-account .a-cell-stack strong').textContent.trim();
+  }
+  function rowMeta(row) {
+    return row.querySelector('.aa-account .a-cell-stack span').textContent.split('·')[0].trim();
+  }
+  document.addEventListener('click', function (event) {
+    const imageTrigger = event.target.closest('[data-open="#image-account-models"]');
+    if (imageTrigger) {
+      const row = imageTrigger.closest('tr');
+      const name = rowAccount(row);
+      const meta = rowMeta(row);
+      const count = row.querySelector('td.is-num').textContent.trim();
+      const extra = {
+        'acc-east-1': { verified: '2 个', pending: '1 个 · 缺基础分辨率' },
+        'acc-east-2': { verified: '2 个', pending: '1 个 · 缺基础分辨率' },
+        openrouter: { verified: '1 个', pending: '0 个' }
+      }[name] || { verified: '0 个', pending: '0 个' };
+      setTimeout(function () {
+        document.getElementById('image-models-subtitle').textContent = name + ' · ' + count + ' 个图片真实模型 · ' + meta;
+        document.querySelector('[data-image-summary-models]').textContent = count + ' 个';
+        document.querySelector('[data-image-summary-verified]').textContent = extra.verified;
+        document.querySelector('[data-image-summary-pending]').textContent = extra.pending;
+        document.querySelectorAll('#image-account-models .aa-model').forEach(function (card) {
+          card.hidden = !card.dataset.accounts.split(' ').includes(name);
+        });
+      }, 0);
+    }
+    const videoTrigger = event.target.closest('[data-open="#video-account-models"]');
+    if (videoTrigger) {
+      const row = videoTrigger.closest('tr');
+      const name = rowAccount(row);
+      const meta = rowMeta(row);
+      const count = row.querySelector('td.is-num').textContent.trim();
+      const extra = name === 'minimax-main'
+        ? { verified: '1 个', pending: '0 个' }
+        : { verified: '2 个', pending: '0 个' };
+      setTimeout(function () {
+        document.getElementById('video-models-subtitle').textContent = name + ' · ' + count + ' 个视频真实模型 · ' + meta;
+        document.querySelector('[data-video-summary-models]').textContent = count + ' 个';
+        document.querySelector('[data-video-summary-verified]').textContent = extra.verified;
+        document.querySelector('[data-video-summary-pending]').textContent = extra.pending;
+        document.querySelectorAll('#video-account-models .aa-model').forEach(function (card) {
+          card.hidden = !card.dataset.accounts.split(' ').includes(name);
+        });
+      }, 0);
+    }
+    const imageEdit = event.target.closest('#image-account-models [data-open="#image-model-edit"]');
+    if (imageEdit) {
+      const card = imageEdit.closest('.aa-model');
+      const account = document.getElementById('image-models-subtitle').textContent.split('·')[0].trim();
+      if (!card) {
+        setTimeout(function () {
+          document.getElementById('image-model-subtitle').textContent = account + ' · 新增图片模型';
+        }, 0);
+        return;
+      }
+      const title = card.querySelector('.aa-model__copy strong').childNodes[0].textContent.trim();
+      const code = card.querySelector('.aa-model__copy > span').textContent.split('·')[0].trim();
+      setTimeout(function () {
+        document.getElementById('image-model-subtitle').textContent = account + ' · ' + title + ' · ' + code;
+      }, 0);
+    }
+    const videoEdit = event.target.closest('#video-account-models [data-open="#video-model-edit"]');
+    if (videoEdit) {
+      const card = videoEdit.closest('.aa-model');
+      const account = document.getElementById('video-models-subtitle').textContent.split('·')[0].trim();
+      if (!card) {
+        setTimeout(function () {
+          document.getElementById('video-model-subtitle').textContent = account + ' · 新增视频模型';
+        }, 0);
+        return;
+      }
+      const title = card.querySelector('.aa-model__copy strong').childNodes[0].textContent.trim();
+      const code = card.querySelector('.aa-model__copy > span').textContent.split('·')[0].trim();
+      setTimeout(function () {
+        document.getElementById('video-model-subtitle').textContent = account + ' · ' + title + ' · ' + code;
+      }, 0);
+    }
+  }, true);
+</script>
+</body>
+</html>

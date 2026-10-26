@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>公开广场 — Mikiko Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Manrope:wght@300..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/user.css">
+<style>
+  .pg-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 22px; margin-bottom: 24px; }
+  .pg-head h1 { font-family: var(--font-display); font-size: clamp(38px, 4.6vw, 68px); font-weight: 400; letter-spacing: -.035em; line-height: .98; }
+  .pg-head p { max-width: 46ch; color: var(--ink-2); font-size: 13.5px; line-height: 1.7; }
+  .pg-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 22px; }
+  .pg-author { display: flex; align-items: center; gap: 7px; }
+  .pg-author i { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 7px; background: var(--surface-3); color: var(--ink-2); font-size: 9px; font-style: normal; font-weight: 700; }
+</style>
+</head>
+<body data-site="user" data-page="public-gallery">
+<div class="u-shell"><div class="u-main">
+  <div class="u-content">
+    <div class="pg-head">
+      <div style="display:grid;gap:12px">
+        <span class="u-eyebrow">Public Gallery</span>
+        <h1>公开广场</h1>
+      </div>
+      <p>由创作者主动公开的作品。提示词、模型与生成参数完整可见，可以直接复用为下一次创作。</p>
+    </div>
+
+    <div class="pg-filters">
+      <div class="u-search" style="flex:1 1 280px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input placeholder="搜索提示词、标题或作者"></div>
+      <div class="u-segment">
+        <button class="is-active" type="button">全部</button>
+        <button type="button">已点赞</button>
+        <button type="button">已收藏</button>
+      </div>
+      <select class="u-filter"><option>全部模型</option><option>plus-image</option><option>pro-image</option></select>
+      <button class="u-btn u-btn--sm" type="button" data-toast="已刷新">刷新</button>
+    </div>
+
+    <div class="u-grid u-grid--gallery">
+      <a class="u-card" href="#media-detail" data-open="#media-detail">
+        <div class="u-card__media"><img src="https://picsum.photos/seed/pg-1/720/540" data-seed="pg-1" alt="盐湖逆光">
+          <span class="u-card__tag">图片</span>
+          <div class="u-card__ops"><button class="u-card__op" type="button" data-toast="已点赞">♥</button><button class="u-card__op" type="button" data-toast="已收藏">★</button><button class="u-card__op" type="button" data-toast="开始下载">↓</button></div>
+        </div>
+        <div class="u-card__body">
+          <div class="u-card__title">盐湖边的人影，逆光与颗粒</div>
+          <div class="u-card__meta"><span class="pg-author"><i>岑</i>岑屿</span><span>10-22</span></div>
+        </div>
+      </a>
+      <a class="u-card" href="#media-detail" data-open="#media-detail">
+        <div class="u-card__media"><img src="https://picsum.photos/seed/pg-2/720/540" data-seed="pg-2" alt="混凝土立面">
+          <span class="u-card__tag">图片</span>
+          <div class="u-card__ops"><button class="u-card__op" type="button" data-toast="已点赞">♥</button><button class="u-card__op" type="button" data-toast="已收藏">★</button><button class="u-card__op" type="button" data-toast="开始下载">↓</button></div>
+        </div>
+        <div class="u-card__body"><div class="u-card__title">雨后混凝土立面，蓝调时刻</div><div class="u-card__meta"><span class="pg-author"><i>沈</i>沈砚白</span><span>10-22</span></div></div>
+      </a>
+      <a class="u-card" href="#media-detail" data-open="#media-detail">
+        <div class="u-card__media"><img src="https://picsum.photos/seed/pg-3/720/540" data-seed="pg-3" alt="柑橘静物">
+          <span class="u-card__tag">图片</span>
+          <div class="u-card__ops"><button class="u-card__op" type="button" data-toast="已点赞">♥</button><button class="u-card__op" type="button" data-toast="已收藏">★</button><button class="u-card__op" type="button" data-toast="开始下载">↓</button></div>
+        </div>
+        <div class="u-card__body"><div class="u-card__title">亚麻布上的柑橘与陶器</div><div class="u-card__meta"><span class="pg-author"><i>林</i>林知远</span><span>10-21</span></div></div>
+      </a>
+      <a class="u-card" href="#media-detail" data-open="#media-detail">
+        <div class="u-card__media"><img src="https://picsum.photos/seed/pg-4/720/540" data-seed="pg-4" alt="雾林">
+          <span class="u-card__tag">图片</span>
+          <div class="u-card__ops"><button class="u-card__op" type="button" data-toast="已点赞">♥</button><button class="u-card__op" type="button" data-toast="已收藏">★</button></div>
+        </div>
+        <div class="u-card__body"><div class="u-card__title">雾中的杉木林，长焦压缩</div><div class="u-card__meta"><span class="pg-author"><i>苏</i>苏迟</span><span>10-21</span></div></div>
+      </a>
+      <a class="u-card" href="#media-detail" data-open="#media-detail">
+        <div class="u-card__media"><img src="https://picsum.photos/seed/pg-5/720/540" data-seed="pg-5" alt="夜班电车">
+          <span class="u-card__tag">视频</span><span class="u-play"><span>▶</span></span>
+          <div class="u-card__ops"><button class="u-card__op" type="button" data-toast="已点赞">♥</button><button class="u-card__op" type="button" data-toast="已收藏">★</button></div>
+        </div>
+        <div class="u-card__body"><div class="u-card__title">夜班电车，8 秒循环镜头</div><div class="u-card__meta"><span class="pg-author"><i>陆</i>陆小满</span><span>10-20</span></div></div>
+      </a>
+      <a class="u-card" href="#media-detail" data-open="#media-detail">
+        <div class="u-card__media"><img src="https://picsum.photos/seed/pg-6/720/540" data-seed="pg-6" alt="织物">
+          <span class="u-card__tag">图片</span>
+          <div class="u-card__ops"><button class="u-card__op" type="button" data-toast="已点赞">♥</button><button class="u-card__op" type="button" data-toast="已收藏">★</button></div>
+        </div>
+        <div class="u-card__body"><div class="u-card__title">手工织物的层叠褶皱</div><div class="u-card__meta"><span class="pg-author"><i>何</i>何弦</span><span>10-20</span></div></div>
+      </a>
+      <a class="u-card" href="#media-detail" data-open="#media-detail">
+        <div class="u-card__media"><img src="https://picsum.photos/seed/pg-7/720/540" data-seed="pg-7" alt="雨后街道">
+          <span class="u-card__tag">图片</span>
+        </div>
+        <div class="u-card__body"><div class="u-card__title">空无一人的雨后站台</div><div class="u-card__meta"><span class="pg-author"><i>顾</i>顾亦然</span><span>10-19</span></div></div>
+      </a>
+      <a class="u-card" href="#media-detail" data-open="#media-detail">
+        <div class="u-card__media"><img src="https://picsum.photos/seed/pg-8/720/540" data-seed="pg-8" alt="海面">
+          <span class="u-card__tag">图片</span>
+        </div>
+        <div class="u-card__body"><div class="u-card__title">阴天海面，长时间曝光</div><div class="u-card__meta"><span class="pg-author"><i>岑</i>岑屿</span><span>10-19</span></div></div>
+      </a>
+      <a class="u-card" href="#media-detail" data-open="#media-detail">
+        <div class="u-card__media"><img src="https://picsum.photos/seed/pg-9/720/540" data-seed="pg-9" alt="花与玻璃">
+          <span class="u-card__tag">图片</span>
+        </div>
+        <div class="u-card__body"><div class="u-card__title">玻璃罩里的干花，柔光</div><div class="u-card__meta"><span class="pg-author"><i>叶</i>叶青禾</span><span>10-18</span></div></div>
+      </a>
+    </div>
+
+    <div style="display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:30px">
+      <span class="u-meta">已显示 9 / 148 件作品</span>
+      <button class="u-btn u-btn--sm" type="button" data-toast="已加载更多作品">加载更多</button>
+    </div>
+  </div>
+</div></div>
+<script src="../assets/shell.js"></script>
+</body>
+</html>

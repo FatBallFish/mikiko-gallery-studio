@@ -19,6 +19,8 @@ const (
 	FieldUpdatedAt = "updated_at"
 	// FieldDeletedAt holds the string denoting the deleted_at field in the database.
 	FieldDeletedAt = "deleted_at"
+	// FieldImagePricing holds the string denoting the image_pricing field in the database.
+	FieldImagePricing = "image_pricing"
 	// FieldCode holds the string denoting the code field in the database.
 	FieldCode = "code"
 	// FieldName holds the string denoting the name field in the database.
@@ -47,6 +49,7 @@ var Columns = []string{
 	FieldCreatedAt,
 	FieldUpdatedAt,
 	FieldDeletedAt,
+	FieldImagePricing,
 	FieldCode,
 	FieldName,
 	FieldDescription,

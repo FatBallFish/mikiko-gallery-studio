@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>画布编辑器 — Mikiko Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Manrope:wght@300..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/user.css">
+<style>
+  .ce-wire { position: absolute; z-index: 1; height: 1px; background: linear-gradient(90deg, rgba(98,195,162,.7), rgba(217,168,106,.7)); transform-origin: left center; }
+  .ce-node { z-index: 2; }
+  .ce-node--gen { width: 270px; }
+  .ce-node__badges { display: flex; gap: 4px; flex-wrap: wrap; margin: 7px 0; }
+  .ce-node__badges span { padding: 1px 6px; border-radius: 4px; background: var(--surface-3); color: var(--ink-3); font-family: var(--font-mono); font-size: 9px; }
+  .ce-node__row { display: flex; gap: 5px; }
+  .ce-node__row button { flex: 1; min-height: 26px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink-2); font-size: 10px; }
+  .ce-node__row button:hover { border-color: var(--accent-line); color: var(--accent); }
+  .ce-zoom { position: absolute; left: 16px; bottom: 16px; display: flex; gap: 2px; padding: 4px; border: 1px solid var(--line); border-radius: 9px; background: color-mix(in srgb, var(--bg-elev) 92%, transparent); }
+  .ce-zoom button { display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: var(--ink-2); font-size: 12px; }
+  .ce-zoom button:hover { background: var(--surface-2); }
+  .ce-aside { position: absolute; right: 0; top: 0; bottom: 0; width: 280px; display: flex; flex-direction: column; border-left: 1px solid var(--line); background: color-mix(in srgb, var(--bg-elev) 94%, transparent); }
+  .ce-aside__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .ce-aside__grid { flex: 1; overflow-y: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 10px; align-content: start; }
+  .ce-aside__grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 7px; }
+  @media (max-width: 640px) {
+    .u-canvas-app__bar { gap: 8px; padding: 0 10px; }
+    .ce-title .u-meta, .ce-status { display: none; }
+  }
+</style>
+</head>
+<body data-site="user" data-page="creative-canvas">
+<div class="u-canvas-app">
+  <header class="u-canvas-app__bar">
+    <a class="u-icon-btn u-icon-btn--plain" href="creative-canvas.html" aria-label="返回">←</a>
+    <div class="ce-title" style="display:grid;gap:0">
+      <strong style="font-size:12.5px">玻璃温室视觉组</strong>
+      <span class="u-meta">夜航系列 · 已保存 r12 · 自动保存开启</span>
+    </div>
+    <div style="flex:1"></div>
+    <span class="u-chip u-chip--mono ce-status"><span class="u-status u-status--ok"><span class="u-dot"></span>2 个任务运行中</span></span>
+    <button class="u-btn u-btn--sm" type="button" data-toast="搜索节点（⌘F）">搜索</button>
+    <button class="u-btn u-btn--sm" type="button" data-toast="已手动保存 r13">保存</button>
+    <button class="u-btn u-btn--primary u-btn--sm" type="button" data-toast="已打开画布资产抽屉">资产</button>
+  </header>
+
+  <div class="u-canvas-app__world">
+    <span class="ce-wire" style="left:210px;top:198px;width:130px;transform:rotate(12deg)"></span>
+    <span class="ce-wire" style="left:210px;top:198px;width:190px;transform:rotate(-6deg)"></span>
+    <span class="ce-wire" style="left:600px;top:250px;width:150px;transform:rotate(-14deg)"></span>
+
+    <article class="u-canvas-node ce-node" style="left:60px;top:120px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
+        <span class="u-chip u-chip--mono" style="height:20px;font-size:9px">提示词</span>
+        <button class="u-icon-btn u-icon-btn--plain" style="width:20px;height:20px;font-size:12px" type="button" data-toast="节点菜单">⋯</button>
+      </div>
+      <p style="font-size:11.5px;line-height:1.6;color:var(--ink-2)">黄昏温室，暖金斜光，尘埃悬浮，胶片颗粒，中画幅质感。</p>
+      <div class="ce-node__badges"><span>@温室参考</span><span>$光线</span><span>184 字</span></div>
+      <div class="ce-node__row"><button type="button" data-toast="已连接到图片生成">生成图片</button><button type="button" data-toast="已编辑提示词">编辑</button></div>
+    </article>
+
+    <article class="u-canvas-node ce-node is-selected" style="left:290px;top:84px;width:270px">
+      <div class="u-canvas-node__media"><img src="https://picsum.photos/seed/ce-1/500/375" data-seed="ce-1" alt="画布节点结果"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <span class="u-canvas-node__title">图片生成 · 4 张</span>
+        <span class="u-chip u-chip--mono" style="height:18px;font-size:8.5px"><span class="u-status u-status--ok"><span class="u-dot"></span>成功</span></span>
+      </div>
+      <div class="ce-node__badges"><span>plus-image</span><span>4:5</span><span>high</span><span>◈ 24</span></div>
+      <div class="ce-node__row"><button type="button" data-toast="已打开详情">详情</button><button type="button" data-toast="继续生成">再次生成</button></div>
+    </article>
+
+    <article class="u-canvas-node ce-node" style="left:290px;top:352px;width:270px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
+        <span class="u-canvas-node__title">视频生成 · 首帧</span>
+        <span class="u-chip u-chip--mono" style="height:18px;font-size:8.5px"><span class="u-status u-status--run"><span class="u-dot"></span>生成中</span></span>
+      </div>
+      <div class="u-canvas-node__media" style="display:grid;place-items:center;color:var(--ink-3);font-family:var(--font-mono);font-size:9px">8s · 1080p · 16:9</div>
+      <div class="u-progress" style="margin:8px 0"><span></span></div>
+      <div class="ce-node__badges"><span>seedance-2.5</span><span>有声</span><span>◈ 52</span></div>
+      <div class="ce-node__row"><button type="button" data-toast="已打开任务详情">详情</button><button type="button" data-toast="已取消任务">取消</button></div>
+    </article>
+
+    <article class="u-canvas-node ce-node" style="left:620px;top:170px;width:210px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
+        <span class="u-chip u-chip--mono" style="height:20px;font-size:9px">便签</span>
+        <button class="u-icon-btn u-icon-btn--plain" style="width:20px;height:20px;font-size:12px" type="button" data-toast="节点菜单">⋯</button>
+      </div>
+      <p style="font-size:11.5px;line-height:1.65;color:var(--ink-2)">这一组偏暖。下一轮把参考图换成更冷的材质，观察玻璃反光的变化。</p>
+    </article>
+
+    <div class="ce-zoom">
+      <button type="button" data-toast="缩小">−</button>
+      <span style="display:grid;place-items:center;min-width:48px;color:var(--ink-2);font-family:var(--font-mono);font-size:11px">86%</span>
+      <button type="button" data-toast="放大">＋</button>
+      <button type="button" data-toast="适应视图">⤢</button>
+    </div>
+
+    <div class="u-canvas-app__dock">
+      <button type="button" data-toast="添加提示词节点">＋ 提示词</button>
+      <button type="button" data-toast="添加图片节点">图片</button>
+      <button type="button" data-toast="添加视频生成节点">视频生成</button>
+      <button type="button" data-toast="添加便签">便签</button>
+      <button type="button" data-toast="选择工具（V）">V</button>
+      <button type="button" data-toast="平移工具（H / Space）">H</button>
+      <button type="button" data-toast="自动整理画布">整理</button>
+      <button type="button" data-toast="快捷键：⌘Z 撤销 · ⌘C 复制 · Delete 删除">?</button>
+    </div>
+
+    <div class="u-minimap">
+      <span style="position:absolute;left:14%;top:24%;width:20%;height:14%;background:rgba(156,144,255,.5);border-radius:3px"></span>
+      <span style="position:absolute;left:38%;top:18%;width:24%;height:22%;background:rgba(98,195,162,.5);border-radius:3px"></span>
+      <span style="position:absolute;left:38%;top:50%;width:24%;height:20%;background:rgba(225,138,99,.5);border-radius:3px"></span>
+      <span style="position:absolute;left:66%;top:30%;width:18%;height:16%;background:rgba(138,182,240,.45);border-radius:3px"></span>
+      <span style="position:absolute;inset:8% 30% 18% 8%;border:1px solid var(--accent);border-radius:4px"></span>
+    </div>
+
+    <aside class="ce-aside">
+      <div class="ce-aside__head">
+        <strong style="font-size:12px">资产</strong>
+        <div class="u-search" style="flex:1"><input placeholder="搜索" style="min-height:28px;font-size:11px;padding-left:10px"></div>
+      </div>
+      <div class="ce-aside__grid">
+        <img src="https://picsum.photos/seed/ce-a1/200/200" data-seed="ce-a1" alt="资产 1">
+        <img src="https://picsum.photos/seed/ce-a2/200/200" data-seed="ce-a2" alt="资产 2">
+        <img src="https://picsum.photos/seed/ce-a3/200/200" data-seed="ce-a3" alt="资产 3">
+        <img src="https://picsum.photos/seed/ce-a4/200/200" data-seed="ce-a4" alt="资产 4">
+        <img src="https://picsum.photos/seed/ce-a5/200/200" data-seed="ce-a5" alt="资产 5">
+        <img src="https://picsum.photos/seed/ce-a6/200/200" data-seed="ce-a6" alt="资产 6">
+      </div>
+      <div style="padding:10px;border-top:1px solid var(--line)">
+        <button class="u-btn u-btn--sm u-btn--block" type="button" data-toast="已打开上传">上传新资产</button>
+      </div>
+    </aside>
+  </div>
+</div>
+<script src="../assets/shell.js"></script>
+</body>
+</html>

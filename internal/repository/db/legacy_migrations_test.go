@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -12,12 +13,154 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/schema"
+	domainapikey "github.com/fatballfish/pic-gallery/internal/domain/apikey"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/configitem"
+	entmigrate "github.com/fatballfish/pic-gallery/internal/repository/ent/migrate"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+// v37MigrationTables reverses every v0.0.37 -> v0.0.38 Ent schema addition,
+// including changes released before the final image-pricing commit. CopyTables
+// preserves the old indexes and foreign keys without mutating generated globals.
+func v37MigrationTables(t *testing.T) []*schema.Table {
+	t.Helper()
+	tables, err := schema.CopyTables(entmigrate.Tables)
+	if err != nil {
+		t.Fatal(err)
+	}
+	removed := map[string]map[string]bool{
+		"api_keys":     {"scopes": true},
+		"media_assets": {"group_id": true, "publication_review_reason": true, "published_at": true},
+		"route_models": {"image_pricing": true},
+	}
+	var legacy []*schema.Table
+	for _, table := range tables {
+		if table.Name == "asset_groups" || table.Name == "oauth_records" {
+			continue
+		}
+		var columns []*schema.Column
+		for _, column := range table.Columns {
+			if !removed[table.Name][column.Name] {
+				columns = append(columns, column)
+			}
+		}
+		table.Columns = columns
+		legacy = append(legacy, table)
+	}
+	return legacy
+}
+
+func TestMigrateV37Schema7WithExistingKeysAndMediaOnPostgres(t *testing.T) {
+	database, databaseURL := openLegacyMigrationPostgres(t)
+	ctx := t.Context()
+	driver := entsql.OpenDB(dialect.Postgres, database)
+	migration, err := schema.NewMigrate(driver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migration.Create(ctx, v37MigrationTables(t)...); err != nil {
+		t.Fatalf("create v37 schema: %v", err)
+	}
+	if _, err := database.ExecContext(ctx, `
+		INSERT INTO installations (singleton_key, installation_id, config_schema_version,
+			database_schema_version, app_version, initialized_at, migrated_at, created_at, updated_at)
+		VALUES ('installation', 'v37-upgrade', 1, 7, 'v0.0.37', now(), now(), now(), now());
+		INSERT INTO users (id, email, created_at, updated_at) VALUES (42, 'legacy@example.test', now(), now());
+		INSERT INTO projects (id, user_id, name, name_key, is_default, created_at, updated_at)
+		VALUES ('00000000-0000-0000-0000-000000000042', 42, 'Default', 'default', true, now(), now());
+		INSERT INTO wallet_grants (id, user_id, grant_type, source_type, total_points,
+			available_points, frozen_points, consumed_points, created_at, updated_at)
+		VALUES (1, 42, 'recharge', 'payment', 100.12345, 90.12345, 3.00000, 7.00000, now(), now());
+		INSERT INTO api_keys (id, user_id, access_key, secret_hash, secret_ciphertext, name,
+			group_code, total_quota_points, daily_quota_points, total_quota_used_points,
+			daily_quota_used_points, created_at, updated_at)
+		SELECT n, 42, 'legacy-ak-' || n, 'legacy-hash-' || n, 'legacy-cipher-' || n, 'Legacy',
+			'legacy-group', 123.45678, 12.34567, 2.34567, 1.23456, now(), now()
+		FROM generate_series(1, 3) AS n;
+		INSERT INTO media_assets (id, user_id, project_id, name, name_key, media_type,
+			source_type, status, object_key, mime_type, file_size_bytes, created_at, updated_at)
+		VALUES ('00000000-0000-0000-0000-000000000043', 42,
+			'00000000-0000-0000-0000-000000000042', 'Legacy', 'legacy', 'image',
+			'upload', 'ready', 'legacy.png', 'image/png', 123, now(), now());
+	`); err != nil {
+		t.Fatalf("seed populated schema7: %v", err)
+	}
+	// Demonstrate the release failure before the preparation step runs.
+	client := repoent.NewClient(repoent.Driver(driver))
+	if err := client.Schema.Create(ctx); err == nil {
+		t.Fatal("unprepared populated v37 schema unexpectedly upgraded")
+	} else {
+		var pgErr *pq.Error
+		if !errors.As(err, &pgErr) || pgErr.Code != "23502" || !strings.Contains(err.Error(), "scopes") {
+			t.Fatalf("expected scopes not-null failure, got: %v", err)
+		}
+	}
+	request := MigrationRequest{InstallationID: "v37-upgrade", AppVersion: "v0.0.39", ConfigVersion: 1}
+	result, err := Migrate(ctx, databaseURL, request)
+	if err != nil {
+		t.Fatalf("official schema7 -> schema10 migration: %v", err)
+	}
+	if result.Previous == nil || result.Previous.DatabaseSchemaVersion != 7 || result.Current.DatabaseSchemaVersion != 10 {
+		t.Fatalf("unexpected upgrade result: %+v", result)
+	}
+	keys, err := client.APIKey.Query().All(ctx)
+	if err != nil || len(keys) != 3 {
+		t.Fatalf("legacy keys: %v, %v", keys, err)
+	}
+	for _, key := range keys {
+		if !reflect.DeepEqual(key.Scopes, domainapikey.LegacyScopes()) {
+			t.Fatalf("legacy scopes: %v", key.Scopes)
+		}
+		for _, scope := range domainapikey.SupportedScopes() {
+			want := false
+			for _, legacy := range domainapikey.LegacyScopes() {
+				want = want || legacy == scope
+			}
+			if domainapikey.HasScope(key.Scopes, scope) != want {
+				t.Fatalf("key %d permission %s changed", key.ID, scope)
+			}
+		}
+		if key.AccessKey != fmt.Sprintf("legacy-ak-%d", key.ID) || key.SecretHash != fmt.Sprintf("legacy-hash-%d", key.ID) || key.SecretCiphertext == nil || *key.SecretCiphertext != fmt.Sprintf("legacy-cipher-%d", key.ID) || key.GroupCode != "legacy-group" || key.TotalQuotaPoints == nil || *key.TotalQuotaPoints != "123.45678" || key.DailyQuotaPoints == nil || *key.DailyQuotaPoints != "12.34567" || key.TotalQuotaUsedPoints != "2.34567" || key.DailyQuotaUsedPoints != "1.23456" {
+			t.Fatalf("key identity or quota changed: %+v", key)
+		}
+	}
+	wallet, err := client.WalletGrant.Query().Only(ctx)
+	if err != nil || wallet.TotalPoints != "100.12345" || wallet.AvailablePoints != "90.12345" || wallet.FrozenPoints != "3.00000" || wallet.ConsumedPoints != "7.00000" {
+		t.Fatalf("wallet balance changed: %+v, %v", wallet, err)
+	}
+	asset, err := client.MediaAsset.Query().Only(ctx)
+	if err != nil || asset.MediaType != "image" || asset.ObjectKey != "legacy.png" || asset.PublicationReviewReason != "" || asset.PublishedAt != nil {
+		t.Fatalf("legacy asset changed: %+v, %v", asset, err)
+	}
+	if err := CheckSchemaCompatibility(ctx, client, result.Current); err != nil {
+		t.Fatal(err)
+	}
+	// Existing explicit restrictions must survive retries, including no access.
+	if _, err := database.ExecContext(ctx, `UPDATE api_keys SET scopes = CASE id WHEN 1 THEN '[]'::jsonb ELSE '["models:read"]'::jsonb END`); err != nil {
+		t.Fatal(err)
+	}
+	if result, err := Migrate(ctx, databaseURL, request); err != nil || result.Changed {
+		t.Fatalf("repeat migration: %+v, %v", result, err)
+	}
+	for _, key := range keys {
+		actual, err := client.APIKey.Get(ctx, key.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := []string{"models:read"}
+		if key.ID == 1 {
+			want = []string{}
+		}
+		if !reflect.DeepEqual(actual.Scopes, want) {
+			t.Fatalf("explicit scopes overwritten: %v, want %v", actual.Scopes, want)
+		}
+	}
+}
 
 func TestPrepareLegacyDataSkipsNonPostgresDatabases(t *testing.T) {
 	for _, url := range []string{"file:test.db", "sqlite://test.db", ":memory:"} {

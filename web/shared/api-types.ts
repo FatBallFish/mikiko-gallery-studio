@@ -1,3 +1,7 @@
+import type { ImagePricingConfig } from './image-pricing'
+export type * from './image-pricing'
+import type { NativeImageRequestFields, NativeImageProfile, NativeImageLayer } from './native-image'
+export type * from './native-image'
 export type ApiMeta = { request_id?: string }
 export type FeatureFlags = {
   video_creation: boolean
@@ -199,6 +203,7 @@ export const API_PATHS = {
     storageConfigSetStatus: '/api/ops/admin/v1/storage-configs/{storage_config_id}:set-status',
     imageReviews: '/api/ops/admin/v1/image-reviews',
     imageReviewImage: '/api/ops/admin/v1/image-reviews/{image_id}/image',
+    callRecordImage: '/api/ops/admin/v1/call-records/images/{image_id}',
     imageReviewApprove: '/api/ops/admin/v1/image-reviews/{image_id}:approve',
     imageReviewReject: '/api/ops/admin/v1/image-reviews/{image_id}:reject',
     imageReviewUnpublish: '/api/ops/admin/v1/image-reviews/{image_id}:unpublish',
@@ -210,6 +215,8 @@ export const API_PATHS = {
     videoModelRateCards: '/api/ops/admin/v1/video-models/{id}/rate-cards',
     videoModelRateCardDetail: '/api/ops/admin/v1/video-models/{id}/rate-cards/{rate_card_id}',
     videoRouteQuoteSimulation: '/api/ops/admin/v1/video-routes/{id}/quote-simulation',
+    modelAccountTestVideo: '/api/ops/admin/v1/model-accounts/{account_id}/test-video',
+    videoModelTest: '/api/ops/admin/v1/video-model-tests/{test_id}',
     routeVideoConfig: '/api/ops/admin/v1/route-models/{id}/video-config',
     routeVideoImpact: '/api/ops/admin/v1/route-models/{id}/video-impact',
     adminVideoTasks: '/api/ops/admin/v1/video-tasks',
@@ -264,7 +271,9 @@ export type ImageTaskType = 'text_to_image' | 'image_edit'
 export type VideoTaskType = 'text_to_video' | 'image_to_video' | 'first_last_frame_to_video' | 'reference_to_video' | 'video_edit' | 'video_extend'
 export type VideoTaskStatus = 'queued' | 'running' | 'saving' | 'succeeded' | 'partial' | 'failed' | 'cancelled' | string
 export type VideoTaskCombination = { duration_seconds: number; resolution: string; aspect_ratio: string; audio_mode: 'silent' | 'generated' }
-export type VideoTaskOptions = { durations: number[]; resolutions: string[]; aspect_ratios: string[]; audio_generation: boolean; combinations: VideoTaskCombination[] }
+export type PublicInputCapability = { required: boolean; max_count: number; media_types: string[]; formats: string[]; max_bytes?: number }
+export type VideoInputCapabilities = Partial<Record<VideoInputRole, PublicInputCapability>>
+export type VideoTaskOptions = { inputs?: VideoInputCapabilities; durations: number[]; resolutions: string[]; aspect_ratios: string[]; audio_generation: boolean; combinations: VideoTaskCombination[] }
 export type VideoCapabilityModelGroup = {
   code: string
   name: string
@@ -273,6 +282,7 @@ export type VideoCapabilityModelGroup = {
   max_output_count: number
   task_types: VideoTaskType[]
   defaults: { task_type: VideoTaskType; duration_seconds: number; resolution: string; aspect_ratio: string; generate_audio: boolean }
+  input_capabilities_by_task_type?: Partial<Record<VideoTaskType, VideoInputCapabilities>>
   options_by_task_type: Partial<Record<VideoTaskType, VideoTaskOptions>>
 }
 export type VideoCapability = { capability_version: string; model_groups: VideoCapabilityModelGroup[]; route_model_groups?: RouteModelGroupMeta[] }
@@ -280,6 +290,7 @@ export type VideoCapabilityCombinationWire = { task_type: VideoTaskType; duratio
 export type VideoCapabilityGroupWire = {
   route_model_code: string; name: string; description?: string; icon_key?: string; icon_svg?: string; group_codes?: string[]; config_version: string; capability_version: string; minimum_points?: string
   max_output_count: number; task_types: VideoTaskType[]; combinations: VideoCapabilityCombinationWire[]
+  input_capabilities_by_task_type?: Partial<Record<VideoTaskType, VideoInputCapabilities>>
 }
 export type VideoCapabilityListWire = { groups: VideoCapabilityGroupWire[] }
 export type VideoInputRole = 'first_frame' | 'last_frame' | 'reference_image' | 'reference_video' | 'reference_audio'
@@ -304,8 +315,8 @@ export type VideoTask = {
   version?: number; created_at?: string; updated_at?: string; started_at?: string; finished_at?: string
 }
 export type VideoCreateTaskRequest = VideoEstimateRequest & { quote_token: string }
-export type CanvasNodeType = 'prompt' | 'image' | 'video' | 'audio' | 'image_generation' | 'video_generation' | 'note'
-export type CanvasInputRole = 'prompt' | 'reference' | 'first_frame' | 'last_frame' | 'result'
+export type CanvasNodeType = 'image_v2' | 'video_v2' | 'prompt' | 'image' | 'video' | 'audio' | 'image_generation' | 'video_generation' | 'note'
+export type CanvasInputRole = 'prompt' | 'reference' | 'first_frame' | 'last_frame' | 'reference_image' | 'reference_video' | 'reference_audio' | 'result'
 export type CanvasDocument = {
   schema_version: 1
   viewport: { x: number; y: number; zoom: number }
@@ -320,6 +331,34 @@ export type CanvasRun = {
   id: string; canvas_id: string; node_id: string; submitted_revision: number; task_kind: 'image' | 'video'; task_id: string
   status: 'submitting' | 'queued' | 'running' | 'saving' | 'succeeded' | 'failed' | 'canceled' | 'attached' | 'unplaced'
   result_asset_ids?: string[]; attached_revision?: number; error_code?: string; error_message?: string
+  progress_stage?: string; progress_message?: string
+}
+export type VideoModelTestInput = { role: string; url: string; media_type?: string; ordinal?: number }
+export type VideoModelTestRequest = {
+  model_id: number
+  prompt: string
+  task_type: string
+  duration_seconds: number
+  resolution: string
+  aspect_ratio: string
+  generate_audio?: boolean
+  inputs?: VideoModelTestInput[]
+}
+export type VideoModelTestArtifact = { url: string; mime_type?: string; size_bytes?: number; expires_at?: string | null }
+export type VideoModelTest = {
+  id: string
+  account_id: number
+  account_model_id: number
+  provider: string
+  model_code: string
+  task_type: string
+  prompt: string
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | string
+  provider_job_id?: string
+  error?: string
+  artifacts?: VideoModelTestArtifact[]
+  created_at: string
+  updated_at: string
 }
 export type AdminVideoImpact = { route_model_id?: number; code: string; summary: string; blocking: boolean; fix_route: 'models' | 'routing' | string }
 export type AdminVideoConfiguration = {
@@ -822,6 +861,9 @@ export type LedgerEntry = {
 }
 
 export type CapabilityItem = {
+  native_image_layer_pricing_confirmed?: boolean
+  native_image_layer_unavailable_reason?: string
+  native_image_profile?: NativeImageProfile
   route_model_code: string
   task_types: string[]
   qualities?: string[]
@@ -846,6 +888,9 @@ export type CapabilityItem = {
   moderation?: string[]
 }
 export type CapabilityTaskOptions = {
+  native_image_layer_pricing_confirmed?: boolean
+  native_image_layer_unavailable_reason?: string
+  native_image_profile?: NativeImageProfile
   base_resolution?: string[]
   auto_base_resolution?: string
   size_modes?: Array<'auto' | 'ratio' | 'pixel' | string>
@@ -876,6 +921,9 @@ export type RouteModelPriceQuote = {
 }
 export type RouteModelGroupMeta = { code: string; name: string; icon_key?: string; icon_svg?: string }
 export type CapabilityModelGroup = {
+  native_image_layer_pricing_confirmed?: boolean
+  native_image_layer_unavailable_reason?: string
+  native_image_profile?: NativeImageProfile
   id: string
   code: string
   name: string
@@ -939,9 +987,9 @@ export type Capability = {
   reference_image_allowed_mime_types?: string[]
   task_types: ImageTaskType[]
 }
-export type EstimateRequest = { task_type: ImageTaskType; route_model_code: string; size_mode?: 'auto' | 'ratio' | 'pixel' | string; base_resolution?: string; quality?: string; output_format?: string; background?: string; output_compression?: number; moderation?: string; aspect_ratio?: string; pixel_size?: string; image_count: number; reference_asset_ids?: string[]; model_group?: string }
+export type EstimateRequest = NativeImageRequestFields & { task_type: ImageTaskType; route_model_code: string; size_mode?: 'auto' | 'ratio' | 'pixel' | string; base_resolution?: string; quality?: string; output_format?: string; background?: string; output_compression?: number; moderation?: string; aspect_ratio?: string; pixel_size?: string; image_count: number; reference_asset_ids?: string[]; model_group?: string }
 export type BackendImageTaskType = ImageTaskType
-export type BackendEstimateRequest = { task_type: BackendImageTaskType; route_model_code: string; size_mode?: string; aspect_ratio?: string; base_resolution?: string; quality?: string; output_format?: string; background?: string; output_compression?: number; moderation?: string; requested_size?: string; requested_output_image_count: number; reference_image_count?: number }
+export type BackendEstimateRequest = NativeImageRequestFields & { task_type: BackendImageTaskType; route_model_code: string; size_mode?: string; aspect_ratio?: string; base_resolution?: string; quality?: string; output_format?: string; background?: string; output_compression?: number; moderation?: string; requested_size?: string; requested_output_image_count: number; reference_image_count?: number; reference_asset_ids?: string[] }
 export type EstimateResult = {
 	capability_version?: string
   resolved_quality_bucket?: string
@@ -979,6 +1027,7 @@ export type Project = {
 }
 export type ProjectSnapshot = Pick<Project, 'id' | 'name' | 'is_default'>
 export type ReferenceAsset = {
+  display_name?: string
   id: string
   name: string
   preview_url?: string
@@ -1003,7 +1052,7 @@ export type ReferenceAsset = {
 }
 export type PromptReferenceBinding = { name: string; asset_id: string }
 export type PromptVariableInput = { name: string; value: string }
-export type ReferenceGenerationSnapshot = {
+export type ReferenceGenerationSnapshot = NativeImageRequestFields & {
   task_type?: ImageTaskType
   abstract_model?: string
   route_model_code?: string
@@ -1019,7 +1068,10 @@ export type ReferenceGenerationSnapshot = {
   moderation?: string
   image_count?: number
 }
-export type ImageResult = {
+export type ImageResult = NativeImageRequestFields & {
+  layer?: NativeImageLayer
+  media_asset_id?: string
+  name?: string
   id: string
   project_id?: string | null
   project?: ProjectSnapshot
@@ -1063,7 +1115,7 @@ export type ImageResult = {
   favorited_by_viewer?: boolean
   created_at?: string
 }
-export type ImageTask = {
+export type ImageTask = NativeImageRequestFields & {
   id: string
   project_id?: string | null
   project?: ProjectSnapshot
@@ -1348,7 +1400,7 @@ export type ModelRoute = {
 }
 export type ModelRouteWriteRequest = { group_code: string; task_type: string; provider_model_id: number; provider_code: string; priority: number; weight_percent: number; fallback_order: number; enabled: boolean }
 export type PriceRow = { id: string; group: string; q1k: string; q2k: string; q4k: string; reference_multiplier: string; version: number; state: 'active' | 'draft' }
-export type GalleryImage = { id: string; task_id: string; user_id?: number; project_id?: string | null; project?: ProjectSnapshot; prompt?: string; abstract_model?: string; route_model_code?: string; task_type?: ImageTaskType; task_status?: ImageTaskStatus | string; size_mode?: string; requested_size?: string; base_resolution?: string; quality?: string; aspect_ratio?: string; output_format?: string; output_compression?: number; moderation?: string; requested_output_image_count?: number; image_count?: number; actual_points?: string; reference_asset_ids?: string[]; reference_assets?: ReferenceAsset[]; url?: string; download_url?: string; preview_expires_at?: string; download_expires_at?: string; mime_type?: string; file_size_bytes: number; width: number; height: number; sha256?: string; storage_config_id?: string; object_key?: string; storage_driver?: string; image_group?: string; visibility_status: PublishStatus; review_reason?: string; published_at?: string | null; author_name?: string; like_count?: number; favorite_count?: number; liked_by_viewer?: boolean; favorited_by_viewer?: boolean; created_at: string }
+export type GalleryImage = { media_asset_id?: string; name?: string; id: string; task_id: string; user_id?: number; project_id?: string | null; project?: ProjectSnapshot; prompt?: string; abstract_model?: string; route_model_code?: string; task_type?: ImageTaskType; task_status?: ImageTaskStatus | string; size_mode?: string; requested_size?: string; base_resolution?: string; quality?: string; aspect_ratio?: string; output_format?: string; output_compression?: number; moderation?: string; requested_output_image_count?: number; image_count?: number; actual_points?: string; reference_asset_ids?: string[]; reference_assets?: ReferenceAsset[]; url?: string; download_url?: string; preview_expires_at?: string; download_expires_at?: string; mime_type?: string; file_size_bytes: number; width: number; height: number; sha256?: string; storage_config_id?: string; object_key?: string; storage_driver?: string; image_group?: string; visibility_status: PublishStatus; review_reason?: string; published_at?: string | null; author_name?: string; like_count?: number; favorite_count?: number; liked_by_viewer?: boolean; favorited_by_viewer?: boolean; created_at: string }
 export type GalleryBatchFailure = { id: string; code: string; message: string }
 export type GalleryBatchMutationResult = { succeeded: Array<{ id: string; entity: GalleryImage }>; failed: GalleryBatchFailure[] }
 export type GalleryExportJob = {
@@ -1518,6 +1570,7 @@ export type PromptOptimizationResult = { run_id: string; optimized_prompt: strin
 export type RouteModelVisibility = 'public' | 'groups' | 'hidden' | string
 export type RouteModelMediaType = 'image' | 'video'
 export type RouteModel = {
+  image_pricing?: ImagePricingConfig | null
   id: ID
   code: string
   name: string
@@ -1535,7 +1588,7 @@ export type RouteModel = {
   created_at: string
   updated_at: string
 }
-export type RouteModelWriteRequest = { code: string; name: string; description?: string; visibility: RouteModelVisibility; media_type: RouteModelMediaType; enabled: boolean; sort_order: number; group_ids?: ID[]; icon_key?: string; icon_svg?: string }
+export type RouteModelWriteRequest = { image_pricing?: ImagePricingConfig | null; code: string; name: string; description?: string; visibility: RouteModelVisibility; media_type: RouteModelMediaType; enabled: boolean; sort_order: number; group_ids?: ID[]; icon_key?: string; icon_svg?: string }
 export type RouteModelGroupRecord = { id: ID; code: string; name: string; description: string; media_type: RouteModelMediaType; icon_key?: string; icon_svg?: string; sort_order: number; enabled: boolean; route_model_ids: ID[]; created_at?: string; updated_at?: string }
 export type RouteModelGroupWriteRequest = { code: string; name: string; description?: string; media_type: RouteModelMediaType; icon_key?: string; icon_svg?: string; sort_order: number; enabled: boolean; route_model_ids: ID[] }
 export type RouteModelCandidate = {
@@ -1576,7 +1629,8 @@ export type RedeemCodeExportResult = { items: RedeemCode[]; count: number; filte
 export type CallRecordAttempt = { provider?: string; adapter_type?: string; account_model_id?: number | null; model_account_id?: number | null; model_code?: string; status?: string; error?: string; error_code?: string; error_message?: string; error_detail?: Record<string, unknown>; started_at?: string | null; finished_at?: string | null }
 export type ArtifactDiagnostic = { code?: string; stage?: string; attempt?: number; url_host?: string; url_path?: string; http_status?: number; content_type?: string; content_length?: number; bytes_read?: number; duration_ms?: number; storage_config_id?: string; storage_version?: number; retryable: boolean; cause?: string; started_at?: string; finished_at?: string }
 export type ArtifactRecoverySummary = { status: string; attempt_count: number; last_diagnostic?: ArtifactDiagnostic; diagnostics?: ArtifactDiagnostic[] }
-export type CallRecord = { id?: number; task_id: string; user_id: number; api_key_id?: number | null; source_channel: string; task_type: ImageTaskType | string; status: string; provider: string; route_model_code?: string; account_model_id?: number | null; model_account_id?: number | null; upstream_model_code?: string; abstract_model: string; base_resolution: string; quality: string; requested_output_image_count: number; success_output_image_count: number; reference_image_count: number; estimated_points: string; actual_points: string; provider_request_id?: string; provider_cost: string; gross_margin: string; pricing_snapshot?: Record<string, unknown>; upstream_succeeded_at?: string | null; failure_phase?: 'preflight' | 'upstream' | 'artifact_persistence' | string; platform_loss: boolean; artifact_recovery?: ArtifactRecoverySummary; error_code?: string | null; error_message?: string | null; error_detail?: Record<string, unknown>; attempts?: CallRecordAttempt[]; created_at: string; updated_at: string; started_at?: string | null; finished_at?: string | null; attempt_count: number }
+export type CallRecordResultImage = { id: string; image_role?: string; mime_type?: string; width: number; height: number; size_bytes?: number }
+export type CallRecord = { id?: number; task_id: string; prompt?: string; result_images?: CallRecordResultImage[]; user_id: number; api_key_id?: number | null; source_channel: string; task_type: ImageTaskType | string; status: string; provider: string; route_model_code?: string; account_model_id?: number | null; model_account_id?: number | null; upstream_model_code?: string; abstract_model: string; base_resolution: string; quality: string; requested_output_image_count: number; success_output_image_count: number; reference_image_count: number; estimated_points: string; actual_points: string; provider_request_id?: string; provider_cost: string; gross_margin: string; pricing_snapshot?: Record<string, unknown>; upstream_succeeded_at?: string | null; failure_phase?: 'preflight' | 'upstream' | 'artifact_persistence' | string; platform_loss: boolean; artifact_recovery?: ArtifactRecoverySummary; error_code?: string | null; error_message?: string | null; error_detail?: Record<string, unknown>; attempts?: CallRecordAttempt[]; created_at: string; updated_at: string; started_at?: string | null; finished_at?: string | null; attempt_count: number }
 export type AuditLog = { id: ID; actor: string; action: string; target: string; detail: string; created_at: string; actor_type?: string; actor_id?: string; target_type?: string; target_id?: string; result?: string; metadata?: Record<string, unknown>; ip_addr?: string; user_agent?: string; updated_at?: string }
 export type AdminDashboardQueueItem = { item: string; count: string; detail: string }
 export type AdminDashboard = { operations: AdminDashboardOperations; call_distribution: AdminCallDistribution; metrics: AdminMetric[]; providers: ProviderHealth[]; queue: AdminDashboardQueueItem[]; audit: AuditLog[] }

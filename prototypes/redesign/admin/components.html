@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>组件与规范 — Mikiko Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/admin.css">
+<style>
+  .cmp-grid { display: grid; gap: 16px; }
+  .cmp-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .cmp-swatch { display: grid; gap: 5px; }
+  .cmp-swatch i { display: block; height: 46px; border-radius: 7px; border: 1px solid var(--a-line); }
+  .cmp-swatch span { color: var(--a-ink-3); font-size: 11px; }
+  .cmp-swatch b { font-size: 11.5px; }
+  .cmp-type { display: grid; gap: 0; }
+  .cmp-type > div { display: grid; grid-template-columns: 150px 90px minmax(0,1fr); align-items: baseline; gap: 14px; padding: 10px 0; border-bottom: 1px dashed var(--a-line); }
+  .cmp-type > div:last-child { border-bottom: 0; }
+  .cmp-type span { color: var(--a-ink-3); font-family: var(--font-admin-mono); font-size: 11px; }
+  .cmp-callout { display: grid; gap: 5px; padding: 12px 14px; border-left: 3px solid var(--a-accent); background: var(--a-accent-soft); border-radius: 0 8px 8px 0; }
+  .cmp-callout strong { font-size: 13px; }
+  .cmp-callout span { color: var(--a-ink-2); font-size: 12.5px; line-height: 1.6; }
+  .cmp-before-after { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .cmp-before, .cmp-after { display: grid; gap: 8px; padding: 14px; border: 1px solid var(--a-line); border-radius: 9px; }
+  .cmp-before span { color: var(--a-ink-3); font-family: var(--font-admin-mono); font-size: 10.5px; }
+  .cmp-rule { display: flex; align-items: flex-start; gap: 9px; font-size: 13px; line-height: 1.6; }
+  .cmp-rule b { display: inline-grid; place-items: center; width: 19px; height: 19px; flex: none; border-radius: 5px; background: var(--a-surface-3); color: var(--a-ink-2); font-family: var(--font-admin-mono); font-size: 10px; }
+  .cmp-drawer-demo { position: relative; height: 300px; overflow: hidden; border: 1px solid var(--a-line); border-radius: 10px; background: var(--a-bg); }
+  .cmp-drawer-demo__panel { position: absolute; inset: 0 0 0 auto; width: 62%; display: flex; flex-direction: column; background: var(--a-canvas); border-left: 1px solid var(--a-line-2); box-shadow: -18px 0 45px rgba(0,0,0,.08); }
+  .cmp-drawer-demo__head { padding: 11px 13px; border-bottom: 1px solid var(--a-line); }
+  .cmp-drawer-demo__body { flex: 1; display: grid; gap: 7px; padding: 11px 13px; align-content: start; }
+  .cmp-drawer-demo__body i { display: block; height: 9px; border-radius: 4px; background: var(--a-surface-2); }
+  .cmp-drawer-demo__foot { padding: 9px 13px; border-top: 1px solid var(--a-line); display: flex; gap: 6px; justify-content: flex-end; }
+  @media (max-width: 640px) {
+    .cmp-type > div { grid-template-columns: minmax(0,1fr) auto; gap: 4px 12px; }
+    .cmp-type > div > div { grid-column: 1 / -1; }
+    .cmp-before-after { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body data-site="admin" data-page="components" data-title="组件与规范">
+<div class="a-shell"><div class="a-main">
+  <main class="a-content">
+    <header class="a-page-head">
+      <div class="a-page-head__copy">
+        <span class="a-kicker">Design System · Command Deck v1</span>
+        <h1>组件与规范</h1>
+        <p>管理端重构后的基线与组件清单。核心目标是可读性、对齐与可预测的交互：更大字号、单列表单、统一列表与抽屉详情。</p>
+      </div>
+      <div class="a-page-head__actions"><a class="a-btn a-btn--sm" href="../index.html">返回原型索引</a></div>
+    </header>
+
+    <div class="cmp-callout" style="margin-bottom:16px">
+      <strong>四条硬规则</strong>
+      <span>① 正文 15px、表格 14px、标签 13px，不再使用 10–11px 作为正文。② 表单只走单列字段账本，短字段配对必须同高。③ 列表使用统一筛选带、数据表格与分页器。④ 多级详情与编辑一律进右侧抽屉。</span>
+    </div>
+
+    <div class="cmp-grid">
+      <section class="a-panel a-panel--pad">
+        <div class="a-section-title"><div><h2>字号与层级</h2><p>以 15px 为正文基线，标题不做夸张展示。</p></div></div>
+        <div class="cmp-type">
+          <div><span>页面标题 / 30px</span><span>600</span><div style="font-family:var(--font-display);font-size:30px;font-weight:500;letter-spacing:-.02em">用户管理</div></div>
+          <div><span>区块标题 / 15px</span><span>700</span><div style="font-size:15px;font-weight:700">最近任务</div></div>
+          <div><span>正文 / 15px</span><span>400</span><div style="font-size:15px">列表与表单的标准阅读字号，保证一臂距离可读。</div></div>
+          <div><span>表格正文 / 14px</span><span>400</span><div style="font-size:14px">岑屿 · cenyu@atelier.moe · plus · 3,280.00</div></div>
+          <div><span>标签 / 13px</span><span>600</span><div style="font-size:13px;font-weight:600;color:var(--a-ink-2)">所属分组</div></div>
+          <div><span>辅助 / 12.5px</span><span>400</span><div style="font-size:12.5px;color:var(--a-ink-3)">修改后仅影响新任务报价。</div></div>
+          <div><span>机器字段 / 11px</span><span>mono</span><div style="font-family:var(--font-admin-mono);font-size:11px;color:var(--a-ink-2)">task_8f21c4e0 · 2026-10-22 18:42:11</div></div>
+        </div>
+      </section>
+
+      <div class="a-grid a-grid--2">
+        <section class="a-panel a-panel--pad">
+          <div class="a-section-title"><div><h2>颜色</h2><p>暖灰纸面 + 单一墨蓝强调，状态色只表达语义。</p></div></div>
+          <div class="a-grid a-grid--4" style="gap:10px">
+            <div class="cmp-swatch"><i style="background:#f2f1ec"></i><b>bg</b><span>#F2F1EC</span></div>
+            <div class="cmp-swatch"><i style="background:#faf9f6"></i><b>canvas</b><span>#FAF9F6</span></div>
+            <div class="cmp-swatch"><i style="background:#ffffff"></i><b>surface</b><span>#FFFFFF</span></div>
+            <div class="cmp-swatch"><i style="background:#16191e"></i><b>ink</b><span>#16191E</span></div>
+            <div class="cmp-swatch"><i style="background:#2e4a7d"></i><b>accent</b><span>#2E4A7D</span></div>
+            <div class="cmp-swatch"><i style="background:#2c6b4f"></i><b>success</b><span>#2C6B4F</span></div>
+            <div class="cmp-swatch"><i style="background:#8a5a16"></i><b>warning</b><span>#8A5A16</span></div>
+            <div class="cmp-swatch"><i style="background:#a33a32"></i><b>danger</b><span>#A33A32</span></div>
+          </div>
+        </section>
+        <section class="a-panel a-panel--pad">
+          <div class="a-section-title"><div><h2>按钮与状态</h2><p>主操作 38px，行内操作 32px，图标操作 36px。</p></div></div>
+          <div class="cmp-row" style="margin-bottom:12px">
+            <button class="a-btn a-btn--primary" type="button">主操作</button>
+            <button class="a-btn" type="button">次操作</button>
+            <button class="a-btn a-btn--quiet" type="button">轻量</button>
+            <button class="a-btn a-btn--danger" type="button">危险</button>
+            <button class="a-icon-btn" type="button">⋯</button>
+          </div>
+          <div class="cmp-row" style="margin-bottom:12px">
+            <button class="a-row-btn a-row-btn--primary" type="button">详情</button>
+            <button class="a-row-btn" type="button">编辑</button>
+            <button class="a-row-btn" type="button" data-copy="task_8f21c4e0">⧉</button>
+            <button class="a-btn a-btn--sm" type="button">小按钮</button>
+          </div>
+          <div class="cmp-row">
+            <span class="a-badge a-badge--ok"><i></i>成功</span>
+            <span class="a-badge a-badge--warn"><i></i>待处理</span>
+            <span class="a-badge a-badge--bad"><i></i>失败</span>
+            <span class="a-badge a-badge--info"><i></i>执行中</span>
+            <span class="a-badge a-badge--accent">plus</span>
+            <span class="a-badge"><i></i>已停用</span>
+          </div>
+        </section>
+      </div>
+
+      <section class="a-panel a-panel--pad">
+        <div class="a-section-title"><div><h2>表单：单列字段账本</h2><p>字段纵向排列，标签、控件、帮助文本形成稳定节奏；只有同高短字段可以成对。</p></div><span class="a-badge a-badge--accent">核心变更</span></div>
+        <div class="a-grid a-grid--2">
+          <form class="a-form" style="border:1px solid var(--a-line);border-radius:10px">
+            <section class="a-form__section">
+              <div class="a-form__head"><h3><span class="a-form__num">1</span>连接</h3><p>每个字段独占一行。</p></div>
+              <label class="a-field"><span>账号名称 <span class="a-required">*</span></span><input class="a-input" value="acc-east-1"></label>
+              <label class="a-field"><span>Base URL</span><input class="a-input" value="https://api.example.com/v1"><span class="a-hint">说明文字始终位于控件下方，不挤压下一行。</span></label>
+              <div class="a-form__pair">
+                <label class="a-field"><span>优先级</span><input class="a-input" value="100"></label>
+                <label class="a-field"><span>权重</span><input class="a-input" value="70"></label>
+              </div>
+              <label class="a-switch"><input type="checkbox" checked><span class="a-switch__track"></span>启用</label>
+            </section>
+          </form>
+          <div style="display:grid;gap:10px;align-content:start">
+            <div class="cmp-rule"><b>1</b><span>禁止把两个不同高度的组件并排放在同一行。高度不一致会直接破坏后续行基线。</span></div>
+            <div class="cmp-rule"><b>2</b><span>字段顺序 = 心智顺序：标识 → 连接 → 能力 → 计费 → 状态。</span></div>
+            <div class="cmp-rule"><b>3</b><span>长表单拆 section；每个 section 有编号、标题和一句说明。</span></div>
+            <div class="cmp-rule"><b>4</b><span>保存栏固定在底部，显示未保存数量与校验结果。</span></div>
+            <div class="cmp-before-after">
+              <div class="cmp-before"><span>旧：双栏流式</span><div style="height:28px;border:1px solid var(--a-line);border-radius:5px"></div><div style="height:64px;border:1px solid var(--a-line);border-radius:5px;width:70%"></div><span style="color:var(--a-danger)">下一行错位</span></div>
+              <div class="cmp-after"><span>新：单列账本</span><div style="height:28px;border:1px solid var(--a-line);border-radius:5px"></div><div style="height:28px;border:1px solid var(--a-line);border-radius:5px"></div><span style="color:var(--a-success)">基线稳定</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="a-panel a-panel--flush">
+        <div class="a-panel__head"><div><h2>列表：筛选带 + 数据表格 + 统一分页</h2><p>所有列表页共用同一套骨架与密度。</p></div><span class="a-hint">表格行高 56px</span></div>
+        <div class="a-panel__body" style="padding:0">
+          <div class="a-filters" style="border:0;border-radius:0;border-bottom:1px solid var(--a-line)">
+            <div class="a-filters__row">
+              <label class="a-field"><span>关键词</span><input class="a-input" placeholder="搜索名称 / ID"></label>
+              <label class="a-field"><span>状态</span><select class="a-select"><option>全部状态</option><option>启用</option></select></label>
+              <label class="a-field"><span>分组</span><select class="a-select"><option>全部分组</option></select></label>
+              <label class="a-field"><span>时间</span><input class="a-input" type="date"></label>
+            </div>
+            <div class="a-filters__foot"><span class="a-filters__result">共 <b>326</b> 条 · 第 1 / 17 页</span><div class="a-filters__actions"><button class="a-btn a-btn--sm a-btn--quiet" type="button">更多筛选</button><button class="a-btn a-btn--sm a-btn--primary" type="button">查询</button></div></div>
+          </div>
+          <div class="a-table-wrap">
+            <table class="a-table" style="min-width:880px">
+              <thead><tr><th>用户</th><th>分组</th><th class="is-num">积分</th><th>状态</th><th class="is-actions">操作</th></tr></thead>
+              <tbody>
+                <tr><td><span class="a-cell-entity"><span class="a-cell-entity__avatar">岑</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">岑屿</span><span class="a-cell-entity__meta">cenyu@atelier.moe · #10241</span></span></span></td><td><span class="a-badge a-badge--accent">plus</span></td><td class="is-num">3,280.00</td><td><span class="a-badge a-badge--ok"><i></i>正常</span></td><td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button">详情</button><button class="a-row-btn" type="button">积分</button><button class="a-icon-btn" style="width:32px;height:32px" type="button">⋯</button></div></td></tr>
+                <tr><td><span class="a-cell-entity"><span class="a-cell-entity__avatar">沈</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name">沈砚白</span><span class="a-cell-entity__meta">shen.yanbai@studio.moe · #10240</span></span></span></td><td><span class="a-badge a-badge--accent">pro</span></td><td class="is-num">12,940.00</td><td><span class="a-badge a-badge--ok"><i></i>正常</span></td><td class="is-actions"><div class="a-row-actions"><button class="a-row-btn a-row-btn--primary" type="button">详情</button><button class="a-row-btn" type="button">积分</button><button class="a-icon-btn" style="width:32px;height:32px" type="button">⋯</button></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="a-pager"><div class="a-pager__info">显示 <b>1–20</b>，共 <b>326</b> 条</div><div class="a-pager__controls"><button class="a-pager__btn" disabled>‹</button><button class="a-pager__btn is-active">1</button><button class="a-pager__btn">2</button><button class="a-pager__btn">3</button><button class="a-pager__btn">…</button><button class="a-pager__btn">17</button><button class="a-pager__btn">›</button></div><div class="a-pager__size"><span>每页</span><select><option>20</option><option>50</option></select></div></div>
+        </div>
+      </section>
+
+      <div class="a-grid a-grid--2">
+        <section class="a-panel a-panel--pad">
+          <div class="a-section-title"><div><h2>实体映射规则</h2><p>不再把裸 ID 直接铺在表格里。</p></div><span class="a-badge a-badge--warn">修正项</span></div>
+          <div class="a-grid" style="gap:12px">
+            <div class="cmp-before-after">
+              <div class="cmp-before"><span>旧</span><div class="a-mono" style="font-size:11px;color:var(--a-danger)">User #10241</div><div class="a-mono" style="font-size:11px;color:var(--a-danger)">route_model_id: 7</div><div class="a-mono" style="font-size:11px;color:var(--a-danger)">status: partial</div></div>
+              <div class="cmp-after"><span>新</span><div class="a-cell-entity"><span class="a-cell-entity__avatar" style="width:24px;height:24px;border-radius:6px;font-size:9px">岑</span><span class="a-cell-entity__copy"><span class="a-cell-entity__name" style="font-size:12.5px">岑屿</span><span class="a-cell-entity__meta">cenyu@atelier.moe</span></span></div><div style="font-size:12.5px">Plus Image <span class="a-tag">plus-image</span></div><div><span class="a-badge a-badge--warn"><i></i>部分成功</span></div></div>
+            </div>
+            <div class="cmp-rule"><b>→</b><span>用户：头像 + 名称 + 邮箱；点击打开用户摘要，可进入完整用户抽屉。</span></div>
+            <div class="cmp-rule"><b>→</b><span>路由 / 模型：名称 + code + 账号；缺失映射时回退原始 ID，并标记为灰色。</span></div>
+            <div class="cmp-rule"><b>→</b><span>枚举：任务状态、结算状态、支付状态、审核状态全部提供中文标签与语义色。</span></div>
+            <div class="cmp-rule"><b>→</b><span>ID：只在需要复制或排障时以 mono 小字出现，不作为主信息。</span></div>
+          </div>
+        </section>
+
+        <section class="a-panel a-panel--pad">
+          <div class="a-section-title"><div><h2>抽屉：多级详情统一出口</h2><p>720px 常规，1020px 复杂详情；头部固定、底部动作固定。</p></div></div>
+          <div class="cmp-drawer-demo">
+            <div style="padding:14px;display:grid;gap:8px;width:38%">
+              <i style="display:block;height:9px;border-radius:4px;background:var(--a-surface-2)"></i>
+              <i style="display:block;height:9px;border-radius:4px;background:var(--a-surface-2);width:70%"></i>
+              <i style="display:block;height:9px;border-radius:4px;background:var(--a-surface-2);width:84%"></i>
+            </div>
+            <div class="cmp-drawer-demo__panel">
+              <div class="cmp-drawer-demo__head"><strong style="font-size:12px">用户详情</strong><div class="a-hint" style="font-size:9px;font-family:var(--font-admin-mono)">#10241 · plus</div></div>
+              <div class="cmp-drawer-demo__body"><i style="width:90%"></i><i style="width:80%"></i><i style="width:95%"></i><i style="width:60%"></i></div>
+              <div class="cmp-drawer-demo__foot"><span class="a-row-btn" style="min-height:24px;font-size:10px">取消</span><span class="a-row-btn a-row-btn--primary" style="min-height:24px;font-size:10px">保存</span></div>
+            </div>
+          </div>
+          <div class="cmp-rule" style="margin-top:10px"><b>1</b><span>抽屉内可再分页签；不允许再嵌套第二个抽屉。</span></div>
+          <div class="cmp-rule"><b>2</b><span>Esc 与遮罩关闭，关闭前若有未保存修改先确认。</span></div>
+        </section>
+      </div>
+
+      <div class="a-grid a-grid--3">
+        <section class="a-panel a-panel--pad">
+          <div class="a-section-title"><div><h2>空状态</h2></div></div>
+          <div class="a-empty"><span class="a-empty__icon">◫</span><h3>暂无视频任务</h3><p>提交视频生成后，任务与 attempt 会显示在这里。</p><button class="a-btn a-btn--sm" type="button">查看接入账号</button></div>
+        </section>
+        <section class="a-panel a-panel--pad">
+          <div class="a-section-title"><div><h2>加载状态</h2></div></div>
+          <div style="display:grid;gap:8px"><div class="a-skeleton" style="height:18px;width:60%"></div><div class="a-skeleton" style="height:56px"></div><div class="a-skeleton" style="height:56px"></div><div class="a-skeleton" style="height:56px"></div></div>
+        </section>
+        <section class="a-panel a-panel--pad">
+          <div class="a-section-title"><div><h2>错误状态</h2></div></div>
+          <div class="a-banner a-banner--danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="m6 6 12 12"/></svg><div><strong style="font-size:13px">无法载入用户列表</strong><div class="a-hint">请求超时。请检查网络后重试。</div><button class="a-btn a-btn--sm" style="margin-top:8px" type="button">重新载入</button></div></div>
+        </section>
+      </div>
+    </div>
+  </main>
+</div></div>
+<script src="../assets/shell.js"></script>
+</body>
+</html>

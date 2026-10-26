@@ -21,6 +21,7 @@ import (
 
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikey"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentorder"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentwebhookevent"
@@ -32,6 +33,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usersubscription"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/walletgrant"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/walletreservationallocation"
+	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
@@ -1556,6 +1558,27 @@ func (s *BillingStore) ReserveTaskTx(ctx context.Context, tx *repoent.Tx, req bi
 		return billingservice.BalanceState{}, errs.BadRequest("estimated points must be non-negative")
 	}
 
+	if req.APIKeyID > 0 {
+		key, keyErr := tx.APIKey.Query().Where(apikey.IDEQ(int(req.APIKeyID)), apikey.UserIDEQ(req.UserID)).Only(ctx)
+		if keyErr != nil && !repoent.IsNotFound(keyErr) {
+			return billingservice.BalanceState{}, keyErr
+		}
+		if keyErr == nil {
+			// Image and video reservations write the same key before reading usage.
+			// Serializable retries prevent either media path observing stale usage.
+			changed, err := tx.APIKey.Update().Where(apikey.IDEQ(key.ID), apikey.TotalQuotaUsedPointsEQ(key.TotalQuotaUsedPoints)).SetTotalQuotaUsedPoints(key.TotalQuotaUsedPoints).Save(ctx)
+			if err != nil {
+				return billingservice.BalanceState{}, err
+			}
+			if changed != 1 {
+				return billingservice.BalanceState{}, repoerr.ErrConflict
+			}
+			req.APIKeyTotalQuotaPoints = key.TotalQuotaPoints
+			req.APIKeyDailyQuotaPoints = key.DailyQuotaPoints
+			dayStart := time.Now().UTC().Truncate(24 * time.Hour)
+			req.APIKeyQuotaDayStart = &dayStart
+		}
+	}
 	ledgerState, err := s.taskLedgerState(ctx, tx, req.TaskID, req.UserID)
 	if err != nil {
 		return billingservice.BalanceState{}, err
@@ -3939,6 +3962,9 @@ func serializableTxBackoff(attempt int) time.Duration {
 }
 
 func isRetryableTxErr(err error) bool {
+	if errors.Is(err, repoerr.ErrConflict) {
+		return true
+	}
 	if err == nil {
 		return false
 	}

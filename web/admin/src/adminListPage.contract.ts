@@ -30,13 +30,7 @@ if (!filters.props.fields.some((field: { key: string; primary?: boolean }) => fi
   throw new Error('ListFilterBar should support collapsible advanced filters')
 }
 
-for (const tableContract of [
-  'min-h-[50px]',
-  'sticky top-0',
-  'group-hover:bg-',
-  'font-[family-name:var(--admin-font-mono)]',
-  'overflow-x-auto overscroll-x-contain',
-]) {
+for (const tableContract of ['a-table-wrap', 'a-table', 'is-num', 'a-mono', 'a-pager']) {
   if (!dataTableSource.includes(tableContract)) throw new Error(`admin data tables must use ${tableContract}`)
 }
 

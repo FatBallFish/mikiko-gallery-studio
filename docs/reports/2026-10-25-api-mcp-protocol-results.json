@@ -1,0 +1,1870 @@
+{
+  "test_date": "2026-10-25",
+  "execution": "actual live HTTP requests; no config/business edits or restart",
+  "endpoint": "http://127.0.0.1:8091/mcp",
+  "canonical_resource": "http://localhost:5273/mcp",
+  "canonical_issuer": "http://localhost:5273",
+  "mikiko_installation_success": false,
+  "discovery_bypass": true,
+  "authorization_path": "DCR -> direct8091 authorize -> canonical browser consent page opened but logged out -> direct8091 GET+POST consent with existing session -> PKCE token exchange. Browser consent approval UI NOT completed. This does not prove Mikiko installation success.",
+  "official_sdk": {
+    "evidence": "official SDK Connect/ListTools/CallTool over real 8091 HTTP with own OAuth bearer; no OAuth discovery",
+    "get_balance_is_error": false,
+    "initialize_result": {
+      "capabilities": {
+        "logging": {},
+        "tools": {
+          "listChanged": true
+        }
+      },
+      "protocolVersion": "2026-07-28",
+      "serverInfo": {
+        "name": "studio",
+        "version": "1.0.0"
+      }
+    },
+    "request_ids": "SDK transport did not inject request ids",
+    "status": "pass",
+    "tools_count": 35
+  },
+  "protocol_versions": [
+    {
+      "version": "2024-11-05",
+      "status": "pass",
+      "initialize_request_id": "mcp-live-0012",
+      "negotiated": "2024-11-05",
+      "tools_list_request_id": "mcp-live-0013",
+      "tools_count": 35
+    },
+    {
+      "version": "2025-03-26",
+      "status": "pass",
+      "initialize_request_id": "mcp-live-0014",
+      "negotiated": "2025-03-26",
+      "tools_list_request_id": "mcp-live-0015",
+      "tools_count": 35
+    },
+    {
+      "version": "2025-06-18",
+      "status": "pass",
+      "initialize_request_id": "mcp-live-0016",
+      "negotiated": "2025-06-18",
+      "tools_list_request_id": "mcp-live-0017",
+      "tools_count": 35
+    },
+    {
+      "version": "2025-11-25",
+      "status": "pass",
+      "initialize_request_id": "mcp-live-0018",
+      "negotiated": "2025-11-25",
+      "tools_list_request_id": "mcp-live-0019",
+      "tools_count": 35
+    },
+    {
+      "version": "2026-07-28",
+      "status": "pass",
+      "mechanism": "stateless server/discover + per-request _meta and Mcp-Method; official SDK Connect negotiates2026",
+      "requests": [
+        {
+          "method": "server/discover",
+          "request_id": "mcp-live-0073",
+          "http_status": 200
+        },
+        {
+          "method": "tools/list",
+          "request_id": "mcp-live-0074",
+          "http_status": 200
+        }
+      ],
+      "tools_count": 35,
+      "initialize_note": "legacy initialize without required 2026 metadata/header rejected400 as expected; new protocol SDK successful"
+    }
+  ],
+  "tools": [
+    {
+      "name": "abort_upload",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0058",
+          "jsonrpc_id": 105,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "aborted"
+          ],
+          "resource_id": null,
+          "resource_status": null,
+          "item_count": null
+        }
+      ]
+    },
+    {
+      "name": "cancel_video_task",
+      "status": "blocked",
+      "limitation": "success cancellation not tested; existing reserved task must not be altered",
+      "cases": [
+        {
+          "request_id": "mcp-live-0049",
+          "jsonrpc_id": 138,
+          "assertion_status": "pass",
+          "expected_error": true,
+          "is_error": true,
+          "error_evidence": [
+            "invalid tool arguments: validating root: required: missing properties: [\"id\" \"idempotency_key\"]"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "complete_upload",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0056",
+          "jsonrpc_id": 103,
+          "assertion_status": "pass",
+          "expected_error": true,
+          "is_error": true,
+          "error_evidence": [
+            "multipart upload part is missing"
+          ]
+        },
+        {
+          "request_id": "mcp-live-0061",
+          "jsonrpc_id": 101,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "id",
+            "user_id",
+            "project_id",
+            "name",
+            "group_id",
+            "group_name",
+            "media_type",
+            "source_type",
+            "status",
+            "visibility_status",
+            "storage_driver",
+            "mime_type",
+            "file_size_bytes",
+            "sha256",
+            "version",
+            "created_at",
+            "updated_at"
+          ],
+          "resource_id": "cdea2209-6dcd-4711-b42a-f028452967a3",
+          "resource_status": "processing",
+          "item_count": null
+        }
+      ]
+    },
+    {
+      "name": "create_group",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0039",
+          "jsonrpc_id": 128,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "id",
+            "user_id",
+            "project_id",
+            "name",
+            "version",
+            "created_at",
+            "updated_at"
+          ],
+          "resource_id": "040954e7-92ed-44b7-9ae9-e01523c33fd8",
+          "resource_status": null,
+          "item_count": null
+        }
+      ]
+    },
+    {
+      "name": "create_image_task",
+      "status": "blocked",
+      "limitation": "success creation intentionally not tested to avoid paid generation",
+      "cases": [
+        {
+          "request_id": "mcp-live-0044",
+          "jsonrpc_id": 133,
+          "assertion_status": "pass",
+          "expected_error": true,
+          "is_error": true,
+          "error_evidence": [
+            "invalid tool arguments: validating root: required: missing properties: [\"idempotency_key\"]"
+          ]
+        },
+        {
+          "request_id": "mcp-live-0045",
+          "jsonrpc_id": 134,
+          "assertion_status": "pass",
+          "expected_error": true,
+          "is_error": true,
+          "error_evidence": [
+            "route model not found"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "create_project",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0036",
+          "jsonrpc_id": 125,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "id",
+            "name",
+            "is_default",
+            "status",
+            "version",
+            "task_count",
+            "asset_count",
+            "created_at",
+            "updated_at"
+          ],
+          "resource_id": "722d742e-011f-44a0-a935-ad4332a66636",
+          "resource_status": "active",
+          "item_count": null
+        }
+      ]
+    },
+    {
+      "name": "create_upload",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0052",
+          "jsonrpc_id": 141,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "id",
+            "user_id",
+            "project_id",
+            "group_name",
+            "original_filename",
+            "declared_media_type",
+            "declared_mime_type",
+            "declared_size_bytes",
+            "declared_checksum",
+            "storage_driver",
+            "part_size",
+            "part_count",
+            "status",
+            "reserved_bytes",
+            "actual_bytes",
+            "completed_parts",
+            "expires_at"
+          ],
+          "resource_id": "4c4133c2-e43f-4a03-9046-47823366f9ff",
+          "resource_status": "initialized",
+          "item_count": null
+        },
+        {
+          "request_id": "mcp-live-0057",
+          "jsonrpc_id": 104,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "id",
+            "user_id",
+            "project_id",
+            "group_name",
+            "original_filename",
+            "declared_media_type",
+            "declared_mime_type",
+            "declared_size_bytes",
+            "storage_driver",
+            "part_size",
+            "part_count",
+            "status",
+            "reserved_bytes",
+            "actual_bytes",
+            "completed_parts",
+            "expires_at"
+          ],
+          "resource_id": "cd9cd900-7abc-4e9b-ab57-138ef588e137",
+          "resource_status": "initialized",
+          "item_count": null
+        }
+      ]
+    },
+    {
+      "name": "create_video_task",
+      "status": "blocked",
+      "limitation": "success creation intentionally not tested to avoid paid generation",
+      "cases": [
+        {
+          "request_id": "mcp-live-0047",
+          "jsonrpc_id": 136,
+          "assertion_status": "pass",
+          "expected_error": true,
+          "is_error": true,
+          "error_evidence": [
+            "invalid tool arguments: validating root: required: missing properties: [\"idempotency_key\"]"
+          ]
+        },
+        {
+          "request_id": "mcp-live-0048",
+          "jsonrpc_id": 137,
+          "assertion_status": "pass",
+          "expected_error": true,
+          "is_error": true,
+          "error_evidence": [
+            "video route model not found"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "delete_asset",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0064",
+          "jsonrpc_id": 104,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "id",
+            "user_id",
+            "project_id",
+            "name",
+            "group_id",
+            "group_name",
+            "media_type",
+            "source_type",
+            "status",
+            "visibility_status",
+            "storage_driver",
+            "mime_type",
+            "file_size_bytes",
+            "sha256",
+            "version",
+            "created_at",
+            "updated_at",
+            "deleted_at"
+          ],
+          "resource_id": "cdea2209-6dcd-4711-b42a-f028452967a3",
+          "resource_status": "deleted",
+          "item_count": null
+        }
+      ]
+    },
+    {
+      "name": "delete_group",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0067",
+          "jsonrpc_id": 107,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "deleted"
+          ],
+          "resource_id": null,
+          "resource_status": null,
+          "item_count": null
+        }
+      ]
+    },
+    {
+      "name": "delete_project",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0069",
+          "jsonrpc_id": 109,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "project",
+            "transferred"
+          ],
+          "resource_id": null,
+          "resource_status": null,
+          "item_count": null
+        }
+      ]
+    },
+    {
+      "name": "get_asset",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0031",
+          "jsonrpc_id": 120,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "id",
+            "user_id",
+            "project_id",
+            "legacy_image_id",
+            "name",
+            "group_id",
+            "group_name",
+            "media_type",
+            "source_type",
+            "source_task_kind",
+            "source_task_id",
+            "status",
+            "visibility_status",
+            "storage_driver",
+            "mime_type",
+            "container",
+            "codec",
+            "file_size_bytes",
+            "sha256",
+            "width",
+            "height",
+            "frame_rate_milli",
+            "version",
+            "created_at",
+            "updated_at"
+          ],
+          "resource_id": "e70c2657-2400-5fd2-856f-78445835b665",
+          "resource_status": "ready",
+          "item_count": null
+        },
+        {
+          "request_id": "mcp-live-0062",
+          "jsonrpc_id": 102,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "id",
+            "user_id",
+            "project_id",
+            "name",
+            "group_id",
+            "group_name",
+            "media_type",
+            "source_type",
+            "status",
+            "visibility_status",
+            "storage_driver",
+            "mime_type",
+            "file_size_bytes",
+            "sha256",
+            "version",
+            "created_at",
+            "updated_at"
+          ],
+          "resource_id": "cdea2209-6dcd-4711-b42a-f028452967a3",
+          "resource_status": "processing",
+          "item_count": null
+        }
+      ]
+    },
+    {
+      "name": "get_asset_access",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0032",
+          "jsonrpc_id": 121,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "url",
+            "expires_at",
+            "range_supported"
+          ],
+          "resource_id": null,
+          "resource_status": null,
+          "item_count": null
+        }
+      ]
+    },
+    {
+      "name": "get_balance",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0024",
+          "jsonrpc_id": 113,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "available_points",
+            "frozen_points",
+            "trial_points",
+            "subscription_points",
+            "gift_points",
+            "recharge_points",
+            "buckets",
+            "user_group_multiplier",
+            "cny_per_point"
+          ],
+          "resource_id": null,
+          "resource_status": null,
+          "item_count": null
+        }
+      ]
+    },
+    {
+      "name": "get_current_user",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0023",
+          "jsonrpc_id": 112,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "email",
+            "group_code",
+            "id",
+            "nickname",
+            "status"
+          ],
+          "resource_id": 2,
+          "resource_status": "active",
+          "item_count": null
+        }
+      ]
+    },
+    {
+      "name": "get_group",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0041",
+          "jsonrpc_id": 130,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "id",
+            "user_id",
+            "project_id",
+            "name",
+            "version",
+            "created_at",
+            "updated_at"
+          ],
+          "resource_id": "040954e7-92ed-44b7-9ae9-e01523c33fd8",
+          "resource_status": null,
+          "item_count": null
+        }
+      ]
+    },
+    {
+      "name": "get_image_result_access",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0050",
+          "jsonrpc_id": 139,
+          "assertion_status": "pass",
+          "expected_error": true,
+          "is_error": true,
+          "error_evidence": [
+            "task output not found"
+          ]
+        },
+        {
+          "request_id": "mcp-live-0065",
+          "jsonrpc_id": 105,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "url",
+            "expires_at",
+            "range_supported"
+          ],
+          "resource_id": null,
+          "resource_status": null,
+          "item_count": null
+        }
+      ]
+    },
+    {
+      "name": "get_image_task",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0033",
+          "jsonrpc_id": 122,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "project_id",
+            "project",
+            "id",
+            "status",
+            "progress_stage",
+            "progress_message",
+            "provider",
+            "provider_cost",
+            "gross_margin",
+            "route_snapshot_version",
+            "abstract_model",
+            "route_model_code",
+            "route_model_id",
+            "account_model_id",
+            "model_account_id",
+            "upstream_model_code",
+            "effective_multiplier",
+            "charged_points",
+            "task_type",
+            "prompt",
+            "size_mode",
+            "base_resolution",
+            "quality",
+            "output_format",
+            "output_compression",
+            "moderation",
+            "response_mode",
+            "save_policy",
+            "requested_output_image_count",
+            "reference_image_count",
+            "reference_asset_ids",
+            "estimated_points",
+            "actual_points",
+            "attempts",
+            "provider_request_id",
+            "upstream_succeeded_at",
+            "artifact_recovery",
+            "results",
+            "created_at",
+            "updated_at"
+          ],
+          "resource_id": "deafba07-14a7-44e8-a49b-41ed52dd2515",
+          "resource_status": "succeeded",
+          "item_count": null
+        }
+      ]
+    },
+    {
+      "name": "get_project",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0037",
+          "jsonrpc_id": 126,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "id",
+            "name",
+            "is_default",
+            "status",
+            "version",
+            "task_count",
+            "asset_count",
+            "created_at",
+            "updated_at"
+          ],
+          "resource_id": "722d742e-011f-44a0-a935-ad4332a66636",
+          "resource_status": "active",
+          "item_count": null
+        },
+        {
+          "request_id": "mcp-live-0068",
+          "jsonrpc_id": 108,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "id",
+            "name",
+            "is_default",
+            "status",
+            "version",
+            "task_count",
+            "asset_count",
+            "created_at",
+            "updated_at"
+          ],
+          "resource_id": "722d742e-011f-44a0-a935-ad4332a66636",
+          "resource_status": "active",
+          "item_count": null
+        }
+      ]
+    },
+    {
+      "name": "get_upload",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0053",
+          "jsonrpc_id": 101,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "id",
+            "user_id",
+            "project_id",
+            "group_name",
+            "original_filename",
+            "declared_media_type",
+            "declared_mime_type",
+            "declared_size_bytes",
+            "declared_checksum",
+            "storage_driver",
+            "part_size",
+            "part_count",
+            "status",
+            "reserved_bytes",
+            "actual_bytes",
+            "completed_parts",
+            "expires_at"
+          ],
+          "resource_id": "4c4133c2-e43f-4a03-9046-47823366f9ff",
+          "resource_status": "uploading",
+          "item_count": null
+        }
+      ]
+    },
+    {
+      "name": "get_upload_part_url",
+      "status": "fail",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0054",
+          "jsonrpc_id": 102,
+          "assertion_status": "fail",
+          "expected_error": false,
+          "is_error": true,
+          "error_evidence": [
+            "multipart part must be uploaded directly to storage"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "get_video_result_access",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0051",
+          "jsonrpc_id": 140,
+          "assertion_status": "pass",
+          "expected_error": true,
+          "is_error": true,
+          "error_evidence": [
+            "task output not found"
+          ]
+        },
+        {
+          "request_id": "mcp-live-0066",
+          "jsonrpc_id": 106,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "url",
+            "expires_at",
+            "range_supported"
+          ],
+          "resource_id": null,
+          "resource_status": null,
+          "item_count": null
+        }
+      ]
+    },
+    {
+      "name": "get_video_task",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0034",
+          "jsonrpc_id": 123,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "id",
+            "api_key_id",
+            "project_id",
+            "source_channel",
+            "task_type",
+            "status",
+            "progress_stage",
+            "prompt_template",
+            "prompt_binding_snapshot",
+            "execution_prompt",
+            "route_model_id",
+            "route_model_code",
+            "duration_seconds",
+            "resolution",
+            "aspect_ratio",
+            "generate_audio",
+            "requested_output_count",
+            "success_output_count",
+            "estimated_points",
+            "reserved_points",
+            "actual_points",
+            "pricing_snapshot",
+            "routing_snapshot",
+            "settlement_status",
+            "items",
+            "inputs",
+            "version",
+            "created_at",
+            "updated_at"
+          ],
+          "resource_id": "86764a67-e2da-4367-ba8e-e877e7849753",
+          "resource_status": "running",
+          "item_count": 1
+        },
+        {
+          "request_id": "mcp-live-0035",
+          "jsonrpc_id": 124,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "id",
+            "api_key_id",
+            "project_id",
+            "source_channel",
+            "task_type",
+            "status",
+            "progress_stage",
+            "prompt_template",
+            "prompt_binding_snapshot",
+            "execution_prompt",
+            "route_model_id",
+            "route_model_code",
+            "duration_seconds",
+            "resolution",
+            "aspect_ratio",
+            "generate_audio",
+            "requested_output_count",
+            "success_output_count",
+            "estimated_points",
+            "reserved_points",
+            "actual_points",
+            "pricing_snapshot",
+            "routing_snapshot",
+            "settlement_status",
+            "items",
+            "inputs",
+            "version",
+            "created_at",
+            "updated_at"
+          ],
+          "resource_id": "86764a67-e2da-4367-ba8e-e877e7849753",
+          "resource_status": "running",
+          "item_count": 1
+        }
+      ]
+    },
+    {
+      "name": "list_assets",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0030",
+          "jsonrpc_id": 119,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "items"
+          ],
+          "resource_id": null,
+          "resource_status": null,
+          "item_count": 10
+        }
+      ]
+    },
+    {
+      "name": "list_groups",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0040",
+          "jsonrpc_id": 129,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "items"
+          ],
+          "resource_id": null,
+          "resource_status": null,
+          "item_count": 1
+        }
+      ]
+    },
+    {
+      "name": "list_image_models",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0025",
+          "jsonrpc_id": 114,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "model_groups",
+            "reference_image_max_mb",
+            "reference_image_max_bytes",
+            "reference_image_allowed_formats",
+            "reference_image_allowed_mime_types"
+          ],
+          "resource_id": null,
+          "resource_status": null,
+          "item_count": null
+        }
+      ]
+    },
+    {
+      "name": "list_image_tasks",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0028",
+          "jsonrpc_id": 117,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "items",
+            "next_cursor"
+          ],
+          "resource_id": null,
+          "resource_status": null,
+          "item_count": 16
+        }
+      ]
+    },
+    {
+      "name": "list_projects",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0027",
+          "jsonrpc_id": 116,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "items"
+          ],
+          "resource_id": null,
+          "resource_status": null,
+          "item_count": 2
+        }
+      ]
+    },
+    {
+      "name": "list_video_models",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0026",
+          "jsonrpc_id": 115,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "groups"
+          ],
+          "resource_id": null,
+          "resource_status": null,
+          "item_count": null
+        }
+      ]
+    },
+    {
+      "name": "list_video_tasks",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0029",
+          "jsonrpc_id": 118,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "items"
+          ],
+          "resource_id": null,
+          "resource_status": null,
+          "item_count": 4
+        }
+      ]
+    },
+    {
+      "name": "preflight_image_task",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0043",
+          "jsonrpc_id": 132,
+          "assertion_status": "pass",
+          "expected_error": true,
+          "is_error": true,
+          "error_evidence": [
+            "route model not found"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "preflight_video_task",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0046",
+          "jsonrpc_id": 135,
+          "assertion_status": "pass",
+          "expected_error": true,
+          "is_error": true,
+          "error_evidence": [
+            "video route model not found"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "update_asset",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0063",
+          "jsonrpc_id": 103,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "id",
+            "user_id",
+            "project_id",
+            "name",
+            "group_id",
+            "group_name",
+            "media_type",
+            "source_type",
+            "status",
+            "visibility_status",
+            "storage_driver",
+            "mime_type",
+            "file_size_bytes",
+            "sha256",
+            "version",
+            "created_at",
+            "updated_at"
+          ],
+          "resource_id": "cdea2209-6dcd-4711-b42a-f028452967a3",
+          "resource_status": "processing",
+          "item_count": null
+        }
+      ]
+    },
+    {
+      "name": "update_group",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0042",
+          "jsonrpc_id": 131,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "id",
+            "user_id",
+            "project_id",
+            "name",
+            "version",
+            "created_at",
+            "updated_at"
+          ],
+          "resource_id": "040954e7-92ed-44b7-9ae9-e01523c33fd8",
+          "resource_status": null,
+          "item_count": null
+        }
+      ]
+    },
+    {
+      "name": "update_project",
+      "status": "pass",
+      "limitation": null,
+      "cases": [
+        {
+          "request_id": "mcp-live-0038",
+          "jsonrpc_id": 127,
+          "assertion_status": "pass",
+          "expected_error": false,
+          "is_error": false,
+          "data_keys": [
+            "id",
+            "name",
+            "is_default",
+            "status",
+            "version",
+            "task_count",
+            "asset_count",
+            "created_at",
+            "updated_at"
+          ],
+          "resource_id": "722d742e-011f-44a0-a935-ad4332a66636",
+          "resource_status": "active",
+          "item_count": null
+        }
+      ]
+    }
+  ],
+  "oauth_checks": [
+    {
+      "check": "refresh_rotation",
+      "request_id": "mcp-live-0075",
+      "status": "pass",
+      "http_status": 200
+    },
+    {
+      "check": "rotated_access_works",
+      "request_id": "mcp-live-0076",
+      "status": "pass"
+    },
+    {
+      "check": "old_refresh_rejected",
+      "request_id": "mcp-live-0077",
+      "status": "pass",
+      "http_status": 400
+    },
+    {
+      "check": "refresh_reuse_revokes_family",
+      "request_id": "mcp-live-0078",
+      "http_status": 401,
+      "status": "pass"
+    },
+    {
+      "check": "full_revoke",
+      "request_id": "mcp-live-0079",
+      "status": "pass",
+      "http_status": 200
+    },
+    {
+      "check": "full_access_after_revoke",
+      "request_id": "mcp-live-0080",
+      "status": "pass",
+      "http_status": 401
+    },
+    {
+      "check": "full_refresh_after_revoke",
+      "request_id": "mcp-live-0081",
+      "status": "pass",
+      "http_status": 400
+    },
+    {
+      "check": "limited_revoke",
+      "request_id": "mcp-live-0082",
+      "status": "pass",
+      "http_status": 200
+    },
+    {
+      "check": "limited_access_after_revoke",
+      "request_id": "mcp-live-0083",
+      "status": "pass",
+      "http_status": 401
+    },
+    {
+      "check": "limited_refresh_after_revoke",
+      "request_id": "mcp-live-0084",
+      "status": "pass",
+      "http_status": 400
+    }
+  ],
+  "scope_check": {
+    "request_id": "mcp-live-0059",
+    "http_status": 200,
+    "response": {
+      "jsonrpc": "2.0",
+      "id": 106,
+      "result": {
+        "_meta": {
+          "mcp/www_authenticate": [
+            "Bearer error=\"insufficient_scope\", resource_metadata=\"http://localhost:5273/.well-known/oauth-protected-resource/mcp\", scope=\"assets:read\""
+          ]
+        },
+        "content": [
+          {
+            "type": "text",
+            "text": "insufficient_scope: requires assets:read"
+          }
+        ],
+        "isError": true
+      }
+    }
+  },
+  "limitations": [
+    "Successful paid image/video create intentionally not tested; missing-idempotency and invalid-model rejection only. No new image/video generation tasks created.",
+    "cancel_video_task only missing-input rejection tested. Existing API video only read, no second cancel. Coordinator reports earlier cancel200 followed by running/reserved, 258 frozen not released, no worker; cancellation/refund success NOT established.",
+    "get_upload_part_url failed for local storage; pure MCP upload chain blocked. Own existing session REST agent byte proxy PUT200 supplied 68 bytes, followed by MCP complete/update/delete. OAuth access token on open REST byte proxy was rejected401.",
+    "Asset/result access tools tested descriptor issuance only; downloaded content HTTP status/integrity not independently tested.",
+    "No configuration fixed, no services restarted, no worker started, no database edits, other agent API keys untouched."
+  ],
+  "fixture_cleanup": {
+    "project_id": "722d742e-011f-44a0-a935-ad4332a66636",
+    "project_deleted_request_id": "mcp-live-0069",
+    "group_deleted_request_id": "mcp-live-0067",
+    "asset_deleted_request_id": "mcp-live-0064",
+    "second_upload_aborted_request_id": "mcp-live-0058",
+    "first_upload_completed_request_id": "mcp-live-0061"
+  },
+  "private_evidence_directory": "/tmp/mcp-protocol-20261025",
+  "counts": {
+    "catalogue": 35,
+    "tools_actually_called": 35,
+    "pass": 31,
+    "fail": 1,
+    "blocked": 3
+  },
+  "http_requests": [
+    {
+      "request_id": "mcp-live-0001",
+      "server_request_id": "mcp-live-0001",
+      "method": "GET",
+      "operation": "/.well-known/oauth-authorization-server",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0002",
+      "server_request_id": "mcp-live-0002",
+      "method": "GET",
+      "operation": "/.well-known/oauth-protected-resource/mcp",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0003",
+      "server_request_id": "mcp-live-0003",
+      "method": "POST",
+      "operation": "/oauth/register",
+      "http_status": 201
+    },
+    {
+      "request_id": "mcp-live-0004",
+      "server_request_id": "mcp-live-0004",
+      "method": "GET",
+      "operation": "/oauth/authorize",
+      "http_status": 303
+    },
+    {
+      "request_id": "mcp-live-0005",
+      "server_request_id": "mcp-live-0005",
+      "method": "GET",
+      "operation": "/api/v1/oauth/consent",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0006",
+      "server_request_id": "mcp-live-0006",
+      "method": "POST",
+      "operation": "/api/v1/oauth/consent",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0007",
+      "server_request_id": "mcp-live-0007",
+      "method": "POST",
+      "operation": "/oauth/token",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0008",
+      "server_request_id": "mcp-live-0008",
+      "method": "GET",
+      "operation": "/oauth/authorize",
+      "http_status": 303
+    },
+    {
+      "request_id": "mcp-live-0009",
+      "server_request_id": "mcp-live-0009",
+      "method": "GET",
+      "operation": "/api/v1/oauth/consent",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0010",
+      "server_request_id": "mcp-live-0010",
+      "method": "POST",
+      "operation": "/api/v1/oauth/consent",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0011",
+      "server_request_id": "mcp-live-0011",
+      "method": "POST",
+      "operation": "/oauth/token",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0012",
+      "server_request_id": "mcp-live-0012",
+      "method": "POST",
+      "operation": "initialize:",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0013",
+      "server_request_id": "mcp-live-0013",
+      "method": "POST",
+      "operation": "tools/list:",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0014",
+      "server_request_id": "mcp-live-0014",
+      "method": "POST",
+      "operation": "initialize:",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0015",
+      "server_request_id": "mcp-live-0015",
+      "method": "POST",
+      "operation": "tools/list:",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0016",
+      "server_request_id": "mcp-live-0016",
+      "method": "POST",
+      "operation": "initialize:",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0017",
+      "server_request_id": "mcp-live-0017",
+      "method": "POST",
+      "operation": "tools/list:",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0018",
+      "server_request_id": "mcp-live-0018",
+      "method": "POST",
+      "operation": "initialize:",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0019",
+      "server_request_id": "mcp-live-0019",
+      "method": "POST",
+      "operation": "tools/list:",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0020",
+      "server_request_id": "mcp-live-0020",
+      "method": "POST",
+      "operation": "initialize:",
+      "http_status": 400
+    },
+    {
+      "request_id": "mcp-live-0021",
+      "server_request_id": "mcp-live-0021",
+      "method": "POST",
+      "operation": "tools/list:",
+      "http_status": 400
+    },
+    {
+      "request_id": "mcp-live-0022",
+      "server_request_id": "mcp-live-0022",
+      "method": "POST",
+      "operation": "tools/list:",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0023",
+      "server_request_id": "mcp-live-0023",
+      "method": "POST",
+      "operation": "tools/call:get_current_user",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0024",
+      "server_request_id": "mcp-live-0024",
+      "method": "POST",
+      "operation": "tools/call:get_balance",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0025",
+      "server_request_id": "mcp-live-0025",
+      "method": "POST",
+      "operation": "tools/call:list_image_models",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0026",
+      "server_request_id": "mcp-live-0026",
+      "method": "POST",
+      "operation": "tools/call:list_video_models",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0027",
+      "server_request_id": "mcp-live-0027",
+      "method": "POST",
+      "operation": "tools/call:list_projects",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0028",
+      "server_request_id": "mcp-live-0028",
+      "method": "POST",
+      "operation": "tools/call:list_image_tasks",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0029",
+      "server_request_id": "mcp-live-0029",
+      "method": "POST",
+      "operation": "tools/call:list_video_tasks",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0030",
+      "server_request_id": "mcp-live-0030",
+      "method": "POST",
+      "operation": "tools/call:list_assets",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0031",
+      "server_request_id": "mcp-live-0031",
+      "method": "POST",
+      "operation": "tools/call:get_asset",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0032",
+      "server_request_id": "mcp-live-0032",
+      "method": "POST",
+      "operation": "tools/call:get_asset_access",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0033",
+      "server_request_id": "mcp-live-0033",
+      "method": "POST",
+      "operation": "tools/call:get_image_task",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0034",
+      "server_request_id": "mcp-live-0034",
+      "method": "POST",
+      "operation": "tools/call:get_video_task",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0035",
+      "server_request_id": "mcp-live-0035",
+      "method": "POST",
+      "operation": "tools/call:get_video_task",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0036",
+      "server_request_id": "mcp-live-0036",
+      "method": "POST",
+      "operation": "tools/call:create_project",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0037",
+      "server_request_id": "mcp-live-0037",
+      "method": "POST",
+      "operation": "tools/call:get_project",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0038",
+      "server_request_id": "mcp-live-0038",
+      "method": "POST",
+      "operation": "tools/call:update_project",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0039",
+      "server_request_id": "mcp-live-0039",
+      "method": "POST",
+      "operation": "tools/call:create_group",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0040",
+      "server_request_id": "mcp-live-0040",
+      "method": "POST",
+      "operation": "tools/call:list_groups",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0041",
+      "server_request_id": "mcp-live-0041",
+      "method": "POST",
+      "operation": "tools/call:get_group",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0042",
+      "server_request_id": "mcp-live-0042",
+      "method": "POST",
+      "operation": "tools/call:update_group",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0043",
+      "server_request_id": "mcp-live-0043",
+      "method": "POST",
+      "operation": "tools/call:preflight_image_task",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0044",
+      "server_request_id": "mcp-live-0044",
+      "method": "POST",
+      "operation": "tools/call:create_image_task",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0045",
+      "server_request_id": "mcp-live-0045",
+      "method": "POST",
+      "operation": "tools/call:create_image_task",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0046",
+      "server_request_id": "mcp-live-0046",
+      "method": "POST",
+      "operation": "tools/call:preflight_video_task",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0047",
+      "server_request_id": "mcp-live-0047",
+      "method": "POST",
+      "operation": "tools/call:create_video_task",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0048",
+      "server_request_id": "mcp-live-0048",
+      "method": "POST",
+      "operation": "tools/call:create_video_task",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0049",
+      "server_request_id": "mcp-live-0049",
+      "method": "POST",
+      "operation": "tools/call:cancel_video_task",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0050",
+      "server_request_id": "mcp-live-0050",
+      "method": "POST",
+      "operation": "tools/call:get_image_result_access",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0051",
+      "server_request_id": "mcp-live-0051",
+      "method": "POST",
+      "operation": "tools/call:get_video_result_access",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0052",
+      "server_request_id": "mcp-live-0052",
+      "method": "POST",
+      "operation": "tools/call:create_upload",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0053",
+      "server_request_id": "mcp-live-0053",
+      "method": "POST",
+      "operation": "tools/call:get_upload",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0054",
+      "server_request_id": "mcp-live-0054",
+      "method": "POST",
+      "operation": "tools/call:get_upload_part_url",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0055",
+      "server_request_id": "mcp-live-0055",
+      "method": "PUT",
+      "operation": "REST byte proxy using own OAuth",
+      "http_status": 401
+    },
+    {
+      "request_id": "mcp-live-0056",
+      "server_request_id": "mcp-live-0056",
+      "method": "POST",
+      "operation": "tools/call:complete_upload",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0057",
+      "server_request_id": "mcp-live-0057",
+      "method": "POST",
+      "operation": "tools/call:create_upload",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0058",
+      "server_request_id": "mcp-live-0058",
+      "method": "POST",
+      "operation": "tools/call:abort_upload",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0059",
+      "server_request_id": "mcp-live-0059",
+      "method": "POST",
+      "operation": "tools/call:list_assets",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0060",
+      "server_request_id": "mcp-live-0060",
+      "method": "PUT",
+      "operation": "session REST byte proxy for own MCP fixture",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0061",
+      "server_request_id": "mcp-live-0061",
+      "method": "POST",
+      "operation": "tools/call:complete_upload",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0062",
+      "server_request_id": "mcp-live-0062",
+      "method": "POST",
+      "operation": "tools/call:get_asset",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0063",
+      "server_request_id": "mcp-live-0063",
+      "method": "POST",
+      "operation": "tools/call:update_asset",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0064",
+      "server_request_id": "mcp-live-0064",
+      "method": "POST",
+      "operation": "tools/call:delete_asset",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0065",
+      "server_request_id": "mcp-live-0065",
+      "method": "POST",
+      "operation": "tools/call:get_image_result_access",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0066",
+      "server_request_id": "mcp-live-0066",
+      "method": "POST",
+      "operation": "tools/call:get_video_result_access",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0067",
+      "server_request_id": "mcp-live-0067",
+      "method": "POST",
+      "operation": "tools/call:delete_group",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0068",
+      "server_request_id": "mcp-live-0068",
+      "method": "POST",
+      "operation": "tools/call:get_project",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0069",
+      "server_request_id": "mcp-live-0069",
+      "method": "POST",
+      "operation": "tools/call:delete_project",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0070",
+      "server_request_id": "mcp-live-0070",
+      "method": "POST",
+      "operation": "server/discover:",
+      "http_status": 400
+    },
+    {
+      "request_id": "mcp-live-0071",
+      "server_request_id": "mcp-live-0071",
+      "method": "POST",
+      "operation": "initialize:",
+      "http_status": 400
+    },
+    {
+      "request_id": "mcp-live-0072",
+      "server_request_id": "mcp-live-0072",
+      "method": "POST",
+      "operation": "tools/list:",
+      "http_status": 400
+    },
+    {
+      "request_id": "mcp-live-0073",
+      "server_request_id": "mcp-live-0073",
+      "method": "POST",
+      "operation": "new protocol server/discover",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0074",
+      "server_request_id": "mcp-live-0074",
+      "method": "POST",
+      "operation": "new protocol tools/list",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0075",
+      "server_request_id": "mcp-live-0075",
+      "method": "POST",
+      "operation": "refresh rotation",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0076",
+      "server_request_id": "mcp-live-0076",
+      "method": "POST",
+      "operation": "tools/call:get_current_user",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0077",
+      "server_request_id": "mcp-live-0077",
+      "method": "POST",
+      "operation": "old refresh replay",
+      "http_status": 400
+    },
+    {
+      "request_id": "mcp-live-0078",
+      "server_request_id": "mcp-live-0078",
+      "method": "POST",
+      "operation": "tools/list:",
+      "http_status": 401
+    },
+    {
+      "request_id": "mcp-live-0079",
+      "server_request_id": "mcp-live-0079",
+      "method": "POST",
+      "operation": "revoke own full grant",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0080",
+      "server_request_id": "mcp-live-0080",
+      "method": "POST",
+      "operation": "tools/list:",
+      "http_status": 401
+    },
+    {
+      "request_id": "mcp-live-0081",
+      "server_request_id": "mcp-live-0081",
+      "method": "POST",
+      "operation": "full refresh after revoke",
+      "http_status": 400
+    },
+    {
+      "request_id": "mcp-live-0082",
+      "server_request_id": "mcp-live-0082",
+      "method": "POST",
+      "operation": "revoke own limited grant",
+      "http_status": 200
+    },
+    {
+      "request_id": "mcp-live-0083",
+      "server_request_id": "mcp-live-0083",
+      "method": "POST",
+      "operation": "tools/list:",
+      "http_status": 401
+    },
+    {
+      "request_id": "mcp-live-0084",
+      "server_request_id": "mcp-live-0084",
+      "method": "POST",
+      "operation": "limited refresh after revoke",
+      "http_status": 400
+    }
+  ]
+}

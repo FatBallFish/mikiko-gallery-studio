@@ -633,7 +633,7 @@ func (s *MemoryStore) CreateRouteModel(_ context.Context, req domainmodeladmin.R
 		}
 	}
 	now := time.Now().UTC()
-	item := domainmodeladmin.RouteModel{ID: s.nextID, Code: req.Code, Name: req.Name, Description: req.Description, Visibility: req.Visibility, MediaType: req.MediaType, Enabled: req.Enabled, SortOrder: req.SortOrder, GroupIDs: append([]int64(nil), req.GroupIDs...), CreatedAt: now, UpdatedAt: now}
+	item := domainmodeladmin.RouteModel{ImagePricing: req.ImagePricing, ID: s.nextID, Code: req.Code, Name: req.Name, Description: req.Description, Visibility: req.Visibility, MediaType: req.MediaType, Enabled: req.Enabled, SortOrder: req.SortOrder, GroupIDs: append([]int64(nil), req.GroupIDs...), CreatedAt: now, UpdatedAt: now}
 	s.nextID++
 	s.routeModels[item.ID] = item
 	return item, nil
@@ -645,6 +645,9 @@ func (s *MemoryStore) UpdateRouteModel(_ context.Context, routeModelID int64, re
 	item, ok := s.routeModels[routeModelID]
 	if !ok {
 		return domainmodeladmin.RouteModel{}, repoerr.ErrNotFound
+	}
+	if req.ImagePricingPresent || req.ImagePricing != nil {
+		item.ImagePricing = req.ImagePricing
 	}
 	item.Code, item.Name, item.Description, item.Visibility, item.MediaType = req.Code, req.Name, req.Description, req.Visibility, req.MediaType
 	item.Enabled, item.SortOrder, item.GroupIDs = req.Enabled, req.SortOrder, append([]int64(nil), req.GroupIDs...)
@@ -944,7 +947,7 @@ func (s *MemoryStore) ModelRoutingConfig(_ context.Context) (modelhub.ModelRouti
 		})
 	}
 	for _, item := range s.routeModels {
-		snapshot.RouteModels = append(snapshot.RouteModels, modelhub.RouteModelConfig{ID: item.ID, Code: item.Code, Name: item.Name, Description: item.Description, Visibility: item.Visibility, MediaType: item.MediaType, Enabled: item.Enabled, SortOrder: item.SortOrder})
+		snapshot.RouteModels = append(snapshot.RouteModels, modelhub.RouteModelConfig{ImagePricing: item.ImagePricing, ID: item.ID, Code: item.Code, Name: item.Name, Description: item.Description, Visibility: item.Visibility, MediaType: item.MediaType, Enabled: item.Enabled, SortOrder: item.SortOrder})
 		for _, groupID := range item.GroupIDs {
 			snapshot.Visibility = append(snapshot.Visibility, modelhub.RouteVisibilityConfig{RouteModelID: item.ID, GroupID: groupID})
 		}

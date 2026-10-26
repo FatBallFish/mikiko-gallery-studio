@@ -43,21 +43,21 @@ export type MediaFilterValues = {
 }
 
 export type MediaCreationAction = {
-  label: '继续生图' | '生成视频' | '复用视频参数'
+  label: '编辑图片' | '首帧生视频' | '复用配置'
   options: UserRouteOptions
 }
 
 export function mediaCreationActions(asset: Pick<import('../../../../shared/api-types').MediaAsset, 'id' | 'media_type' | 'source_task_kind' | 'source_task_id'>): MediaCreationAction[] {
   if (asset.media_type === 'image') {
-    const actions: MediaCreationAction[] = []
+    const actions: MediaCreationAction[] = [{ label: '编辑图片', options: { media: 'image', assetId: asset.id } }]
     if (asset.source_task_kind === 'image' && asset.source_task_id) {
-      actions.push({ label: '继续生图', options: { media: 'image', taskId: asset.source_task_id } })
+      actions.push({ label: '复用配置', options: { media: 'image', taskId: asset.source_task_id } })
     }
-    actions.push({ label: '生成视频', options: { media: 'video', assetId: asset.id } })
+    actions.push({ label: '首帧生视频', options: { media: 'video', assetId: asset.id } })
     return actions
   }
   if (asset.media_type === 'video' && asset.source_task_kind === 'video' && asset.source_task_id) {
-    return [{ label: '复用视频参数', options: { media: 'video', taskId: asset.source_task_id } }]
+    return [{ label: '复用配置', options: { media: 'video', taskId: asset.source_task_id } }]
   }
   return []
 }

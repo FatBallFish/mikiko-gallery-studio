@@ -5,6 +5,8 @@ import "encoding/json"
 type NodeType string
 
 const (
+	NodeTypeImageV2         NodeType = "image_v2"
+	NodeTypeVideoV2         NodeType = "video_v2"
 	NodeTypePrompt          NodeType = "prompt"
 	NodeTypeImage           NodeType = "image"
 	NodeTypeVideo           NodeType = "video"
