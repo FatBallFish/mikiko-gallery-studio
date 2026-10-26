@@ -32,25 +32,41 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/service/uploadaccess"
 	"github.com/fatballfish/pic-gallery/internal/service/videorouting"
 	"github.com/fatballfish/pic-gallery/internal/service/videotask"
+	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
+	"github.com/fatballfish/pic-gallery/pkg/httpx"
+	"github.com/google/uuid"
 )
 
 func configureDeveloperServices(cfg config.Config, client *repoent.Client, api *handlers.API, auth *authservice.Service, keys *apikeyservice.Service, bills *billing.Service, images *imagetask.Service, refs *assets.Service, media *mediaasset.Service, projects *project.Service, videoModels *videorouting.Service, videos *videotask.Service) error {
 	keys.SetUsageReader(bills)
 	images.SetAPIKeyUsageManager(keys)
-	oauth, err := oauthserver.New(entstore.NewOAuthStore(client), oauthserver.Config{
-		PublicAPIURL: cfg.Runtime.PublicAPIURL, Scopes: domainapikey.SupportedScopes(), EnableRegistration: true,
-		User: func(ctx context.Context, id int64) (oauthserver.User, error) {
-			u, e := entstore.NewAuthStore(client).GetUserByID(ctx, id)
-			if e != nil {
-				return oauthserver.User{}, e
-			}
-			return oauthserver.User{ID: u.ID, GroupCode: u.GroupCode, Active: string(u.Status) == "active"}, nil
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("configure OAuth: %w", err)
+	// Empty is the historical unconfigured state. Nonempty values must still pass
+	// every canonical URL check below; never infer an issuer from request headers.
+	var oauth *oauthserver.Service
+	var err error
+	if cfg.Runtime.PublicAPIURL != "" {
+		oauth, err = oauthserver.New(entstore.NewOAuthStore(client), oauthserver.Config{
+			PublicAPIURL: cfg.Runtime.PublicAPIURL, Scopes: domainapikey.SupportedScopes(), EnableRegistration: true,
+			User: func(ctx context.Context, id int64) (oauthserver.User, error) {
+				u, e := entstore.NewAuthStore(client).GetUserByID(ctx, id)
+				if e != nil {
+					return oauthserver.User{}, e
+				}
+				return oauthserver.User{ID: u.ID, GroupCode: u.GroupCode, Active: string(u.Status) == "active"}, nil
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("configure OAuth: %w", err)
+		}
 	}
+	unconfigured := func() *errs.Error {
+		return errs.New(http.StatusServiceUnavailable, "CANONICAL_URL_UNCONFIGURED", "canonical public API URL is not configured")
+	}
+	unavailable := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		httpx.WriteError(w, r, unconfigured())
+	})
 	validate := func(ctx context.Context, p openplatform.Principal) error {
 		if p.APIKeyID != "" {
 			id, e := strconv.ParseInt(p.APIKeyID, 10, 64)
@@ -79,25 +95,41 @@ func configureDeveloperServices(cfg config.Config, client *repoent.Client, api *
 			}
 			return nil
 		}
+		if oauth == nil {
+			return unconfigured()
+		}
 		return oauth.ValidateGrant(ctx, p.UserID, p.ClientID, p.GrantID, p.Scopes)
 	}
 	if len(cfg.Auth.AccessTokenSecret) < 32 || strings.Contains(cfg.Auth.AccessTokenSecret, "local-dev") {
 		return fmt.Errorf("developer capability signing requires a nonpublic access-token secret of at least 32 bytes")
 	}
-	accessKey := sha256.Sum256([]byte("developer-asset-access:" + cfg.Auth.AccessTokenSecret))
-	access, err := assetaccess.New(media, assetaccess.Options{PublicAPIURL: cfg.Runtime.PublicAPIURL, SigningKey: accessKey[:], ValidatePrincipal: validate})
-	if err != nil {
-		return fmt.Errorf("configure asset access: %w", err)
+	// Keep callbacks nonnil while unconfigured: nil would select legacy media
+	// fallbacks for new developer capabilities. Browser media services are separate.
+	assetAccess := func(context.Context, openplatform.Principal, uuid.UUID, string) (any, error) {
+		return nil, unconfigured()
 	}
-	uploadKey := sha256.Sum256([]byte("developer-upload-access:" + cfg.Auth.AccessTokenSecret))
-	uploads, err := uploadaccess.New(media, uploadaccess.Options{PublicAPIURL: cfg.Runtime.PublicAPIURL, SigningKey: uploadKey[:], ValidatePrincipal: validate})
-	if err != nil {
-		return fmt.Errorf("configure upload access: %w", err)
+	uploadTarget := func(context.Context, openplatform.Principal, uuid.UUID, int, string) (storage.MultipartPartTarget, error) {
+		return storage.MultipartPartTarget{}, unconfigured()
+	}
+	var access *assetaccess.Service
+	var uploads *uploadaccess.Service
+	if oauth != nil {
+		accessKey := sha256.Sum256([]byte("developer-asset-access:" + cfg.Auth.AccessTokenSecret))
+		access, err = assetaccess.New(media, assetaccess.Options{PublicAPIURL: cfg.Runtime.PublicAPIURL, SigningKey: accessKey[:], ValidatePrincipal: validate})
+		if err != nil {
+			return fmt.Errorf("configure asset access: %w", err)
+		}
+		uploadKey := sha256.Sum256([]byte("developer-upload-access:" + cfg.Auth.AccessTokenSecret))
+		uploads, err = uploadaccess.New(media, uploadaccess.Options{PublicAPIURL: cfg.Runtime.PublicAPIURL, SigningKey: uploadKey[:], ValidatePrincipal: validate})
+		if err != nil {
+			return fmt.Errorf("configure upload access: %w", err)
+		}
+		assetAccess, uploadTarget = access.Access, uploads.Target
 	}
 	modelCaps := capabilities.NewService(cfg)
 	modelCaps.SetModelRoutingSource(entstore.NewModelAdminStore(client))
 	quoteKey := sha256.Sum256([]byte("developer-preflight:" + cfg.Auth.AccessTokenSecret))
-	shared := openplatform.New(openplatform.Dependencies{Auth: auth, Billing: bills, Images: images, ImageModels: modelCaps, Videos: videos, VideoModels: videoModels, Assets: media, UploadTarget: uploads.Target, AssetAccess: access.Access, References: refs, Projects: projects, APIKeys: keys, Groups: assetgroup.NewService(entstore.NewAssetGroupStore(client)), QuoteKey: quoteKey[:], ValidatePrincipal: validate})
+	shared := openplatform.New(openplatform.Dependencies{Auth: auth, Billing: bills, Images: images, ImageModels: modelCaps, Videos: videos, VideoModels: videoModels, Assets: media, UploadTarget: uploadTarget, AssetAccess: assetAccess, References: refs, Projects: projects, APIKeys: keys, Groups: assetgroup.NewService(entstore.NewAssetGroupStore(client)), QuoteKey: quoteKey[:], ValidatePrincipal: validate})
 	actor := func(r *http.Request) (openplatform.Principal, error) {
 		p, e := api.GetOpenPrincipal(r)
 		if e != nil {
@@ -106,6 +138,12 @@ func configureDeveloperServices(cfg config.Config, client *repoent.Client, api *
 		return p, nil
 	}
 	native := handlers.NewOpenPlatform(shared, actor)
+	if oauth == nil {
+		native.SetUploadAccess(unavailable)
+		api.SetCompatOperations(shared)
+		api.SetDeveloperTransports(native, unavailable, unavailable, unavailable)
+		return nil
+	}
 	native.SetUploadAccess(handlers.NewUploadAccessHandler(uploads))
 	oauthHTTP := handlers.NewOAuth(oauth, auth)
 	oauthMux := http.NewServeMux()

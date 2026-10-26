@@ -48,6 +48,87 @@ func (b developerBearerTransport) RoundTrip(r *http.Request) (*http.Response, er
 
 // Exercise the runtime composition, including its persisted grant validator, rather
 // than constructing an independent OAuth or MCP handler with a fake executor.
+func TestConfigureDeveloperServicesUnconfiguredCanonicalURL(t *testing.T) {
+	ctx := context.Background()
+	db, err := repoent.Open(dialect.SQLite, "file:developer-unconfigured?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := db.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{}
+	cfg.Auth = config.AuthConfig{Issuer: "test", AccessTokenSecret: strings.Repeat("s", 48), AccessTokenTTL: time.Hour}
+	cfg.Billing = config.BillingConfig{PointsScale: 5, CNYPerPoint: "1.00000", UserGroupMultipliers: map[string]string{"basic": "1.00000"}}
+	auth := authservice.NewServiceWithStore(cfg.Auth, cfg.Billing.UserGroupMultipliers, entstore.NewAuthStore(db))
+	user, err := auth.LoginWithOIDC(authservice.OIDCLoginInput{Subject: "legacy", Email: "legacy@example.com", EmailVerified: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := apikey.NewService(entstore.NewAPIKeyStore(db))
+	key, err := keys.CreateKey(ctx, apikey.CreateRequest{UserID: user.User.ID, Name: "legacy", Scopes: []string{"account:read", "assets:read", "uploads:write"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bills := billing.NewServiceWithStore(cfg.Billing, entstore.NewBillingStore(db, 5))
+	refs := assets.NewServiceWithStoreAndRouter(cfg.GenerationLimits, entstore.NewAssetsStore(db), nil)
+	images := imagetask.NewServiceWithProvidersStoreAssetsBillingAndRouter(cfg, nil, entstore.NewImageTaskStore(db), refs, bills, nil)
+	media := mediaasset.NewService(entstore.NewMediaStore(db), storage.NewStaticRouter(storage.NewLocalBackend(t.TempDir())), mediaasset.Options{})
+	api := handlers.NewAPIWithRuntimeServices(cfg, auth, refs, images, nil, bills, keys)
+	if err := configureDeveloperServices(cfg, db, api, auth, keys, bills, images, refs, media, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	h := router.NewWithAPIAndConfig(api, cfg)
+	for _, path := range []string{"/healthz", "/api/open/v1/me"} {
+		r := httptest.NewRequest("GET", path, nil)
+		r.Header.Set("Authorization", "Bearer "+key.Secret)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusOK {
+			t.Fatalf("ordinary API %s: %d %s", path, w.Code, w.Body.String())
+		}
+	}
+	for _, path := range []string{
+		"/.well-known/oauth-authorization-server", "/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp",
+		"/oauth/authorize", "/oauth/token", "/oauth/register", "/oauth/revoke", "/api/v1/oauth/consent", "/api/v1/oauth/connected-apps", "/mcp",
+		"/api/open/v1/asset-access/fake", "/api/open/v1/upload-access/fake",
+	} {
+		for _, method := range []string{"GET", "POST"} {
+			r := httptest.NewRequest(method, path, strings.NewReader(`{"grant_type":"authorization_code"}`))
+			r.Host = "attacker.example"
+			r.Header.Set("X-Forwarded-Host", "attacker.example")
+			r.Header.Set("Authorization", "Bearer "+key.Secret)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "CANONICAL_URL_UNCONFIGURED") || w.Header().Get("Cache-Control") != "no-store" {
+				t.Fatalf("%s %s: %d %s", method, path, w.Code, w.Body.String())
+			}
+		}
+	}
+	for _, path := range []string{
+		"/api/open/v1/assets/00000000-0000-0000-0000-000000000001/access",
+		"/api/open/v1/uploads/00000000-0000-0000-0000-000000000001/parts/1/url",
+	} {
+		r := httptest.NewRequest("POST", path, strings.NewReader(`{}`))
+		r.Header.Set("Authorization", "Bearer "+key.Secret)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "CANONICAL_URL_UNCONFIGURED") {
+			t.Fatalf("capability callback %s: %d %s", path, w.Code, w.Body.String())
+		}
+	}
+	if n, err := db.OAuthRecord.Query().Count(ctx); err != nil || n != 0 {
+		t.Fatalf("unconfigured OAuth wrote records: %d %v", n, err)
+	}
+	for _, raw := range []string{" ", "http://example.com", "https://user@example.com", "https://example.com?x=1", "https://example.com/path"} {
+		cfg.Runtime.PublicAPIURL = raw
+		if err := configureDeveloperServices(cfg, db, api, auth, keys, bills, images, refs, media, nil, nil, nil); err == nil {
+			t.Fatalf("accepted nonempty invalid canonical URL %q", raw)
+		}
+	}
+}
+
 func TestConfigureDeveloperServicesHTTPIntegration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
