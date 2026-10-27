@@ -1,10 +1,13 @@
 import { useGSAP } from '@gsap/react'
-import { gsap } from 'gsap'
-import { ScrollTrigger } from 'gsap/ScrollTrigger'
+import gsapModule, { type gsap as GSAP } from 'gsap'
+import { ScrollTrigger } from 'gsap/dist/ScrollTrigger'
 import type { RefObject } from 'react'
 import { prefersReducedMotion } from './motion'
 
-gsap.registerPlugin(ScrollTrigger)
+// Node 22/tsx wraps GSAP's root ESM entry; browsers expose its default core.
+// Keep the root entry shared with @gsap/react instead of bundling a second core.
+const gsap = ('gsap' in gsapModule ? gsapModule.gsap : gsapModule) as typeof gsapModule
+gsap.registerPlugin(useGSAP, ScrollTrigger)
 
 export const landingMotionParadigms = [
   'scrubbing-text-reveals',
@@ -22,7 +25,7 @@ export function useLandingMotion(scope: RefObject<HTMLElement | null>): void {
   useGSAP(() => {
     if (prefersReducedMotion()) return
 
-    const animations: gsap.core.Animation[] = []
+    const animations: GSAP.core.Animation[] = []
 
     gsap.utils.toArray<HTMLElement>(landingMotionSelectors.reveal).forEach((reveal) => {
       const words = reveal.querySelectorAll<HTMLElement>(landingMotionSelectors.word)

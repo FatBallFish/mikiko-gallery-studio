@@ -23,6 +23,15 @@
 
 新增有意义的Vite配置隔离与懒加载失败行为回归，聚焦tests/全verify/review/API smoke发布门禁。先本地恢复并验证fresh import依赖，再新提交tag正式Actions/manifest/镜像摘要核验，生产通过mgsctl备份升级，保留https://mikiko.studio/revision2/schema11/peer服务与MCP链路。不将本地dev故障误报生产同样受影响。
 
+## 发布兼容补充需求与设计（v0.0.45）
+
+- 用户要求定位 Actions 40526105809（6fea070）full verify 的实际 Linux / Node 22 失败，在当前分支修复、增加回归并冻结交接；本轮禁止 commit、push、tag、deploy，不读取 secret、env 或浏览器凭据。
+- 日志证据：`useLandingMotion.contract.ts` 导入 `useLandingMotion.ts`，Node v22.23.4 报 `gsap/ScrollTrigger` 不提供命名导出 `ScrollTrigger`。macOS Node v24.12.0 同一 contract 通过；必须在隔离 Linux Node 22、锁定依赖安装下复现后确定兼容入口。
+- 隔离 Linux Node v22.23.4、lockfile `npm ci` 复现同一错误。修复插件入口后进一步暴露同一 hook 的 `gsap` 命名导入错误；逐项导出探测证实官方 `gsap/dist/ScrollTrigger` 提供正确插件导出，而根 `gsap` 的默认导出在 Node 22/tsx 为包装对象。核心保留根入口，与 `@gsap/react` 共享浏览器模块，通过单层 `.gsap` 归一化取得核心，并显式 `registerPlugin(useGSAP, ScrollTrigger)` 保证 hook 与动画使用相同核心；不引入 dist 核心副本。真实 Vite `resolveConfig` contract 在修改前已于同一 Linux 环境完整通过，无 Tailwind/Vite 配置改动。
+- 保留 contract 对真实动画模块的导入与插件注册，并在无 tsx 的原生 Node 子进程中验证 hook 实际使用的核心和插件入口、tween 运算、ScrollTrigger 函数及 create/refresh API，避免把运行时导入检查降成静态字符串检查。只调整已证实不兼容的模块入口，保持页面动画行为。
+- 单独执行真实 Vite `resolveConfig` contract，若发现 Node 22 配置加载问题，再凭具体错误修复；不预先更换 Tailwind/Vite 依赖或配置加载方式。
+- 验收包括 Linux Node 22 focused contracts、user/admin typecheck/build 和本地差异审查。使用不含 env/凭据的临时工作副本，保留其他本地变更，不发布。
+
 ## 实施验收
 
 - Vite serve 配置插件读取合并后的 server.port。非零端口且 strictPort=true 时使用 node_modules/.vite/dev-<port>；默认或显式非 strict、以及 port=0 时追加进程 PID，避免端口自动递增或随机端口重新共享缓存。显式 cacheDir 由调用方控制，build 保留 Vite 默认路径。真实 resolveConfig 回归覆盖 5193、5273、5293、默认 5173、strict true/false、port=0、显式覆盖及 build。
