@@ -95,7 +95,7 @@ for (const required of ["'.canvas-minimap', '.canvas-zoom-controls'", 'rect.top 
 if (!source.includes('button: background.button') || source.includes("} else if (event.key === 'Escape')")) throw new Error('gesture intent must use pointerdown button; Escape must have one cleanup path')
 const app = fs.readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8')
 const tray = fs.readFileSync(new URL('../media/UploadTray.tsx', import.meta.url), 'utf8')
-if (!app.includes("<UploadTray hidden={route === 'creative-canvas' && Boolean(routeCanvasId)} />")) throw new Error('canvas editor must hide the global tray without unmounting it')
+if (!app.includes("<UploadTray hidden={route === 'oauth-consent' || (route === 'creative-canvas' && Boolean(routeCanvasId))} />")) throw new Error('canvas editor and OAuth consent must hide the global tray without unmounting it')
 // Hiding is presentation-only. The final display override must win over float geometry.
 const hiddenStyle = /style=\{hidden\s*\?\s*\{\s*display:\s*'none'\s*\}\s*:\s*undefined\}/.test(tray)
   || /style=\{\{\s*\.\.\.floatingStyle,\s*\.\.\.\(hidden\s*\?\s*\{\s*display:\s*'none'\s*\}\s*:\s*\{\}\)\s*\}\}/.test(tray)

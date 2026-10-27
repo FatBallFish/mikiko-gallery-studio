@@ -463,7 +463,7 @@ function UserApplication() {
   return (
     <AppContext.Provider value={appValue}>
       {session && projectUserID ? (
-        <ProjectProvider key={projectUserID} userID={projectUserID}>{page}{featureFlags.media_upload ? <UploadTray hidden={route === 'creative-canvas' && Boolean(routeCanvasId)} /> : null}</ProjectProvider>
+        <ProjectProvider key={projectUserID} userID={projectUserID}>{page}{featureFlags.media_upload ? <UploadTray hidden={route === 'oauth-consent' || (route === 'creative-canvas' && Boolean(routeCanvasId))} /> : null}</ProjectProvider>
       ) : page}
       <ToastViewport toasts={toasts} onExpire={dismissToast} />
     </AppContext.Provider>

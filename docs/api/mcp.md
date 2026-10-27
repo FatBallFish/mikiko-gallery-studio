@@ -1,23 +1,14 @@
-# MCP、可信端点与浏览器 OAuth
+# MCP 连接与授权
 
-先从密钥页读取 `GET /api/v1/public/developer-endpoints`（正常浏览器 API envelope 的 `data`）。所有绝对 URL 都由可信运行配置投影；不得由 Host、`window.location` 或内部 API listener 推导 issuer。
+## 接入地址与凭据
 
-| 字段 | 用法 |
-| --- | --- |
-| api_origin | 公共 origin，无 API 路径 |
-| rest_base | 原生 REST BaseURL，包含 `/api/open/v1` |
-| openai_base | OpenAI SDK BaseURL，包含 `/v1` |
-| mcp_url | Streamable HTTP 端点，包含 `/mcp` |
-| web_url | 浏览器登录/consent 所在公共 Web 地址 |
-| authorization_endpoint, token_endpoint, registration_endpoint | OAuth 对应阶段；以 discovery 校验，不自行改域名 |
-| protected_resource_metadata_url | protected resource metadata |
-| canonical_configured, disabled_reason | canonical 未配置时 false、`CANONICAL_URL_UNCONFIGURED`，所有 URL 为空 |
+Mikiko Studio 的 MCP 地址为 `https://mikiko.studio/mcp`。客户端打开浏览器完成登录和授权，无需在配置中填写令牌。
 
-空 canonical 时站内相对路径 REST 仍可能可用，但无法发布可信绝对 BaseURL 或开启 OAuth。联系管理员配置公共 HTTPS canonical（loopback 开发例外），不能把 `https://api.example.com`、当前浏览器地址或某个历史 localhost 端口冒充实际部署地址。API-only 域名还必须能承载浏览器登录/consent，代理的 `/oauth`、`/.well-known`、`/mcp` 必须返回协议响应而非 SPA HTML。当前实现不支持 canonical 路径前缀；不要自行在反向代理增加前缀或替换 localhost/127.0.0.1。
+- REST/兼容接口的 `MIKIKO_API_KEY` 是一次显示的 SK（`sk-`）；AK（`ak-`）只作标识。
+- MCP 使用独立 OAuth 令牌，不能用 SK 或浏览器会话替代。
+- 配置文件不保存 API Key、access token 或 refresh token。
 
-## 客户端配置（无 token）
-
-以下 `https://studio.example.com/mcp` 仅为占位，使用密钥页实际复制的 MCP URL。配置中不包含 API Key、浏览器令牌、access token 或 refresh token。
+## 客户端配置
 
 ### Mikiko / ZCode
 
@@ -27,52 +18,159 @@
 {
   "mcp": {
     "servers": {
-      "studio": { "type": "http", "url": "https://studio.example.com/mcp" }
+      "studio": { "type": "http", "url": "https://mikiko.studio/mcp" }
     }
   }
 }
 ```
 
-在设置 → MCP 添加/检查该 HTTP 服务，重启受影响会话。使用客户端提供的浏览器授权入口登录并同意权限，再检查 tools。已安装官方配置插件确认此 JSON 格式与严格字段规则；不能添加猜测的 `oauth` 配置键，不能把插件专用 `${...}` 插值复制进普通配置。用户同名服务覆盖工作区服务。若当前版本没有浏览器 OAuth 操作入口，升级或确认该版本支持，不能以手工 token 模板假装自动授权已验证。
+1. 在设置 → MCP 中检查该 HTTP 服务，重启受影响会话。
+2. 使用客户端提供的浏览器授权入口登录并同意权限。
+3. 连接后检查工具列表。
+
+用户同名服务覆盖工作区配置。不添加猜测的 `oauth` 字段。若客户端版本没有浏览器授权入口，先升级或确认版本支持。
 
 ### Codex
 
-合并至 `~/.codex/config.toml`，这是 TOML：
+合并至 `~/.codex/config.toml`：
 
 ```toml
 [mcp_servers.studio]
-url = "https://studio.example.com/mcp"
+url = "https://mikiko.studio/mcp"
 ```
 
-执行 `codex mcp login studio`，完成浏览器登录与授权；`codex mcp list` 检查配置。依据 [OpenAI 官方 MCP 文档](https://developers.openai.com/codex/mcp)（当前重定向至 [官方学习站](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)），HTTP OAuth 不需要预填 bearer token。不要把 JSON 当 TOML，也不要把 MCP URL 填到模型 provider BaseURL。
+```bash
+codex mcp login studio
+codex mcp list
+```
+
+按浏览器提示完成授权。配置说明见 [Codex 官方文档](https://developers.openai.com/codex/mcp)。MCP 地址不要填到模型 provider 的 BaseURL。
 
 ### Claude Code
 
-终端执行：
-
-```sh
-claude mcp add --transport http studio https://studio.example.com/mcp
+```bash
+claude mcp add --transport http studio https://mikiko.studio/mcp
+claude mcp list
 ```
 
-在 Claude Code 输入 `/mcp`，选择 studio，按 Authenticate 提示完成浏览器授权；`claude mcp list` 检查配置。依据 [Claude Code 官方文档](https://code.claude.com/docs/en/mcp)。Claude 桌面产品的连接器与 Claude Code CLI 配置入口不同，本教程只声明 Claude Code 格式。
+在 Claude Code 输入 `/mcp`，选择 studio，再按 Authenticate 提示授权。此处针对 Claude Code CLI；桌面连接器入口不同。见 [Claude Code 官方文档](https://code.claude.com/docs/en/mcp)。
 
-## OAuth 逐阶段流程与字段
+## OAuth 协议流程
 
-1. 未认证 MCP POST 收到401与 `WWW-Authenticate`，读取 challenge 的 resource metadata URL。受保护元数据的 `resource` 是精确 canonical `/mcp`，`authorization_servers` 给出 issuer；还有 `scopes_supported`、`bearer_methods_supported:["header"]`。
-2. 获取 `/.well-known/oauth-authorization-server`。返回 issuer、authorization_endpoint、token_endpoint、revocation_endpoint、registration_endpoint、response_types_supported、grant_types_supported、token_endpoint_auth_methods_supported、code_challenge_methods_supported、scopes_supported、client_id_metadata_document_supported。检查 JSON/issuer；HTTP200 HTML是代理故障。
-3. 根据部署策略注册公共客户端：POST registration_endpoint JSON `{client_name,redirect_uris,token_endpoint_auth_method:"none",grant_types:["authorization_code","refresh_token"],response_types:["code"]}`。201返回客户端元数据并增加 client_id；不发 client_secret。支持已配置客户端与经过校验的 Client ID Metadata Document；动态注册可能被关闭、限速或受活动客户端容量限制。
-4. 客户端生成随机 state、PKCE verifier及其S256 challenge。浏览器 GET authorization_endpoint，query为 `client_id,redirect_uri,resource,response_type=code,scope,code_challenge,code_challenge_method=S256,state`。redirect_uri须精确注册，resource须精确匹配，scope用空格分隔。
-5. 服务器303到 `/?oauth_request=...#/oauth-consent`。使用 Studio 本地登录或 OIDC，不向 MCP 发送密码。浏览器会话调用 GET `/api/v1/oauth/consent?request_id=...`，返回 `{request_id,client:{client_id,client_name,redirect_uris,...},resource,scopes,csrf_token}`。POST同路径 JSON `{request_id,csrf_token,allow}` 返回 `{redirect_uri}`。请求过期须从客户端重来；不要修改请求ID/回调。浏览器登录保留 oauth_request。
-6. 客户端校验回调 state，接受 code；拒绝授权返回 OAuth error。向 token_endpoint POST `application/x-www-form-urlencoded`：`grant_type=authorization_code,client_id,resource,code,redirect_uri,code_verifier`。不带浏览器 Authorization 或 client secret。返回 `{access_token,token_type:"Bearer",expires_in,refresh_token,scope}`；当前访问令牌600秒，不能依赖永久有效。
-7. 客户端以 `Authorization: Bearer` 使用令牌调用 MCP initialize，后续发送协商的 MCP-Protocol-Version并遵循SDK初始化通知，再 tools/list/tools/call。任务创建返回持久ID，断连后继续按ID查询。工具结果 `structuredContent:{data:...}`，文本JSON同包装；操作字段见[字段映射](developer-field-map.md)和文档站 `#/reference`。
-8. 刷新使用 form POST token_endpoint：`grant_type=refresh_token,client_id,resource,refresh_token`，可请求已获批权限子集scope。刷新令牌轮换，安全替换整组新令牌；并行刷新/旧token重用可能撤销授权族。POST revocation_endpoint form `token,client_id` 撤销当前grant。浏览器已连接应用 GET `/api/v1/oauth/connected-apps` 返回 `{items:[{id,client_id,client_name,scopes,created_at}]}`；DELETE query `grant_id` 返回 `{revoked:true}`。
+### 发现与注册
 
-## 错误、重试与安全边界
+1. 未认证的 MCP POST 返回 401 和 `WWW-Authenticate`，客户端读取其中的 resource metadata URL。
+2. 受保护元数据给出精确资源 `https://mikiko.studio/mcp`、`authorization_servers`、`scopes_supported` 和 `bearer_methods_supported:["header"]`。
+3. 获取 `https://mikiko.studio/.well-known/oauth-authorization-server`，校验 issuer 和各端点。HTTP 200 却返回 HTML 通常是代理路由错误。
+4. 根据策略使用预注册客户端、经过校验的 Client ID Metadata Document，或动态注册。
 
-OAuth端点错误是 `{error:string}`，与原生REST `{error:{code,message,chargeable,next_suggestion?,details?},meta:...}` 不同。实际OAuth枚举包括 `invalid_request`、`invalid_client_metadata`、`invalid_client`、`invalid_grant`、`invalid_scope`、`invalid_target`、`unsupported_grant_type`、`access_denied`、`login_required`、`invalid_session`、`authorization_request_expired`、`CANONICAL_URL_UNCONFIGURED`、`temporarily_unavailable`；动态注册每分钟最多10次，429 `temporarily_unavailable`按Retry-After等待当前固定分钟窗口恢复后退避重试，403关闭注册应联系管理员。token400先检查grant/resource/PKCE，不无限重试；503是暂时服务故障，不能一律说未配置。无凭据401 `login_required`先登录，有无效凭据401 `invalid_session`重新登录；只有consent400 `authorization_request_expired`表示过期；其他400表示无效请求，不得笼统归类过期，返回客户端修正后重新连接；网络错误保留重试。
+动态注册请求发送到 discovery 返回的 `registration_endpoint`：
 
-未配置以可信public config为准。consent/已连接应用只凭503无法区分暂态故障与canonical未配，页面先读取配置再请求业务接口。配置请求本身失败不能猜成未配置。refresh/revoke不会登出所有浏览器会话，账号禁用和grant撤销仍逐次检查。scope不足返回tool error及 `_meta["mcp/www_authenticate"]`。API Key不替代MCP OAuth token，OAuth token不替代浏览器登录，也不转发给任意下游资源。
+```json
+{
+  "client_name": "你的客户端名称",
+  "redirect_uris": ["REPLACE_WITH_CLIENT_CALLBACK"],
+  "token_endpoint_auth_method": "none",
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"]
+}
+```
 
-MCP stateless POST，独立GET/DELETE返回405；不依赖session ID或历史事件恢复。读取 initialize.protocolVersion，不猜测协议兼容。文件用上传目标传输，不把大型base64塞进tool，不宣称支持任意远程URL导入。平台生命周期SSE不是partial images。
+201 响应包含 `client_id`，不发 `client_secret`。动态注册可能被关闭、限速或受活动客户端容量限制。
 
-本轮仅复核官方配置格式和本地协议/界面逻辑，尚未在 Mikiko/ZCode、Codex、Claude Code 完成真实浏览器授权、刷新、撤权与工具调用验证；不能将模板生成或HTTP200当作客户端接入成功。
+Discovery 还声明 `revocation_endpoint`、支持的 response/grant/token-auth 类型、`code_challenge_methods_supported` 和 `client_id_metadata_document_supported`。
+
+### 浏览器授权
+
+客户端生成随机 `state`、PKCE verifier 和 S256 challenge，打开 `authorization_endpoint`，携带：
+
+```text
+client_id, redirect_uri, resource, response_type=code,
+scope, code_challenge, code_challenge_method=S256, state
+```
+
+- `redirect_uri` 须与注册值精确匹配；`resource` 须精确匹配 MCP 资源。
+- scope 使用空格分隔。
+- 服务器 303 跳转至 `/?oauth_request=...#/oauth-consent`，使用 Studio 本地登录或 OIDC。
+- 浏览器登录保留 `oauth_request`，不要修改请求 ID 或回调。
+
+浏览器会话读取 `GET https://mikiko.studio/api/v1/oauth/consent?request_id=...`，得到请求、客户端、资源、权限和 `csrf_token`。POST 同路径提交：
+
+```json
+{ "request_id": "REQUEST_ID", "csrf_token": "CSRF_TOKEN", "allow": true }
+```
+
+响应包含 `redirect_uri`。用户拒绝时回调返回 OAuth error；请求过期后从客户端重新发起。
+
+### 换取令牌与调用工具
+
+客户端校验回调 `state`，向 `token_endpoint` 发送 form：
+
+```text
+grant_type=authorization_code
+client_id, resource, code, redirect_uri, code_verifier
+```
+
+不携带浏览器 Authorization 或 client secret。响应字段为 `access_token`、`token_type:"Bearer"`、`expires_in`、`refresh_token`、`scope`，当前访问令牌有效期为 600 秒。
+
+1. 使用 OAuth Bearer 令牌调用 MCP initialize。
+2. 读取协商的 `protocolVersion`，后续携带 `MCP-Protocol-Version`，按 SDK 要求发送初始化通知。
+3. 调用 `tools/list`、`tools/call`。工具结果为 `structuredContent:{data:...}`，文本 JSON 使用同样包装。
+4. 创建任务后保存持久 ID，断线后继续查询。字段见[操作映射](developer-field-map.md)。
+
+### 刷新与撤销
+
+刷新向 `token_endpoint` 发送 form：
+
+```text
+grant_type=refresh_token
+client_id, resource, refresh_token
+```
+
+可请求已获批 scope 的子集。刷新令牌会轮换，应原子替换整组令牌；并发刷新或旧令牌重用可能撤销授权族。
+
+- 向 `revocation_endpoint` 发送 form `token,client_id` 撤销当前 grant。
+- 浏览器 `GET https://mikiko.studio/api/v1/oauth/connected-apps` 返回已连接应用 `items`。
+- 同路径 DELETE 使用 query `grant_id`，返回 `{revoked:true}`。
+- 刷新或撤销不会登出所有浏览器会话；账号禁用和 grant 撤销逐次检查。
+
+## 错误与恢复
+
+OAuth 使用 `{error:string}`，不同于原生 REST 的嵌套 error 对象。
+
+| 错误或状态 | 处理方式 |
+| --- | --- |
+| 401 `login_required` | 先登录 |
+| 401 `invalid_session` | 重新登录 |
+| consent 400 `authorization_request_expired` | 返回客户端重新连接 |
+| `invalid_request`、`invalid_client_metadata`、`invalid_client` | 核对请求和注册信息 |
+| `invalid_grant`、`invalid_scope`、`invalid_target`、`unsupported_grant_type` | 核对 grant、resource、scope、PKCE 和流程 |
+| `access_denied` | 尊重拒绝结果，需要时重新请求授权 |
+| `CANONICAL_URL_UNCONFIGURED` | 联系管理员检查可信公共端点配置 |
+| 429 `temporarily_unavailable` | 按 `Retry-After` 等待当前分钟窗口后退避 |
+| 动态注册 403 | 联系管理员确认是否允许注册 |
+| 503 或网络故障 | 保留重试；不能仅凭 503 判断未配置 |
+
+动态注册每分钟最多 10 次。其他 consent 400 不应笼统归为过期；token 400 应先修正请求，不无限重试。scope 不足会返回 tool error 和 `_meta["mcp/www_authenticate"]`。
+
+## 部署与传输边界
+
+可信端点可从 `GET https://mikiko.studio/api/v1/public/developer-endpoints` 的 `data` 读取：
+
+| 字段 | 含义 |
+| --- | --- |
+| `api_origin` | 公共 origin |
+| `rest_base` / `openai_base` | 原生 REST / OpenAI 地址 |
+| `mcp_url` / `web_url` | MCP / 登录与授权页面 |
+| OAuth 各 endpoint | 与 discovery 校验一致 |
+| `protected_resource_metadata_url` | 受保护资源元数据地址 |
+| `canonical_configured` / `disabled_reason` | 配置状态；未配时 URL 为空 |
+
+- 自建部署使用管理员配置的可信 HTTPS canonical（loopback 开发例外），不从 Host、浏览器地址或内部 listener 推导 issuer。
+- canonical 未配置时 OAuth 禁用；配置请求失败不能猜成未配置。
+- `/oauth`、`/.well-known`、`/mcp` 必须返回协议响应，登录/授权页必须可达。
+- 当前不支持 canonical 路径前缀，不任意替换主机名或 localhost/127.0.0.1。
+- MCP 为 stateless POST，独立 GET/DELETE 返回 405，不依赖 session ID 或历史重放。
+- 文件使用上传目标传输；平台生命周期 SSE 不是部分图片协议。
+
+配置格式检查与真实客户端授权是不同验收项；完成连接后还需验证工具发现、刷新和撤销。

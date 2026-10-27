@@ -1,36 +1,64 @@
-import React from 'react'
+import { isValidElement, memo } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { CodeBlock } from '../components/CodeBlock'
+import type { GuideId } from '../types'
 
-function inline(text: string): React.ReactNode[] {
-  return text.split(/(`[^`]+`|\[[^\]]+\]\([^)]+\))/g).map((part, index) => {
-    if (part.startsWith('`')) return <code key={index}>{part.slice(1, -1)}</code>
-    const link = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
-    if (link) {
-      const href = link[2].endsWith('developer-field-map.md') ? '#/guide/inventory' : link[2].endsWith('mcp.md') ? '#/guide/mcp' : link[2].includes('openapi.yaml') ? '#/reference' : link[2]
-      return <a key={index} href={href}>{link[1]}</a>
+interface MarkdownNode {
+  type: string
+  value?: string
+  depth?: number
+  children?: MarkdownNode[]
+  data?: { hProperties?: Record<string, string> }
+}
+function textOf(node: MarkdownNode): string {
+  return node.value ?? node.children?.map(textOf).join('') ?? ''
+}
+export function guideHeadings() {
+  return (tree: MarkdownNode) => {
+    const used = new Set<string>()
+    tree.children = tree.children?.filter((node) => !(node.type === 'heading' && node.depth === 1))
+    for (const node of tree.children ?? []) {
+      if (node.type !== 'heading') continue
+      const last = node.children?.[node.children.length - 1]
+      const explicit = last?.value?.match(/\s*\{#([\w-]+)\}$/)
+      if (explicit && last?.value) last.value = last.value.slice(0, explicit.index)
+      const base = explicit?.[1] ?? (textOf(node).normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, '').trim().replace(/\s+/g, '-') || 'section')
+      let id = base
+      let suffix = 1
+      while (used.has(id)) id = `${base}-${suffix++}`
+      used.add(id)
+      node.data = { ...node.data, hProperties: { ...node.data?.hProperties, id } }
     }
-    return part
-  })
-}
-
-// Small static renderer for owned guide sources; HTML is always escaped by React.
-export function DetailedGuide({ source }: { source: string }) {
-  const lines = source.split('\n')
-  const blocks: React.ReactNode[] = []
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    if (!line.trim()) continue
-    if (line.startsWith('```')) {
-      const code: string[] = []
-      while (++i < lines.length && !lines[i].startsWith('```')) code.push(lines[i])
-      blocks.push(<pre key={i} style={{ overflowX: 'auto' }}><code>{code.join('\n')}</code></pre>)
-    } else if (line.startsWith('|')) {
-      const rows: string[][] = []
-      do { if (!/^\|[\s:|-]+\|$/.test(lines[i])) rows.push(lines[i].split('|').slice(1, -1).map(cell => cell.trim())) } while (++i < lines.length && lines[i].startsWith('|'))
-      i--
-      blocks.push(<div key={i} style={{ overflowX: 'auto' }}><table><thead><tr>{rows[0]?.map((cell, j) => <th key={j}>{inline(cell)}</th>)}</tr></thead><tbody>{rows.slice(1).map((row, j) => <tr key={j}>{row.map((cell, k) => <td key={k}>{inline(cell)}</td>)}</tr>)}</tbody></table></div>)
-    } else if (/^#{1,3} /.test(line)) {
-      blocks.push(line.startsWith('### ') ? <h3 key={i}>{line.slice(4)}</h3> : <h2 key={i}>{line.replace(/^#+ /, '')}</h2>)
-    } else blocks.push(<p key={i}>{inline(line)}</p>)
   }
-  return <>{blocks}</>
 }
+const sourceRoutes: Record<string, string> = {
+  'mcp.md': 'mcp', 'developer-field-map.md': 'inventory', 'sdk-examples.md': 'sdk-examples',
+  'migration.md': 'migration', 'quickstart.md': 'quickstart', 'authentication.md': 'authentication',
+  'native-api.md': 'native-api', 'openai-compatible.md': 'openai-compatible',
+  'image-editing.md': 'image-editing', 'reference-images.md': 'reference-images',
+  'task-polling.md': 'task-polling', 'capabilities.md': 'capabilities', 'estimates.md': 'estimates',
+  'errors.md': 'errors', 'rate-limits.md': 'rate-limits', 'troubleshooting.md': 'troubleshooting',
+}
+export function guideHref(href: string | undefined, id: GuideId) {
+  if (!href) return undefined
+  if (href.startsWith('#/')) return href
+  if (href.startsWith('#')) return `#/guide/${id}${href}`
+  if (/^(?:https?:|mailto:)/i.test(href)) return href
+  const [path, anchor] = href.split('#')
+  if (path.endsWith('openapi.yaml')) return '#/reference'
+  const route = sourceRoutes[path.split('/').pop() ?? '']
+  return route ? `#/guide/${route}${anchor ? `#${anchor}` : ''}` : href
+}
+export const DetailedGuide = memo(function DetailedGuide({ source, id }: { source: string; id: GuideId }) {
+  return <ReactMarkdown remarkPlugins={[remarkGfm, guideHeadings]} skipHtml components={{
+    a: ({ href, children }) => <a href={guideHref(href, id)}>{children}</a>,
+    table: ({ children }) => <div className="guide-table-scroll" tabIndex={0} role="region" aria-label="可横向滚动的表格"><table>{children}</table></div>,
+    pre: ({ children }) => {
+      if (!isValidElement<{ className?: string; children?: string }>(children)) return <pre>{children}</pre>
+      const language = /language-([^\s]+)/.exec(children.props.className ?? '')?.[1] ?? 'text'
+      return <CodeBlock language={language} code={String(children.props.children ?? '').replace(/\n$/, '')} />
+    },
+    code: ({ children }) => <code>{children}</code>,
+  }}>{source}</ReactMarkdown>
+})

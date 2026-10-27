@@ -12,7 +12,6 @@ export type ApiKeyRow = {
   statusBadge: ApiKeyStatusBadge
   scopesText: string
   accessKeyMasked: string
-  secretMasked: string
   totalQuotaLabel: string
   dailyQuotaLabel: string
   expiresAtLabel: string
@@ -40,14 +39,14 @@ export type ApiKeyEditForm = {
   groupCode: string
 }
 
-export const apiKeyTableHeaders = ['名称', 'Access Key', 'Secret', '状态', 'RPM 限制', '额度', '创建时间', '最近调用', '过期时间', '操作'] as const
+export const apiKeyTableHeaders = ['名称', '密钥标识（ak-…）', '状态', 'RPM 限制', '额度', '创建时间', '最近调用', '过期时间', '操作'] as const
 
 export const apiKeyPageLabels = {
   create: '创建新密钥',
   quickstartTitle: '快速接入',
   quickstartCodeTitle: '示例请求 (cURL)',
   copyCode: '复制示例',
-  resetSecret: '重置 Secret',
+  resetSecret: '轮换 API Key',
   delete: '删除',
   edit: '编辑',
 } as const
@@ -106,24 +105,6 @@ export function maskToken(value: string | null | undefined, head = 6, tail = 4) 
   return `${value.slice(0, head)}••••••••${value.slice(-tail)}`
 }
 
-export function maskSecretPreview(value?: string | null) {
-  if (!value) return 'sk_••••••••••••'
-  return maskToken(value)
-}
-
-export function apiKeyQuickstart(key: Pick<ApiKey, 'access_key' | 'secret_preview'> | null, restBase?: string) {
-  const secret = '$STUDIO_API_KEY'
-  const accessKey = key?.access_key ? maskToken(key.access_key) : 'ak_live_xxx'
-  return {
-    title: apiKeyPageLabels.quickstartCodeTitle,
-    copyLabel: apiKeyPageLabels.copyCode,
-    visibleCredentials: { accessKey, secretKey: secret },
-    code: `# STUDIO_API_KEY 从环境变量注入；不复制一次性 Secret
-curl "${restBase || '$STUDIO_REST_BASE'}/image-models" \\
-  -H "Authorization: Bearer ${secret}"`,
-  }
-}
-
 export function apiKeyDeleteConfirmText(key: Pick<ApiKey, 'name'>) {
   return {
     title: `确认删除 ${key.name}？`,
@@ -179,7 +160,6 @@ export function apiKeyRow(key: ApiKey): ApiKeyRow {
     statusBadge: apiKeyStatusBadge(key.status),
     scopesText: apiKeyScopesText(key.scopes),
     accessKeyMasked: maskAccessKey(key.access_key),
-    secretMasked: maskSecretPreview(key.secret_preview),
     totalQuotaLabel: apiKeyQuotaText('总额度', key.total_quota_points, key.total_quota_used_points),
     dailyQuotaLabel: apiKeyQuotaText('日额度', key.daily_quota_points, key.daily_quota_used_points),
     expiresAtLabel: apiKeyExpiryText(key.expires_at),

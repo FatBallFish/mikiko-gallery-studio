@@ -17,6 +17,7 @@ const DefaultApplicationVersion = "dev"
 type CommandKind string
 
 const (
+	CommandReconfigure        CommandKind = "reconfigure"
 	CommandInstall            CommandKind = "install"
 	CommandImportConfig       CommandKind = "import-config"
 	CommandStatus             CommandKind = "status"
@@ -93,6 +94,7 @@ type Command struct {
 	RuntimeDir         string
 	RuntimeDirExplicit bool
 	Yes                bool
+	Reconfigure        *ReconfigureOptions
 	Install            *InstallInput
 	ImportConfig       *ImportConfigOptions
 	Version            *VersionOptions
@@ -146,6 +148,20 @@ func ParseCommand(args []string) (Command, error) {
 		return Command{}, err
 	}
 	switch args[0] {
+	case "reconfigure":
+		set := newFlagSet("reconfigure")
+		dir := set.String("runtime-dir", ".", "installed runtime directory")
+		origin := set.String("public-api-url", "", "canonical HTTPS API origin")
+		if err := set.Parse(args[1:]); err != nil {
+			return Command{}, err
+		}
+		if set.NArg() != 0 {
+			return Command{}, fmt.Errorf("reconfigure does not accept positional arguments")
+		}
+		if err := validateCanonicalReconfigureURL(*origin); err != nil {
+			return Command{}, err
+		}
+		return Command{Kind: CommandReconfigure, RuntimeDir: *dir, RuntimeDirExplicit: flagWasProvided(args[1:], "runtime-dir"), Reconfigure: &ReconfigureOptions{RuntimeDir: *dir, PublicAPIURL: *origin}}, nil
 	case "install":
 		return parseInstallCommand(args[1:])
 	case "import-config":

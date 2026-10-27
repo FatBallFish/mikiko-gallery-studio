@@ -1306,16 +1306,17 @@ function useDismissableLayer(open: boolean, onClose: () => void, focusRef: React
   }, [focusRef, open])
 }
 
-export function Modal({ title, children, onClose, className = '' }: { title: string; children: React.ReactNode; onClose: () => void; className?: string }) {
+export function Modal({ title, children, onClose, className = '', dismissible = true }: { title: string; children: React.ReactNode; onClose: () => void; className?: string; dismissible?: boolean }) {
   const dialogRef = useRef<HTMLElement | null>(null)
-  useDismissableLayer(true, onClose, dialogRef)
+  const dismiss = () => { if (dismissible) onClose() }
+  useDismissableLayer(true, dismiss, dialogRef)
   return (
     <OverlayPortal>
-      <div className="u-backdrop is-open" role="presentation" data-focus-layer onMouseDown={onClose}>
+      <div className="u-backdrop is-open" role="presentation" data-focus-layer onMouseDown={dismiss}>
         <section ref={dialogRef} tabIndex={-1} className={cn('u-modal is-open', className)} role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
           <div className="u-modal__head">
             <h2>{title}</h2>
-            <IconButton label="关闭" onClick={onClose}><X size={18} strokeWidth={1.5} aria-hidden="true" /></IconButton>
+            {dismissible ? <IconButton label="关闭" onClick={dismiss}><X size={18} strokeWidth={1.5} aria-hidden="true" /></IconButton> : null}
           </div>
           {children}
         </section>

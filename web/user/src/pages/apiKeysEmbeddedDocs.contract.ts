@@ -1,11 +1,34 @@
+import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const source = readFileSync(new URL('./ApiKeysPage.tsx', import.meta.url), 'utf8')
-
-for (const forbidden of ["app.navigate('docs')", '/developer-docs/']) {
-  if (source.includes(forbidden)) throw new Error(`API Keys must not use an intermediate or hard-coded documentation route: ${forbidden}`)
+const drawer = readFileSync(new URL('./DeveloperConnectDrawer.tsx', import.meta.url), 'utf8')
+const css = readFileSync(new URL('./developer-connect.css', import.meta.url), 'utf8')
+for (const forbidden of ["app.navigate('docs')", '/developer-docs/', 'developerEndpointRows(', 'developer-endpoints-title', 'quickstart.code', 'row.secretMasked']) {
+  assert.ok(!source.includes(forbidden), `API Keys must not retain ${forbidden}`)
 }
-
-if (!source.includes("import { docsSiteUrl, openDocsEntry } from '../docsUrl'") || !source.includes("openDocsEntry('api-keys')") || !source.includes("new URL('#/guide/mcp', docsSiteUrl())")) {
-  throw new Error('API Keys documentation action must open the centrally resolved documentation URL directly')
-}
+assert.match(source, /apiKeyPageLabels.create[\s\S]*?如何接入/)
+assert.match(source, /connecting \? <DeveloperConnectDrawer/)
+assert.match(source, /API Key（sk-…）/)
+assert.match(source, /ApiKeyCredentialsModal/)
+assert.match(source, /密钥标识（ak-…）/)
+assert.match(source, /userApi.resetApiKeySecret\(key.id\)/)
+assert.match(drawer, /<Drawer open title="如何接入"/)
+assert.match(drawer, /role="tablist"/)
+assert.match(drawer, /role="tab"/)
+assert.match(drawer, /role="tabpanel"/)
+assert.match(drawer, /aria-controls=/)
+assert.match(drawer, /aria-labelledby=/)
+assert.match(drawer, /tabIndex=\{tab === item.value \? 0 : -1\}/)
+for (const key of ['ArrowRight', 'ArrowLeft', 'Home', 'End']) assert.ok(drawer.includes(key))
+assert.match(drawer, /buttons.current\[next\]\?\.focus\(\)/)
+assert.match(drawer, /catch \(caught\).*app.notify\('error'/)
+assert.match(drawer, /endpoints.loading/)
+assert.match(drawer, /endpoints.error/)
+assert.match(drawer, /endpoints.reload\(\)/)
+assert.match(drawer, /openDocsEntry\('api-keys'\)/)
+assert.match(drawer, /new URL\('#\/guide\/mcp', docsSiteUrl\(\)\)/)
+assert.match(css, /overflow-x: auto/)
+assert.match(css, /\[hidden\].*display: none/)
+assert.match(css, /@media \(max-width: 600px\)/)
+console.log('OK: API key credential terminology, onboarding drawer tabs and direct documentation links')

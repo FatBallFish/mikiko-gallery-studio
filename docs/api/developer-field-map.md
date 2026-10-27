@@ -1,10 +1,20 @@
 # 开发者 API 字段映射与实际操作
 
-本表按真实 Go JSON 序列化字段复核。请求必填性和枚举以 [API reference](../../web/docs/public/openapi/openapi.yaml) 的对应 operation 为准；文档站访问 `#/reference`。Go `omitempty` 表示可能省略，指针可能为 null；map 类型是动态对象，不能把内部键当固定枚举。任务、资产归属始终校验。本表不是安装环境已经配置或真实客户端测试通过的证明。
+完整请求类型与枚举见[接口参考](../../web/docs/public/openapi/openapi.yaml)。下表保留实际操作及 Go JSON 字段，便于核对客户端类型。
+
+- `omitempty` 表示字段可能省略；指针可能为 null。
+- map 是动态对象，内部键不是固定枚举。
+- 任务和资产始终检查归属。
+- `MIKIKO_API_KEY` 使用创建或轮换时一次显示的 SK（`sk-`）；AK（`ak-`）只作标识。MCP 使用独立 OAuth。
 
 ## 路径和请求位置
 
-原生前缀 `/api/open/v1`。路径 ID 覆盖 body/query 同名字段；`Idempotency-Key` 覆盖 body 的 `idempotency_key`。GET 参数用 query，写请求用 JSON，禁止 URL token。未知字段会拒绝。图片/视频创建幂等键 1–128 字符；相同身份、键和业务输入重放同任务，冲突409；quote变化后先预检，不能盲目新建重试。
+原生 BaseURL 为 `https://mikiko.studio/api/open/v1`。下表 REST 路径均接在此地址后。
+
+- 路径 ID 覆盖 body/query 同名字段；`Idempotency-Key` 请求头覆盖 body 字段。
+- GET 参数用 query，写请求用 JSON；未知字段会拒绝，不在 URL 传令牌。
+- 创建幂等键为 1–128 字符。相同身份、键和业务输入重放同一任务，冲突返回 409。
+- 报价变化后先预检，不盲目换键创建。
 
 | REST（省略前缀） | MCP operation | scope | 实际 data |
 | --- | --- | --- | --- |
@@ -45,7 +55,10 @@ GET /image-tasks/{id}/events 与视频对应路由是 SSE 观察接口，scope�
 
 ## 输入与输出字段
 
-图片创建与预检字段如下 ImageInput；创建额外需要幂等键与有效报价。native_options嵌套以API reference为准：seed、negative_prompt、watermark、annotations[{reference_index,label?,point?/bbox?}]、qwen{prompt_extend,prompt_extend_mode,enable_thinking}、seedream{optimize_prompt_mode}。输入坐标0..999，输出layer.bounding_box.normalized为0..1000，不能混用。视频输入见CreateRequest，另接受idempotency_key；变量{name,value}、绑定{name,asset_id}、inputs{asset_id,role,ordinal}。
+- 图片创建与预检字段如下 ImageInput；创建额外需要幂等键与有效报价。
+- native_options嵌套以API reference为准：seed、negative_prompt、watermark、annotations[{reference_index,label?,point?/bbox?}]、qwen{prompt_extend,prompt_extend_mode,enable_thinking}、seedream{optimize_prompt_mode}。
+- 输入坐标0..999，输出layer.bounding_box.normalized为0..1000，不能混用。
+- 视频输入见CreateRequest，另接受idempotency_key；变量{name,value}、绑定{name,asset_id}、inputs{asset_id,role,ordinal}。
 
 ### internal/service/openplatform/tasks.go · ImageInput
 
@@ -573,7 +586,9 @@ GET /image-tasks/{id}/events 与视频对应路由是 SSE 观察接口，scope�
 
 ## 原生/兼容错误清单与恢复
 
-下面按当前原生操作服务和兼容handler静态调用点汇总；具体HTTP状态、details与触发字段见API reference，不能把上游供应商动态错误视为封闭枚举。401重新核对当前凭据、过期和账户；403先修scope/归属；402先补余额；409刷新版本或重新预检，幂等冲突必须修正业务请求；429按实际Retry-After和退避；5xx有上限重试且创建保留幂等键。结果内error_code并不等同当前HTTP请求失败。
+- 下面按当前原生操作服务和兼容handler静态调用点汇总；具体HTTP状态、details与触发字段见API reference，不能把上游供应商动态错误视为封闭枚举。
+- 401重新核对当前凭据、过期和账户；403先修scope/归属；402先补余额；409刷新版本或重新预检，幂等冲突必须修正业务请求；429按实际Retry-After和退避；5xx有上限重试且创建保留幂等键。
+- 结果内error_code并不等同当前HTTP请求失败。
 
 | 错误码 | 实际调用点 |
 | --- | --- |
@@ -862,9 +877,19 @@ OAuth错误和逐阶段恢复参见 [MCP指南](mcp.md)。兼容同步等待504 
 
 ## OpenAI 兼容路径与完整输入
 
-GET `/v1/models` 使用 models:read，输出OpenAI模型列表（object,data以及每项id/object/created/owned_by，以reference为准）。POST `/v1/images/generations` 为JSON，POST `/v1/images/edits` 为multipart，均需 images:write 与 images:read。共同字段：model、prompt（必填非空），size、n（默认1且正数，模型能力约束上限）、quality、output_format、background、output_compression、moderation、response_format（url或b64_json）、user、stream。partial_images出现即明确拒绝，不能解释为被忽略。编辑另需image或image[]文件，可有单个mask；具体模型未声明mask时会拒绝。编辑表单不接受未知字段、重复标量或其他文件名，总body64MiB，生成JSON body2MiB。用Idempotency-Key重复同一业务操作，未知字段拒绝。
+- GET `/v1/models` 使用 models:read，输出OpenAI模型列表（object,data以及每项id/object/created/owned_by，以reference为准）。
+- POST `/v1/images/generations` 为JSON，POST `/v1/images/edits` 为multipart，均需 images:write 与 images:read。
+- 共同字段：model、prompt（必填非空），size、n（默认1且正数，模型能力约束上限）、quality、output_format、background、output_compression、moderation、response_format（url或b64_json）、user、stream。
+- partial_images出现即明确拒绝，不能解释为被忽略。
+- 编辑另需image或image[]文件，可有单个mask；具体模型未声明mask时会拒绝。
+- 编辑表单不接受未知字段、重复标量或其他文件名，总body64MiB，生成JSON body2MiB。
+- 用Idempotency-Key重复同一业务操作，未知字段拒绝。
 
-同步输出为图片结果封装 created、data（每项url或b64_json、revised_prompt等实际ImageResult字段见上表），不包装原生REST的data envelope。返回头X-Task-ID与Location提供持久任务恢复。stream=true为平台扩展：X-Stream-Protocol:platform-image-lifecycle-v1；task事件{task_id,status,progress_stage}、result事件包含最终图片响应，成功后data:[DONE]，错误error事件结束且无成功DONE。两分钟等待中断可返回504 TASK_WAIT_INTERRUPTED，已生成任务继续可查询；不是OpenAI partial image事件协议。兼容错误为OpenAI形状error（message/type/code等以reference为准），不要使用原生error.message解析所有协议。
+- 同步输出为图片结果封装 created、data（每项url或b64_json、revised_prompt等实际ImageResult字段见上表），不包装原生REST的data envelope。
+- 返回头X-Task-ID与Location提供持久任务恢复。
+- stream=true为平台扩展：X-Stream-Protocol:platform-image-lifecycle-v1；task事件{task_id,status,progress_stage}、result事件包含最终图片响应，成功后data:[DONE]，错误error事件结束且无成功DONE。
+- 两分钟等待中断可返回504 TASK_WAIT_INTERRUPTED，已生成任务继续可查询；不是OpenAI partial image事件协议。
+- 兼容错误为OpenAI形状error（message/type/code等以reference为准），不要使用原生error.message解析所有协议。
 
 ## 完整创建流程示例（占位符须替换）
 
@@ -883,4 +908,9 @@ GET `/v1/models` 使用 models:read，输出OpenAI模型列表（object,data以�
 }
 ```
 
-这是完整流程的示例业务请求，size_mode与尺寸必须受当前模型允许；不是所有部署通用参数。创建时保留同一业务输入，加入预检quote_token和新idempotency_key。创建后保存data.id；视频创建保存data.task.id且检查data.replayed。轮询任务详情，检查status/results或items，结果存在后再请求result access；仅HTTP201不表示生成成功。429/断网重试保持同一幂等键，业务输入变化才使用新键。模板不会自动调用收费生成。
+- 这是完整流程的示例业务请求，size_mode与尺寸必须受当前模型允许；不是所有部署通用参数。
+- 创建时保留同一业务输入，加入预检quote_token和新idempotency_key。
+- 创建后保存data.id；视频创建保存data.task.id且检查data.replayed。
+- 轮询任务详情，检查status/results或items，结果存在后再请求result access；仅HTTP201不表示生成成功。
+- 429/断网重试保持同一幂等键，业务输入变化才使用新键。
+- 模板不会自动调用收费生成。

@@ -1,6 +1,7 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { BookOpen, Braces, Menu, Search, X } from 'lucide-react'
 import { guides } from './content/guides'
+import { DetailedGuide } from './content/DetailedGuide'
 import { DocsSearch } from './components/DocsSearch'
 import type { GuideId } from './types'
 
@@ -19,16 +20,13 @@ export default function App() {
   const [route, setRoute] = useState<Route>(() => currentRoute())
   const [searchOpen, setSearchOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [toc, setToc] = useState<Array<{ id: string; label: string }>>([])
+  const [toc, setToc] = useState<Array<{ id: string; label: string; depth: number }>>([])
   const guide = route.kind === 'guide' ? guides.find((item) => item.id === route.id) ?? guides[0] : null
   const groups = useMemo(() => Array.from(new Set(guides.map((item) => item.group))), [])
 
   useEffect(() => {
     const update = () => {
       setRoute(currentRoute()); setMobileOpen(false)
-      const anchor = window.location.hash.split('#')[2]
-      if (anchor) window.requestAnimationFrame(() => document.getElementById(anchor)?.scrollIntoView())
-      else window.scrollTo({ top: 0 })
     }
     window.addEventListener('hashchange', update)
     if (!window.location.hash) window.location.hash = '/guide/quickstart'
@@ -49,13 +47,20 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!guide) { setToc([]); return }
-    const frame = window.requestAnimationFrame(() => {
-      setToc(Array.from(document.querySelectorAll<HTMLElement>('.guide-article h2[id]')).map((heading) => ({ id: heading.id, label: heading.textContent || heading.id })))
-    })
-    return () => window.cancelAnimationFrame(frame)
+    setToc(Array.from(document.querySelectorAll<HTMLElement>('.guide-article h2[id], .guide-article h3[id]')).map((heading) => ({ id: heading.id, label: heading.textContent || heading.id, depth: Number(heading.tagName.slice(1)) })))
   }, [guide])
+
+  useLayoutEffect(() => {
+    if (!guide) return
+    // Markdown is synchronous: headings exist at commit. Do not defer navigation
+    // to an animation frame or a smooth-scroll animation that another commit can cancel.
+    const anchor = window.location.hash.split('#')[2]
+    if (anchor) {
+      try { document.getElementById(decodeURIComponent(anchor))?.scrollIntoView({ behavior: 'instant', block: 'start' }) } catch { /* Invalid URL fragment has no target. */ }
+    } else window.scrollTo({ top: 0, behavior: 'instant' })
+  }, [guide, route])
 
   return (
     <div className="docs-app">
@@ -82,13 +87,13 @@ export default function App() {
           {route.kind === 'reference' ? <Suspense fallback={<div className="reference-loading" role="status">正在加载接口参考...</div>}><ReferencePage /></Suspense> : guide ? (
             <article className="guide-article">
               <div className="guide-heading"><span><BookOpen size={15} />{guide.group}</span><h1>{guide.title}</h1><p>{guide.summary}</p></div>
-              <div className="guide-content">{guide.content}</div>
+              <div className="guide-content"><DetailedGuide source={guide.content} id={guide.id} /></div>
               <GuidePager id={guide.id} />
             </article>
           ) : null}
         </main>
 
-        {guide && toc.length ? <aside className="docs-toc" aria-label="本页目录" inert={mobileOpen ? true : undefined}><strong>本页内容</strong>{toc.map((item) => <a key={item.id} href={`#/guide/${guide.id}#${item.id}`}>{item.label}</a>)}</aside> : null}
+        {guide && toc.length ? <aside className="docs-toc" aria-label="本页目录" inert={mobileOpen ? true : undefined}><strong>本页内容</strong>{toc.map((item) => <a key={item.id} className={item.depth === 3 ? 'toc-subheading' : undefined} href={`#/guide/${guide.id}#${encodeURIComponent(item.id)}`}>{item.label}</a>)}</aside> : null}
       </div>
       {searchOpen ? <DocsSearch onClose={() => setSearchOpen(false)} /> : null}
     </div>

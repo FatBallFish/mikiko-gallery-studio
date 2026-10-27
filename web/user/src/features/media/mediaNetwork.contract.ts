@@ -26,6 +26,6 @@ for (const purpose of ["'poster'", "'hover'", "'waveform'"]) {
 if (!card.includes('AbortController')) throw new Error('hover access requests must be cancellable when the pointer leaves')
 
 const app = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8')
-if (!app.includes("<UploadTray hidden={route === 'creative-canvas' && Boolean(routeCanvasId)} />") || !app.includes('<MediaAssetsPage />')) throw new Error('upload tray must remain mounted and hide only in the canvas editor alongside the unified media page')
+if (!app.includes("<UploadTray hidden={route === 'oauth-consent' || (route === 'creative-canvas' && Boolean(routeCanvasId))} />") || !app.includes('<MediaAssetsPage />')) throw new Error('upload tray must remain mounted and hide in OAuth consent and the canvas editor alongside the unified media page')
 
 console.log('media network contract passed')
