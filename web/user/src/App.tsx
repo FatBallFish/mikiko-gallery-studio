@@ -19,13 +19,14 @@ import { parseUserHashState, userHashForRoute, type UserRouteOptions } from './r
 import { oidcAuthorizeHref, readOIDCCallback, sanitizeOIDCReturnTo, stripSSOSilent } from './oidcLogin'
 import { applyThemePreference, readLocalThemePreference, serializeThemePreference, themePreferenceFromProfile, writeLocalThemePreference } from './themePreferences'
 import { DEFAULT_FEATURE_FLAGS, featureAvailability } from './featureAvailability'
+import { createCanvasRouteLoading } from './canvasRouteLoading'
 
 const sessionKey = 'pic-gallery-user-session'
 const LandingPage = lazy(() => import('./pages/LandingPage'))
 const CreationPage = lazy(async () => ({ default: (await import('./features/creation/CreationPage')).CreationPage }))
 const MediaAssetsPage = lazy(async () => ({ default: (await import('./features/media/MediaAssetsPage')).MediaAssetsPage }))
-const CanvasListPage = lazy(async () => ({ default: (await import('./features/canvas/CanvasListPage')).CanvasListPage }))
-const CanvasEditorPage = lazy(async () => ({ default: (await import('./features/canvas/CanvasEditorPage')).CanvasEditorPage }))
+const CanvasListRoute = createCanvasRouteLoading(async () => ({ default: (await import('./features/canvas/CanvasListPage')).CanvasListPage }))
+const CanvasEditorRoute = createCanvasRouteLoading(async () => ({ default: (await import('./features/canvas/CanvasEditorPage')).CanvasEditorPage }))
 
 function WorkspaceRouteFallback() {
   return <div className="grid min-h-full place-items-center text-sm text-[var(--muted)]" role="status">正在载入创作工作台...</div>
@@ -431,7 +432,9 @@ function UserApplication() {
         return <Shell><Suspense fallback={<WorkspaceRouteFallback />}><CreationPage initialTaskId={routeTaskId} initialMedia={routeMedia} initialAssetId={routeAssetId} videoCreationEnabled={featureFlags.video_creation} /></Suspense></Shell>
       case 'creative-canvas':
         if (!featureAvailability(featureFlags).canOpenCanvasHistory(routeCanvasId)) return <Shell><HomePage /></Shell>
-        return <Suspense fallback={<WorkspaceRouteFallback />}>{routeCanvasId ? <CanvasEditorPage canvasID={routeCanvasId} onBack={() => writeHash('creative-canvas')} /> : <Shell scrollMode="document"><CanvasListPage onOpen={(canvasID) => writeHash('creative-canvas', { canvasId: canvasID })} /></Shell>}</Suspense>
+        return routeCanvasId
+          ? <CanvasEditorRoute key={routeCanvasId} pageProps={{ canvasID: routeCanvasId, onBack: () => writeHash('creative-canvas') }} onBack={() => writeHash('creative-canvas')} backLabel="返回画布列表" />
+          : <Shell scrollMode="document"><CanvasListRoute pageProps={{ onOpen: (canvasID) => writeHash('creative-canvas', { canvasId: canvasID }) }} onBack={() => writeHash('home')} backLabel="返回工作台" /></Shell>
       case 'gallery':
         return <Shell><Suspense fallback={<WorkspaceRouteFallback />}><MediaAssetsPage /></Suspense></Shell>
       case 'projects':
