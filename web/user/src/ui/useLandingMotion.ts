@@ -1,5 +1,5 @@
 import { useGSAP } from '@gsap/react'
-import gsapModule, { type gsap as GSAP } from 'gsap'
+import gsapModule from 'gsap'
 import { ScrollTrigger } from 'gsap/dist/ScrollTrigger'
 import type { RefObject } from 'react'
 import { prefersReducedMotion } from './motion'
@@ -25,7 +25,7 @@ export function useLandingMotion(scope: RefObject<HTMLElement | null>): void {
   useGSAP(() => {
     if (prefersReducedMotion()) return
 
-    const animations: GSAP.core.Animation[] = []
+    const animations: (ReturnType<typeof gsap.fromTo> | ReturnType<typeof gsap.timeline>)[] = []
 
     gsap.utils.toArray<HTMLElement>(landingMotionSelectors.reveal).forEach((reveal) => {
       const words = reveal.querySelectorAll<HTMLElement>(landingMotionSelectors.word)
