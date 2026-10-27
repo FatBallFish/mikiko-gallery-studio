@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"reflect"
 	"strings"
 	"time"
 
@@ -153,6 +154,38 @@ func (s *Service) liveAsset(ctx context.Context, user int64, id uuid.UUID) (medi
 	}
 	return asset, nil
 }
+
+// OpenPreviewURL opens a capability minted by this service without making an HTTP
+// request. It binds the capability to the current MCP principal and preview purpose.
+func (s *Service) OpenPreviewURL(ctx context.Context, p openplatform.Principal, raw string) (mediaasset.ContentStream, error) {
+	prefix := s.base + PathPrefix
+	if !strings.HasPrefix(raw, prefix) || !strings.HasSuffix(raw, "/content") {
+		return mediaasset.ContentStream{}, invalidGrant()
+	}
+	token := strings.TrimSuffix(strings.TrimPrefix(raw, prefix), "/content")
+	if len(token) > 16384 || strings.ContainsAny(token, "/?#%") {
+		return mediaasset.ContentStream{}, invalidGrant()
+	}
+	parts := strings.Split(token, ".")
+	if len(parts) != 2 {
+		return mediaasset.ContentStream{}, invalidGrant()
+	}
+	body, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return mediaasset.ContentStream{}, invalidGrant()
+	}
+	var c claims
+	if json.Unmarshal(body, &c) != nil || c.Purpose != mediaasset.AccessPurposePreview || !reflect.DeepEqual(c.Principal, p) {
+		return mediaasset.ContentStream{}, invalidGrant()
+	}
+	// OpenContent verifies the signature, expiration, audience, live principal and asset.
+	content, err := s.OpenContent(ctx, token, "", false)
+	if err != nil {
+		return mediaasset.ContentStream{}, err
+	}
+	return mediaasset.ContentStream{Reader: content.Reader, SizeBytes: content.Size, ContentType: content.ContentType, Filename: content.Filename}, nil
+}
+
 func (s *Service) OpenContent(ctx context.Context, token, value string, metadataOnly bool) (Content, error) {
 	if len(token) > 16384 {
 		return Content{}, invalidGrant()

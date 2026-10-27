@@ -147,6 +147,14 @@ client_id, resource, code, redirect_uri, code_verifier
 
 写入已经成功时，即使结果过大或快照分配失败，也返回 `operation_completed:true`、可用的持久 ID 与后续查询工具。保留该 ID，查询已创建的资源；**不要重提 create、自动更换幂等键或因快照失效重复付费任务**。
 
+### 图片原生缩略图预览
+
+查询成功任务后，以 `get_image_result_access` 传入 `task_id`、`image_id`、`purpose:"preview"`。除原有访问 URL、有效期及 range 元数据外，服务尝试在 MCP `content` 中附加 `type:"image"`、`mimeType:"image/jpeg"` 的原生缩略图。它是最长边不超过 256 像素的有损预览，透明区域合成白底，不代表原图的尺寸、透明度或完整细节；需要原图时使用 `purpose:"download"` 保存并打开。
+
+缩略图原始 JPEG 最多 18 KiB，base64 最多 24 KiB，且计入完整响应小于 40 KiB 的预算，不在 text 或 structuredContent 中重复内嵌。服务仅从已授权的 canonical 资产 capability 内部读取，保留任务归属、主体、撤销及到期检查；不抓取任意远程 URL。源数据最多 16 MiB、32 百万像素，读取使用五秒 context 并在取消时关闭流；解码与缩放阶段检查取消，标准库解码不支持硬 CPU 中断。
+
+若缩略图无法生成或预算不足，结果仍保留访问元数据，并给出明确的 thumbnail unavailable 说明；不要因此重新提交生成任务。客户端是否展示原生图片取决于其 MCP 能力，resource link、远程 Markdown 和本地 artifact 路径均不保证在所有客户端直接显示。仅拿到 URL 或 HTTP 200 不能声称客户端已显示图片。
+
 ### 刷新与撤销
 
 刷新向 `token_endpoint` 发送 form：

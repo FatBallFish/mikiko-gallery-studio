@@ -139,6 +139,51 @@ func TestPresignedAccessUsesRevocableProxy(t *testing.T) {
 		t.Fatal("S3 proxy bypassed revocation")
 	}
 }
+func TestInternalPreviewURLBindings(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+	revoked := false
+	b := &testBackend{asset: mediaasset.Asset{ID: uuid.New(), UserID: 7, Status: "ready"}}
+	s, _ := New(b, Options{PublicAPIURL: "https://studio.example", SigningKey: []byte(strings.Repeat("k", 32)), Now: func() time.Time { return now }, ValidatePrincipal: func(context.Context, openplatform.Principal) error {
+		if revoked {
+			return errors.New("revoked")
+		}
+		return nil
+	}})
+	p := openplatform.Principal{UserID: 7, ClientID: "client", GrantID: "grant", Scopes: []string{"images:read"}}
+	raw, err := s.Access(ctx, p, b.asset.ID, "preview")
+	if err != nil {
+		t.Fatal(err)
+	}
+	access := raw.(mediaasset.AccessResult)
+	if _, err = s.OpenPreviewURL(ctx, p, access.URL); err != nil {
+		t.Fatal(err)
+	}
+	for _, url := range []string{access.URL + "?x=1", access.URL + "#x", strings.Replace(access.URL, "studio.example", "evil.example", 1), strings.Replace(access.URL, "https://", "https://user@", 1), access.URL + "/content"} {
+		if _, err = s.OpenPreviewURL(ctx, p, url); err == nil {
+			t.Fatal("invalid URL accepted")
+		}
+	}
+	other := p
+	other.GrantID = "other"
+	if _, err = s.OpenPreviewURL(ctx, other, access.URL); err == nil {
+		t.Fatal("other principal accepted")
+	}
+	download, _ := s.Access(ctx, p, b.asset.ID, "download")
+	if _, err = s.OpenPreviewURL(ctx, p, download.(mediaasset.AccessResult).URL); err == nil {
+		t.Fatal("download accepted")
+	}
+	revoked = true
+	if _, err = s.OpenPreviewURL(ctx, p, access.URL); err == nil {
+		t.Fatal("revoked accepted")
+	}
+	revoked = false
+	now = access.ExpiresAt
+	if _, err = s.OpenPreviewURL(ctx, p, access.URL); err == nil {
+		t.Fatal("expired accepted")
+	}
+}
+
 func TestCanonicalPublicURL(t *testing.T) {
 	for _, base := range []string{"http://evil.example", "https://u:p@studio.example", "https://studio.example?token=x", "https://studio.example/path", "https://studio.example#x"} {
 		if _, err := New(&testBackend{}, Options{PublicAPIURL: base, SigningKey: []byte(strings.Repeat("k", 32))}); err == nil {

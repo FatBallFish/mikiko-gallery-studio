@@ -204,9 +204,13 @@ func (s *Service) imageOperation(ctx context.Context, p Principal, user domainau
 	if err != nil {
 		return nil, err
 	}
-	if err = s.checkFunds(ctx, user, estimate.EstimatedPoints, kid); err != nil {
+	balance, err := s.checkFunds(ctx, user, estimate.EstimatedPoints, kid)
+	if err != nil {
 		return nil, err
 	}
+	estimate.Sufficient = true
+	estimate.InsufficientPoints = "0.00000"
+	estimate.Balance = &balance
 	binding := map[string]any{"request": imageFingerprint(req), "capability": estimate.CapabilityVersion, "pricing": estimate.PricingSnapshot}
 	if op == "preflight_image_task" {
 		token, expiry, err := s.signQuote(p, binding)
@@ -262,26 +266,26 @@ func imageFingerprint(req image.CreateRequest) string {
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
 }
-func (s *Service) checkFunds(ctx context.Context, user domainauth.User, points string, kid int64) error {
+func (s *Service) checkFunds(ctx context.Context, user domainauth.User, points string, kid int64) (domainbilling.BalanceSummary, error) {
 	if s.deps.Billing == nil {
-		return unavailable()
+		return domainbilling.BalanceSummary{}, unavailable()
 	}
 	balance, err := s.deps.Billing.GetBalance(ctx, user.ID, user.GroupMultiplier)
 	if err != nil {
-		return err
+		return balance, err
 	}
 	available, e1 := decimal.NewFromString(balance.AvailablePoints)
 	needed, e2 := decimal.NewFromString(points)
 	if e1 != nil || e2 != nil {
-		return errs.Internal("invalid points value")
+		return balance, errs.Internal("invalid points value")
 	}
 	if available.LessThan(needed) {
-		return errs.New(402, "INSUFFICIENT_BALANCE", "insufficient available points")
+		return balance, errs.New(402, "INSUFFICIENT_BALANCE", "insufficient available points")
 	}
 	if kid > 0 && s.deps.APIKeys != nil {
 		_, err = s.deps.APIKeys.CheckTaskAllowed(ctx, kid, user.ID, points, s.deps.Now().UTC())
 	}
-	return err
+	return balance, err
 }
 func (s *Service) videoOperation(ctx context.Context, p Principal, user domainauth.User, op string, raw json.RawMessage) (any, error) {
 	if s.deps.Videos == nil {
@@ -341,7 +345,7 @@ func (s *Service) videoOperation(ctx context.Context, p Principal, user domainau
 	if err != nil {
 		return nil, err
 	}
-	if err = s.checkFunds(ctx, user, estimate.MaxReservedPoints, kid); err != nil {
+	if _, err = s.checkFunds(ctx, user, estimate.MaxReservedPoints, kid); err != nil {
 		return nil, err
 	}
 	req.APIKeyID = kid

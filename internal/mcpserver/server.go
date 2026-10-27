@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/fatballfish/pic-gallery/internal/service/mediaasset"
 	"github.com/fatballfish/pic-gallery/internal/service/openplatform"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -29,6 +30,8 @@ func (f ValidateAccessFunc) ValidateAccess(ctx context.Context, token string) (o
 
 // Config URLs must come from validated deployment configuration, never request Host.
 type Config struct {
+	// Preview opens only an already-authorized canonical asset capability, without HTTP fetching.
+	Preview             func(context.Context, openplatform.Principal, string) (mediaasset.ContentStream, error)
 	Service             Executor
 	Validator           AccessValidator
 	ResourceURL         string
@@ -182,7 +185,7 @@ func NewHandler(cfg Config) (http.Handler, error) {
 				}
 				return boundedResult(principal, out, cache, spec.Scope, true, spec.Name), nil
 			}
-			return boundedResult(principal, result, cache, spec.Scope, spec.ReadOnly, spec.Name), nil
+			return withImagePreview(ctx, cfg, principal, spec.Name, arguments, result, boundedResult(principal, result, cache, spec.Scope, spec.ReadOnly, spec.Name)), nil
 		})
 	}
 	transport := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, MaxRequestBodyBytes: 1 << 20})
