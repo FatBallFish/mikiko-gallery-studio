@@ -86,16 +86,38 @@ func TestOfficialSDKAuthenticatedTools(t *testing.T) {
 	if got := first.InitializeResult().ProtocolVersion; got != "2026-07-28" {
 		t.Fatalf("negotiated %q", got)
 	}
-	tools, err := first.ListTools(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
+	seenTools := map[string]bool{}
+	seenCursors := map[string]bool{}
+	cursor := ""
+	for {
+		tools, err := first.ListTools(ctx, &mcp.ListToolsParams{Cursor: cursor})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, tool := range tools.Tools {
+			if seenTools[tool.Name] {
+				t.Fatalf("duplicate tool across cursor pages: %s", tool.Name)
+			}
+			seenTools[tool.Name] = true
+			if tool.InputSchema == nil || tool.OutputSchema == nil || tool.Annotations == nil {
+				t.Fatalf("missing contract for %s", tool.Name)
+			}
+		}
+		if tools.NextCursor == "" {
+			break
+		}
+		if seenCursors[tools.NextCursor] {
+			t.Fatal("tools/list cursor did not progress")
+		}
+		seenCursors[tools.NextCursor] = true
+		cursor = tools.NextCursor
 	}
-	if len(tools.Tools) != len(Catalogue()) {
-		t.Fatalf("tool count %d", len(tools.Tools))
+	if len(seenTools) != len(Catalogue()) {
+		t.Fatalf("tool count across cursor pages %d, want %d", len(seenTools), len(Catalogue()))
 	}
-	for _, tool := range tools.Tools {
-		if tool.InputSchema == nil || tool.OutputSchema == nil || tool.Annotations == nil {
-			t.Fatalf("missing contract for %s", tool.Name)
+	for _, spec := range Catalogue() {
+		if !seenTools[spec.Name] {
+			t.Errorf("tool missing from cursor enumeration: %s", spec.Name)
 		}
 	}
 	call := func(cs *mcp.ClientSession, name string, args any) *mcp.CallToolResult {

@@ -15,9 +15,10 @@ import (
 func Catalogue() []openplatform.OperationSpec {
 	specs := openplatform.Specs()
 	for i := range specs {
-		specs[i].OutputSchema = map[string]any{"type": "object", "properties": map[string]any{"data": specs[i].OutputSchema}, "required": []string{"data"}, "additionalProperties": false}
+		// MCP advertises a compact envelope; the service schema remains validated by the handler.
+		specs[i].OutputSchema = boundedOutputSchema
 	}
-	return specs
+	return append(specs, readToolSpec())
 }
 
 func resolveSchema(schema map[string]any) (*jsonschema.Resolved, error) {

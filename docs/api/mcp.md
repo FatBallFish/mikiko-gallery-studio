@@ -89,7 +89,7 @@ client_id, redirect_uri, resource, response_type=code,
 scope, code_challenge, code_challenge_method=S256, state
 ```
 
-- `redirect_uri` 须与注册值精确匹配；`resource` 须精确匹配 MCP 资源。
+- `redirect_uri` 默认须与注册或 Client ID Metadata Document 中的值精确匹配。RFC 8252 例外仅适用于 `http` loopback IP literal（如 `127.0.0.1`、`[::1]`）：授权请求可使用不同的有效端口，hostname、路径、query 和其余内容仍须精确一致，不转换主机别名或规范化路径。`localhost` 和 HTTPS 回调不适用动态端口例外；拒绝 userinfo、fragment 和非法端口。换取令牌时须精确使用授权请求中实际提交的完整回调 URI（包含实际端口）。`resource` 须精确匹配 MCP 资源。
 - scope 使用空格分隔。
 - 服务器 303 跳转至 `/?oauth_request=...#/oauth-consent`，使用 Studio 本地登录或 OIDC。
 - 浏览器登录保留 `oauth_request`，不要修改请求 ID 或回调。
@@ -115,8 +115,37 @@ client_id, resource, code, redirect_uri, code_verifier
 
 1. 使用 OAuth Bearer 令牌调用 MCP initialize。
 2. 读取协商的 `protocolVersion`，后续携带 `MCP-Protocol-Version`，按 SDK 要求发送初始化通知。
-3. 调用 `tools/list`、`tools/call`。工具结果为 `structuredContent:{data:...}`，文本 JSON 使用同样包装。
+3. 调用 `tools/list`、`tools/call`。普通工具结果为 `structuredContent:{data:...}`，文本 JSON 使用同样包装；超长结果使用下面的有界读取协议。
 4. 创建任务后保存持久 ID，断线后继续查询。字段见[操作映射](developer-field-map.md)。
+
+### 有界目录、模型摘要与结果续读
+
+单次工具结果以 UTF-8 序列化后的完整响应计算预算，目标小于 40 KiB，并预留 JSON-RPC 包装空间。普通小结果保持原结构。`tools/list` 每页最多五个工具；客户端须继续使用返回的 `nextCursor` 读取，直到该字段为空，不能只读取第一页。
+
+`list_image_models` 和 `list_video_models` 默认返回选型摘要，包含模型 code、名称、任务类型和可用的价格下限／版本字段，不再重复传输完整能力、图标和参数组合。每个模型给出 `details_path`，响应的 `details` 给出 `read_tool_result` 的 token。生成前按模型路径读取真实任务约束、价格、参考图／mask、视频 combinations 和输入角色；各维度不代表任意组合都可用，最终仍以 preflight 校验为准。
+
+其他工具的超长结果返回 `snapshot_token`、`type`、`path`、`offset` 和 `complete:false`。用只读工具继续查询：
+
+```json
+{
+  "token": "REPLACE_WITH_SNAPSHOT_TOKEN",
+  "path": "/model_groups/0/capabilities_by_task_type",
+  "offset": 0,
+  "limit": 100
+}
+```
+
+上述对象是 `read_tool_result` 的工具参数。`path` 使用 RFC 6901 JSON Pointer，根路径为空字符串，键中的 `~` 和 `/` 分别转义为 `~0`、`~1`。
+
+- 对象和数组返回 `type:"entries"` 与 `items`，每项包含 `key`、`path`、`value`。对象按键排序，数组按原下标排序。大项的 value 为 `type:"reference"` 描述符，按其 path 单独读取，不能把描述符当作原始数据。
+- 字符串返回 `type:"string"`，`value` 是合法 UTF-8 片段。offset 和 limit 单位为 UTF-8 字节；使用响应的 `next_offset` 继续，拼接 value 可还原原字符串。极小 limit 可能返回一个完整字符，避免切断中文。
+- 使用每页 `next_offset` 继续，直到 `complete:true`。标量的 `type:"value"` 携带原值。不要重发原始写入来获取下一页。
+
+快照只在当前服务进程保存，固定两分钟有效，绑定同一用户、客户端、grant、分组、凭据版本和权限集合；续读沿用原工具 scope，不要求新增 OAuth 权限。每次 HTTP 请求仍重新验证当前 OAuth 授权。快照表示原请求被授权时的数据，不实时刷新资源变化；令牌被撤销或 scope 变化不能继续读取。服务重启、多副本未命中、容量耗尽或到期会使快照不可用。
+
+单快照上限 8 MiB、单主体 16 MiB、进程总量 64 MiB，并限制条目数量。超过上限的只读查询须缩小原查询；不承诺无限缓存。signed URL 和 quote 的原到期时间不因快照而延长，过期后使用对应 access 或 preflight 工具重新获取。
+
+写入已经成功时，即使结果过大或快照分配失败，也返回 `operation_completed:true`、可用的持久 ID 与后续查询工具。保留该 ID，查询已创建的资源；**不要重提 create、自动更换幂等键或因快照失效重复付费任务**。
 
 ### 刷新与撤销
 

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -29,12 +30,61 @@ func validateClient(c Client) error {
 		}
 	}
 	for _, r := range c.RedirectURIs {
-		u, e := url.Parse(r)
-		if e != nil || len(r) > 2048 || u.Host == "" || u.User != nil || u.Fragment != "" || (u.Scheme != "https" && !(u.Scheme == "http" && loopbackHost(u.Hostname()))) {
+		if _, e := parseRedirectURI(r); e != nil {
 			return ErrInvalid
 		}
 	}
 	return nil
+}
+
+// parseRedirectURI validates both registered and requested callbacks, including
+// cached metadata. An explicit port must be a nonzero TCP port.
+func parseRedirectURI(raw string) (*url.URL, error) {
+	u, err := url.Parse(raw)
+	if err != nil || len(raw) > 2048 || u.Hostname() == "" || u.User != nil || strings.Contains(raw, "#") || (u.Scheme != "https" && !(u.Scheme == "http" && loopbackHost(u.Hostname()))) {
+		return nil, ErrInvalid
+	}
+	if port := u.Port(); port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 {
+			return nil, ErrInvalid
+		}
+		if _, _, err := net.SplitHostPort(u.Host); err != nil {
+			return nil, ErrInvalid
+		}
+	} else if strings.HasSuffix(u.Host, ":") || (strings.Contains(u.Host, ":") && !(strings.HasPrefix(u.Host, "[") && strings.HasSuffix(u.Host, "]"))) {
+		return nil, ErrInvalid
+	}
+	return u, nil
+}
+
+// redirectURIMatches implements RFC 8252's port-only exception for HTTP
+// loopback IP literals. Compare the original strings with only ports removed so
+// path escaping, query order, empty query markers and all other bytes stay exact.
+func redirectURIMatches(registered, requested string) bool {
+	r, err := parseRedirectURI(registered)
+	if err != nil {
+		return false
+	}
+	q, err := parseRedirectURI(requested)
+	if err != nil {
+		return false
+	}
+	if registered == requested {
+		return true
+	}
+	ip, err := netip.ParseAddr(r.Hostname())
+	if err != nil || !ip.IsLoopback() || ip.Zone() != "" || r.Scheme != "http" || q.Scheme != "http" || r.Hostname() != q.Hostname() {
+		return false
+	}
+	withoutPort := func(raw string, u *url.URL) string {
+		host := u.Host
+		if port := u.Port(); port != "" {
+			host = strings.TrimSuffix(host, ":"+port)
+		}
+		return strings.Replace(raw, "://"+u.Host, "://"+host, 1)
+	}
+	return withoutPort(registered, r) == withoutPort(requested, q)
 }
 
 type cachedClient struct {

@@ -211,7 +211,7 @@ func (s *Service) Begin(ctx context.Context, q url.Values) (string, error) {
 	}
 	ok := false
 	for _, r := range c.RedirectURIs {
-		if r == q.Get("redirect_uri") {
+		if redirectURIMatches(r, q.Get("redirect_uri")) {
 			ok = true
 		}
 	}

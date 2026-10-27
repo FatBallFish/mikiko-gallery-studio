@@ -2,8 +2,13 @@ package oauthserver
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net/netip"
+	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -129,6 +134,120 @@ func TestOAuthMetadataAddressPolicy(t *testing.T) {
 		}
 	}
 }
+func TestOAuthLoopbackMetadataAuthorization(t *testing.T) {
+	for _, host := range []string{"127.0.0.1", "[::1]"} {
+		t.Run(host, func(t *testing.T) {
+			ctx := context.Background()
+			store := &rateStore{rows: map[string]Record{}}
+			s, err := New(store, Config{PublicAPIURL: "https://studio.example", User: func(context.Context, int64) (User, error) { return User{ID: 7, Active: true}, nil }})
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Exercise the real metadata-cache resolution path without network or
+			// user-provided URLs, state, PKCE material or credentials.
+			const clientID = "https://client.example/native/client.json"
+			registered := "http://" + host + "/callback/test-native?aud=studio"
+			actual := "http://" + host + ":49152/callback/test-native?aud=studio"
+			metadata, err := json.Marshal(map[string]any{"client_id": clientID, "client_name": "Native test", "application_type": "native", "redirect_uris": []string{registered}, "token_endpoint_auth_method": "none"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var c Client
+			if err := json.Unmarshal(metadata, &c); err != nil || validateClient(c) != nil {
+				t.Fatalf("metadata: %v", err)
+			}
+			if err := store.Create(ctx, document("client:"+clientID, "client", 0, cachedClient{Client: c, Expires: time.Now().Add(time.Minute).Unix()})); err != nil {
+				t.Fatal(err)
+			}
+			verifier := strings.Repeat("t", 43)
+			sum := sha256.Sum256([]byte(verifier))
+			q := url.Values{"client_id": {clientID}, "redirect_uri": {actual}, "response_type": {"code"}, "resource": {s.Resource()}, "scope": {"account:read"}, "code_challenge_method": {"S256"}, "code_challenge": {base64.RawURLEncoding.EncodeToString(sum[:])}, "state": {"synthetic-state"}}
+			for _, bad := range []string{
+				strings.Replace(actual, "/callback/test-native", "/callback/other", 1),
+				strings.Replace(actual, host, "localhost", 1),
+				strings.Replace(actual, "aud=studio", "aud=other", 1),
+				strings.Replace(actual, host, "192.0.2.1", 1),
+				actual + "#fragment",
+				strings.Replace(actual, "://", "://user@", 1),
+				strings.Replace(actual, ":49152", ":65536", 1),
+			} {
+				q.Set("redirect_uri", bad)
+				if _, err := s.Begin(ctx, q); !errors.Is(err, ErrInvalid) {
+					t.Fatalf("accepted callback %s: %v", bad, err)
+				}
+			}
+			q.Set("redirect_uri", actual)
+			id, err := s.Begin(ctx, q)
+			if err != nil {
+				t.Fatal(err)
+			}
+			a, csrf, err := s.Consent(ctx, id, 7)
+			if err != nil || a.RedirectURI != actual {
+				t.Fatalf("actual callback not preserved: %v", err)
+			}
+			callback, err := s.Decide(ctx, id, 7, csrf, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			u, err := url.Parse(callback)
+			if err != nil || u.Host != host+":49152" || u.Query().Get("state") != "synthetic-state" || u.Query().Get("aud") != "studio" {
+				t.Fatalf("callback binding: %s %v", callback, err)
+			}
+			form := url.Values{"grant_type": {"authorization_code"}, "client_id": {clientID}, "resource": {s.Resource()}, "code": {u.Query().Get("code")}, "code_verifier": {verifier}}
+			for _, bad := range []string{registered, strings.Replace(actual, ":49152", ":49153", 1)} {
+				form.Set("redirect_uri", bad)
+				if _, err := s.Token(ctx, form); !errors.Is(err, ErrInvalid) {
+					t.Fatalf("token accepted changed callback %s: %v", bad, err)
+				}
+			}
+			form.Set("redirect_uri", actual)
+			token, err := s.Token(ctx, form)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if p, err := s.ValidateAccess(ctx, token.AccessToken); err != nil || p.ClientID != clientID || p.UserID != 7 {
+				t.Fatalf("access principal: %+v %v", p, err)
+			}
+		})
+	}
+}
+
+func TestOAuthRedirectPortExceptionBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		registered, requested string
+		want                  bool
+	}{
+		{"http://127.0.0.1/cb", "http://127.0.0.1:49152/cb", true},
+		{"http://[::1]/cb", "http://[::1]:49152/cb", true},
+		{"http://127.0.0.1:1234/cb", "http://127.0.0.1:49152/cb", true},
+		{"https://client.example/cb?x=1", "https://client.example/cb?x=1", true},
+		{"http://localhost:1234/cb", "http://localhost:1234/cb", true},
+		{"http://localhost/cb", "http://localhost:49152/cb", false},
+		{"http://127.0.0.1/cb", "http://127.0.0.2:49152/cb", false},
+		{"http://127.0.0.1/cb", "http://[::1]:49152/cb", false},
+		{"https://127.0.0.1/cb", "https://127.0.0.1:49152/cb", false},
+		{"https://client.example/cb", "https://client.example:443/cb", false},
+		{"http://127.0.0.1/cb", "http://127.0.0.1:49152/cb?", false},
+		{"http://127.0.0.1/cb?a=1&b=2", "http://127.0.0.1:49152/cb?b=2&a=1", false},
+		{"http://127.0.0.1/cb", "http://127.0.0.1:49152/%63b", false},
+		{"http://127.0.0.1/cb", "http://127.0.0.1:49152/a/../cb", false},
+		{"http://remote.example/cb", "http://remote.example:49152/cb", false},
+	} {
+		if got := redirectURIMatches(tc.registered, tc.requested); got != tc.want {
+			t.Errorf("match(%q, %q) = %v, want %v", tc.registered, tc.requested, got, tc.want)
+		}
+	}
+	for _, bad := range []string{
+		"http://127.0.0.1:0/cb", "http://127.0.0.1:65536/cb", "http://127.0.0.1:/cb", "http://127.0.0.1:abc/cb", "http://127.0.0.1:-1/cb",
+		"http://[::1]:65536/cb", "http://[::1]:/cb", "http://::1/cb",
+		"https://client.example:65536/cb", "http://user@127.0.0.1/cb", "http://127.0.0.1/cb#", "http://127.0.0.1/cb#fragment",
+	} {
+		if validateClient(Client{Name: "test", RedirectURIs: []string{bad}}) == nil || redirectURIMatches(bad, bad) {
+			t.Errorf("accepted invalid callback %q", bad)
+		}
+	}
+}
+
 func TestOAuthRejectUnsafeClientMetadata(t *testing.T) {
 	for _, redirect := range []string{"https://good.example/cb#fragment", "http://remote.example/cb", "https://user:pass@example.com/cb", "javascript:alert(1)", "https:///cb"} {
 		if validateClient(Client{Name: "App", RedirectURIs: []string{redirect}}) == nil {
