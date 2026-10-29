@@ -92,6 +92,8 @@ type Tx struct {
 	PublicImageInteraction *PublicImageInteractionClient
 	// PublicImageStat is the client for interacting with the PublicImageStat builders.
 	PublicImageStat *PublicImageStatClient
+	// PublicVideoInteraction is the client for interacting with the PublicVideoInteraction builders.
+	PublicVideoInteraction *PublicVideoInteractionClient
 	// RedeemCode is the client for interacting with the RedeemCode builders.
 	RedeemCode *RedeemCodeClient
 	// ReferenceAsset is the client for interacting with the ReferenceAsset builders.
@@ -325,6 +327,7 @@ func (tx *Tx) init() {
 	tx.ProviderModel = NewProviderModelClient(tx.config)
 	tx.PublicImageInteraction = NewPublicImageInteractionClient(tx.config)
 	tx.PublicImageStat = NewPublicImageStatClient(tx.config)
+	tx.PublicVideoInteraction = NewPublicVideoInteractionClient(tx.config)
 	tx.RedeemCode = NewRedeemCodeClient(tx.config)
 	tx.ReferenceAsset = NewReferenceAssetClient(tx.config)
 	tx.RefreshSession = NewRefreshSessionClient(tx.config)

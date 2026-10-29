@@ -489,6 +489,18 @@ func (f PublicImageStatFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Va
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PublicImageStatMutation", m)
 }
 
+// The PublicVideoInteractionFunc type is an adapter to allow the use of ordinary
+// function as PublicVideoInteraction mutator.
+type PublicVideoInteractionFunc func(context.Context, *ent.PublicVideoInteractionMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f PublicVideoInteractionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.PublicVideoInteractionMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PublicVideoInteractionMutation", m)
+}
+
 // The RedeemCodeFunc type is an adapter to allow the use of ordinary
 // function as RedeemCode mutator.
 type RedeemCodeFunc func(context.Context, *ent.RedeemCodeMutation) (ent.Value, error)

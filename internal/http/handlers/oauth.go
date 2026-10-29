@@ -2,9 +2,14 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
+	"math"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
 
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	"github.com/fatballfish/pic-gallery/internal/service/oauthserver"
@@ -29,6 +34,31 @@ func oauthJSON(w http.ResponseWriter, status int, v any) {
 func oauthError(w http.ResponseWriter, status int, code string) {
 	oauthJSON(w, status, map[string]string{"error": code})
 }
+func oauthFailure(w http.ResponseWriter, err error, invalid string) {
+	var rate *oauthserver.RateLimitError
+	switch {
+	case errors.As(err, &rate):
+		seconds := max(1, int(math.Ceil(float64(rate.RetryAfter)/float64(time.Second))))
+		w.Header().Set("Retry-After", strconv.Itoa(seconds))
+		oauthError(w, 429, "temporarily_unavailable")
+	case errors.Is(err, oauthserver.ErrRegistrationDisabled):
+		oauthError(w, 403, "access_denied")
+	case errors.Is(err, oauthserver.ErrInvalidScope):
+		oauthError(w, 400, "invalid_scope")
+	case errors.Is(err, oauthserver.ErrInvalidTarget):
+		oauthError(w, 400, "invalid_target")
+	case errors.Is(err, oauthserver.ErrUnsupportedGrant):
+		oauthError(w, 400, "unsupported_grant_type")
+	case errors.Is(err, oauthserver.ErrAuthorizationExpired):
+		oauthError(w, 400, "authorization_request_expired")
+	case errors.Is(err, oauthserver.ErrInvalidRequest):
+		oauthError(w, 400, "invalid_request")
+	case errors.Is(err, oauthserver.ErrInvalid), errors.Is(err, oauthserver.ErrNotFound):
+		oauthError(w, 400, invalid)
+	default:
+		oauthError(w, 503, "temporarily_unavailable")
+	}
+}
 func (h *OAuth) Metadata(w http.ResponseWriter, r *http.Request) {
 	oauthJSON(w, 200, h.service.Metadata())
 }
@@ -42,7 +72,7 @@ func (h *OAuth) Authorize(w http.ResponseWriter, r *http.Request) {
 	}
 	id, e := h.service.Begin(r.Context(), r.URL.Query())
 	if e != nil {
-		oauthError(w, 400, "invalid_request")
+		oauthFailure(w, e, "invalid_request")
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -61,18 +91,25 @@ func (h *OAuth) browserUser(r *http.Request) (int64, bool) {
 	u, ok := h.auth.GetUserByID(claims.UserID)
 	return u.ID, ok && u.Status == "active" && u.TokenVersion == claims.TokenVersion
 }
+func oauthBrowserError(w http.ResponseWriter, r *http.Request) {
+	code := "invalid_session"
+	if r.Header.Get("Authorization") == "" {
+		code = "login_required"
+	}
+	oauthError(w, http.StatusUnauthorized, code)
+}
 func (h *OAuth) Consent(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	uid, ok := h.browserUser(r)
 	if !ok {
-		oauthError(w, 401, "login_required")
+		oauthBrowserError(w, r)
 		return
 	}
 	if r.Method == "GET" {
 		a, csrf, e := h.service.Consent(r.Context(), r.URL.Query().Get("request_id"), uid)
 		if e != nil {
-			oauthError(w, 400, "invalid_request")
+			oauthFailure(w, e, "invalid_request")
 			return
 		}
 		httpx.WriteSuccess(w, r, 200, map[string]any{"request_id": a.ID, "client": a.Client, "resource": a.Resource, "scopes": a.Scopes, "csrf_token": csrf})
@@ -94,7 +131,7 @@ func (h *OAuth) Consent(w http.ResponseWriter, r *http.Request) {
 	}
 	redirect, e := h.service.Decide(r.Context(), body.RequestID, uid, body.CSRF, body.Allow)
 	if e != nil {
-		oauthError(w, 400, "invalid_request")
+		oauthFailure(w, e, "invalid_request")
 		return
 	}
 	httpx.WriteSuccess(w, r, 200, map[string]string{"redirect_uri": redirect})
@@ -122,7 +159,7 @@ func (h *OAuth) Token(w http.ResponseWriter, r *http.Request) {
 	}
 	v, e := h.service.Token(r.Context(), q)
 	if e != nil {
-		oauthError(w, 400, "invalid_grant")
+		oauthFailure(w, e, "invalid_grant")
 		return
 	}
 	oauthJSON(w, 200, v)
@@ -149,13 +186,14 @@ func (h *OAuth) Register(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 8192)
 	var c oauthserver.Client
-	if json.NewDecoder(r.Body).Decode(&c) != nil {
+	decoder := json.NewDecoder(r.Body)
+	if decoder.Decode(&c) != nil || decoder.Decode(new(any)) != io.EOF {
 		oauthError(w, 400, "invalid_client_metadata")
 		return
 	}
 	c, e := h.service.Register(r.Context(), c)
 	if e != nil {
-		oauthError(w, 400, "invalid_client_metadata")
+		oauthFailure(w, e, "invalid_client_metadata")
 		return
 	}
 	oauthJSON(w, 201, c)
@@ -164,13 +202,13 @@ func (h *OAuth) ConnectedApps(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	uid, ok := h.browserUser(r)
 	if !ok {
-		oauthError(w, 401, "login_required")
+		oauthBrowserError(w, r)
 		return
 	}
 	if r.Method == "GET" {
 		grants, e := h.service.Grants(r.Context(), uid)
 		if e != nil {
-			oauthError(w, 400, "invalid_request")
+			oauthFailure(w, e, "invalid_request")
 			return
 		}
 		httpx.WriteSuccess(w, r, 200, map[string]any{"items": grants})
@@ -181,7 +219,7 @@ func (h *OAuth) ConnectedApps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if e := h.service.Disconnect(r.Context(), uid, r.URL.Query().Get("grant_id")); e != nil {
-		oauthError(w, 400, "invalid_request")
+		oauthFailure(w, e, "invalid_request")
 		return
 	}
 	httpx.WriteSuccess(w, r, 200, map[string]bool{"revoked": true})

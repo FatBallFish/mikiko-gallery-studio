@@ -29,6 +29,11 @@ func (s *MediaStore) ListAssets(ctx context.Context, req mediaassetservice.Asset
 	if req.UserID <= 0 {
 		return mediaassetservice.AssetPage{}, errs.BadRequest("user id is required")
 	}
+	visibility, err := mediaassetservice.NormalizeVisibilityStatus(req.VisibilityStatus)
+	if err != nil {
+		return mediaassetservice.AssetPage{}, err
+	}
+	req.VisibilityStatus = visibility
 	limit := req.Limit
 	if limit <= 0 {
 		limit = 40
@@ -62,6 +67,19 @@ func (s *MediaStore) ListAssets(ctx context.Context, req mediaassetservice.Asset
 	if err != nil && !repoent.IsNotFound(err) {
 		return mediaassetservice.AssetPage{}, err
 	}
+	legacyVisibility := make(map[uuid.UUID]string, len(legacy))
+	for _, image := range legacy {
+		legacyVisibility[image.ID] = image.VisibilityStatus
+	}
+	// Image publication endpoints mutate the legacy record; use that authority
+	// for projected assets too, rather than a stale backfill snapshot.
+	for index := range items {
+		if id := items[index].LegacyImageID; id != nil {
+			if visibility, exists := legacyVisibility[*id]; exists {
+				items[index].VisibilityStatus = visibility
+			}
+		}
+	}
 	for _, image := range legacy {
 		if _, exists := projectedLegacy[image.ID]; exists {
 			continue
@@ -92,6 +110,25 @@ func (s *MediaStore) ListAssets(ctx context.Context, req mediaassetservice.Asset
 	return page, nil
 }
 
+// projectMediaAsset resolves publication authority on the same client/transaction
+// as the read or mutation. Include soft-deleted legacy rows so delete responses
+// and retained references keep the same publication projection.
+func projectMediaAsset(ctx context.Context, client *repoent.Client, entity *repoent.MediaAsset) (mediaassetservice.Asset, error) {
+	asset := mapMediaAsset(entity)
+	if asset.LegacyImageID == nil {
+		return asset, nil
+	}
+	legacy, err := client.ImageResult.Query().Where(imageresult.IDEQ(*asset.LegacyImageID), imageresult.UserIDEQ(asset.UserID)).Only(ctx)
+	if repoent.IsNotFound(err) {
+		return asset, nil
+	}
+	if err != nil {
+		return mediaassetservice.Asset{}, err
+	}
+	asset.VisibilityStatus = legacy.VisibilityStatus
+	return asset, nil
+}
+
 func (s *MediaStore) GetAsset(ctx context.Context, userID int64, id uuid.UUID) (mediaassetservice.Asset, error) {
 	entity, err := s.client.MediaAsset.Query().Where(
 		mediaasset.IDEQ(id),
@@ -102,7 +139,7 @@ func (s *MediaStore) GetAsset(ctx context.Context, userID int64, id uuid.UUID) (
 		),
 	).Only(ctx)
 	if err == nil {
-		return mapMediaAsset(entity), nil
+		return projectMediaAsset(ctx, s.client, entity)
 	}
 	if !repoent.IsNotFound(err) {
 		return mediaassetservice.Asset{}, err
@@ -200,7 +237,7 @@ func (s *MediaStore) UpdateAsset(ctx context.Context, req mediaassetservice.Upda
 				return mediaassetservice.Asset{}, err
 			}
 		}
-		return mapMediaAsset(updated), nil
+		return projectMediaAsset(ctx, tx.Client(), updated)
 	})
 }
 
@@ -238,7 +275,7 @@ func (s *MediaStore) DeleteAsset(ctx context.Context, req mediaassetservice.Dele
 				return mediaassetservice.Asset{}, err
 			}
 		}
-		return mapMediaAsset(updated), nil
+		return projectMediaAsset(ctx, tx.Client(), updated)
 	})
 }
 
@@ -302,7 +339,7 @@ func (s *MediaStore) RetryAssetProcessing(ctx context.Context, userID int64, id 
 		if err != nil {
 			return mediaassetservice.Asset{}, err
 		}
-		return mapMediaAsset(updated), nil
+		return projectMediaAsset(ctx, tx.Client(), updated)
 	})
 }
 
@@ -431,6 +468,16 @@ func mediaAssetMatches(item mediaassetservice.Asset, req mediaassetservice.Asset
 	}
 	if req.Status != "" && !strings.EqualFold(item.Status, strings.TrimSpace(req.Status)) {
 		return false
+	}
+	if req.VisibilityStatus != "" {
+		requested, err := mediaassetservice.NormalizeVisibilityStatus(req.VisibilityStatus)
+		if err != nil {
+			return false
+		}
+		actual, err := mediaassetservice.NormalizeVisibilityStatus(item.VisibilityStatus)
+		if err != nil || (requested != "" && requested != actual) {
+			return false
+		}
 	}
 	keyword := strings.ToLower(strings.TrimSpace(req.Keyword))
 	return keyword == "" || strings.Contains(strings.ToLower(item.Name), keyword)

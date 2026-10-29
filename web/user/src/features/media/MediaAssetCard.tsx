@@ -4,7 +4,7 @@ import type { MediaAccessProjection, MediaAsset } from '../../../../shared/api-t
 import { cn } from '../../../../shared/classnames'
 import { userApi } from '../../../../shared/user-api'
 import { formatDate, useApp } from '../../components'
-import { canHoverPreview, mediaAudioCoordinator, mediaHoverScheduler } from './mediaExperience'
+import { canHoverPreview, mediaAssetMetadata, mediaAudioCoordinator, mediaHoverScheduler } from './mediaExperience'
 
 type Props = {
   asset: MediaAsset
@@ -55,19 +55,6 @@ function useImagePreview(asset: MediaAsset) {
       }
     },
   }
-}
-
-function mediaFormat(asset: MediaAsset) {
-  return asset.container?.toUpperCase() || asset.mime_type.split('/')[1]?.toUpperCase() || asset.mime_type
-}
-
-function mediaDimensions(asset: MediaAsset) {
-  if (asset.width && asset.height) return `${asset.width}×${asset.height}`
-  if (asset.duration_ms) {
-    const seconds = Math.round(asset.duration_ms / 100) / 10
-    return `${seconds} 秒`
-  }
-  return ''
 }
 
 function mediaStatusBadge(asset: MediaAsset) {
@@ -162,10 +149,8 @@ export function MediaAssetCard({ asset, selected = false, selectionMode = false,
   }
 
   const statusBadge = mediaStatusBadge(asset)
-  const dimensions = mediaDimensions(asset)
-  const format = mediaFormat(asset)
   const typeLabel = mediaTypeLabels[asset.media_type] ?? '文件'
-  const meta = [asset.group_name, dimensions, format].filter(Boolean).join(' · ')
+  const meta = mediaAssetMetadata(asset)
   const hasPreview = Boolean(imagePreview.access?.url || posterURL || hoverURL || waveformURL)
 
   return (
@@ -231,7 +216,7 @@ export function MediaAssetCard({ asset, selected = false, selectionMode = false,
           <span>{formatDate(asset.created_at)}</span>
         </div>
       </div>
-      {footer ? <footer className="gl-card__footer" data-media-selection-control>{footer}</footer> : null}
+      {footer || asset.group_name ? <footer className="gl-card__footer" data-media-selection-control>{footer}{asset.group_name ? <span className="media-asset-group" title={asset.group_name}>{asset.group_name}</span> : null}</footer> : null}
       {audioURL ? (
         <audio
           ref={audioRef}

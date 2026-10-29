@@ -1,5 +1,3 @@
-import type { ReactNode } from 'react'
-
 export type GuideId = 'quickstart' | 'authentication' | 'native-api' | 'openai-compatible' | 'image-editing' | 'reference-images' | 'task-polling' | 'capabilities' | 'estimates' | 'errors' | 'rate-limits' | 'troubleshooting' | 'migration' | 'sdk-examples' | 'mcp' | 'inventory'
 
 export type Guide = {
@@ -8,7 +6,7 @@ export type Guide = {
   title: string
   summary: string
   searchText: string
-  content: ReactNode
+  content: string
 }
 
 export type SearchItem = {

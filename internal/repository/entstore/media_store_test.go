@@ -23,6 +23,44 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/storage"
 )
 
+func TestMediaAssetResponsesUseLegacyPublicationAuthority(t *testing.T) {
+	for _, visibility := range []string{"public", "approved"} {
+		t.Run(visibility, func(t *testing.T) {
+			ctx := t.Context()
+			client, err := repoent.Open(dialect.SQLite, "file:media-authority-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = client.Close() })
+			if err := client.Schema.Create(ctx); err != nil {
+				t.Fatal(err)
+			}
+			project := client.Project.Create().SetUserID(44).SetName("Default").SetNameKey("default").SetIsDefault(true).SaveX(ctx)
+			task := client.ImageTask.Create().SetUserID(44).SetProjectID(project.ID).SetTaskType("text_to_image").SetPrompt("authority").SetAbstractModel("basic").SaveX(ctx)
+			image := client.ImageResult.Create().SetTaskID(task.ID).SetUserID(44).SetProjectID(project.ID).SetObjectKey("image.png").SetMimeType("image/png").SetSha256("hash").SetVisibilityStatus(visibility).SaveX(ctx)
+			entity := client.MediaAsset.Create().SetUserID(44).SetProjectID(project.ID).SetLegacyImageResultID(image.ID).SetName("image.png").SetNameKey("image.png").SetMediaType("image").SetSourceType("generated").SetStatus("ready").SetVisibilityStatus("private").SetStorageDriver("local").SetObjectKey("image.png").SetMimeType("image/png").SetFileSizeBytes(1).SaveX(ctx)
+			store := NewMediaStore(client)
+			check := func(asset mediaassetservice.Asset, err error) {
+				t.Helper()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if asset.VisibilityStatus != visibility {
+					t.Fatalf("visibility=%q want legacy %q", asset.VisibilityStatus, visibility)
+				}
+			}
+			check(store.GetAsset(ctx, 44, entity.ID))
+			name := "renamed.png"
+			check(store.UpdateAsset(ctx, mediaassetservice.UpdateAssetRequest{UserID: 44, AssetID: entity.ID, ExpectedVersion: 1, Name: &name}))
+			group := "Selected"
+			check(store.UpdateAsset(ctx, mediaassetservice.UpdateAssetRequest{UserID: 44, AssetID: entity.ID, ExpectedVersion: 2, GroupName: &group}))
+			check(store.GetAsset(ctx, 44, entity.ID))
+			check(store.RetryAssetProcessing(ctx, 44, entity.ID))
+			check(store.DeleteAsset(ctx, mediaassetservice.DeleteAssetRequest{UserID: 44, AssetID: entity.ID, ExpectedVersion: 4}))
+		})
+	}
+}
+
 func TestDeleteMediaAssetEnqueuesOriginalAndDerivativeCleanup(t *testing.T) {
 	ctx := t.Context()
 	client, err := repoent.Open(dialect.SQLite, "file:media-delete-cleanup-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")

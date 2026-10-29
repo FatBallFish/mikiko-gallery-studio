@@ -83,6 +83,53 @@ func TestUnifiedMediaAssetsAPIProjectsNewAndLegacyAssetsWithOwnerIsolation(t *te
 		!bytes.Contains(imageList.Body.Bytes(), []byte(`"source_task_kind":"image"`)) || !bytes.Contains(imageList.Body.Bytes(), []byte(taskID.String())) {
 		t.Fatalf("legacy projection list=%d %s", imageList.Code, imageList.Body.String())
 	}
+	// Publication filters apply to the merged collection before cursor slicing.
+	if err := client.MediaAsset.UpdateOneID(assetID).SetVisibilityStatus("approved").Exec(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.ImageResult.UpdateOneID(legacyID).SetVisibilityStatus("public").Exec(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	// A projected image must read publication state from its legacy authority.
+	if _, err := client.MediaAsset.Create().SetID(legacyID).SetLegacyImageResultID(legacyID).SetUserID(ownerID).SetProjectID(project.ID).
+		SetName("legacy.png").SetNameKey("legacy.png").SetMediaType("image").SetSourceType("generated").SetStatus("ready").SetVisibilityStatus("private").
+		SetStorageDriver("local").SetObjectKey("generated-images/legacy.png").SetMimeType("image/png").SetFileSizeBytes(1).Save(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	client.MediaAsset.Create().SetUserID(ownerID).SetProjectID(project.ID).
+		SetName("a-private.mp4").SetNameKey("a-private.mp4").SetMediaType("video").SetSourceType("local_upload").SetStatus("ready").SetVisibilityStatus("private").
+		SetStorageDriver("local").SetObjectKey("private.mp4").SetMimeType("video/mp4").SetFileSizeBytes(1).SaveX(t.Context())
+	for _, alias := range []string{"public", "approved"} {
+		path := "/api/agent/media/v1/assets?project_id=" + project.ID.String() + "&visibility_status=" + alias + "&limit=1&sort_by=name&sort_order=asc"
+		first := authenticatedMediaRequest(t, handler, owner.AccessToken, http.MethodGet, path, "", nil)
+		var page struct {
+			Data mediaassetservice.AssetPage `json:"data"`
+		}
+		if err := json.Unmarshal(first.Body.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		if first.Code != http.StatusOK || len(page.Data.Items) != 1 || page.Data.NextCursor == "" {
+			t.Fatalf("first filtered page=%d %s", first.Code, first.Body.String())
+		}
+		second := authenticatedMediaRequest(t, handler, owner.AccessToken, http.MethodGet, path+"&cursor="+page.Data.NextCursor, "", nil)
+		var next struct {
+			Data mediaassetservice.AssetPage `json:"data"`
+		}
+		if err := json.Unmarshal(second.Body.Bytes(), &next); err != nil {
+			t.Fatal(err)
+		}
+		if second.Code != http.StatusOK || len(next.Data.Items) != 1 || next.Data.NextCursor != "" || next.Data.Items[0].ID == page.Data.Items[0].ID {
+			t.Fatalf("second filtered page=%d %s", second.Code, second.Body.String())
+		}
+	}
+	privateList := authenticatedMediaRequest(t, handler, owner.AccessToken, http.MethodGet, "/api/agent/media/v1/assets?visibility_status=private", "", nil)
+	if privateList.Code != http.StatusOK || bytes.Contains(privateList.Body.Bytes(), []byte(legacyID.String())) {
+		t.Fatalf("stale projected state=%d %s", privateList.Code, privateList.Body.String())
+	}
+	invalidList := authenticatedMediaRequest(t, handler, owner.AccessToken, http.MethodGet, "/api/agent/media/v1/assets?visibility_status=invalid", "", nil)
+	if invalidList.Code != http.StatusBadRequest {
+		t.Fatalf("invalid visibility=%d %s", invalidList.Code, invalidList.Body.String())
+	}
 	foreign := authenticatedMediaRequest(t, handler, other.AccessToken, http.MethodGet, "/api/agent/media/v1/assets/"+assetID.String(), "", nil)
 	if foreign.Code != http.StatusNotFound {
 		t.Fatalf("foreign detail=%d %s", foreign.Code, foreign.Body.String())

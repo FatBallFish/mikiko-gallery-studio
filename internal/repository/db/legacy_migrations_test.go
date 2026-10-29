@@ -105,7 +105,7 @@ func TestMigrateV37Schema7WithExistingKeysAndMediaOnPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatalf("official schema7 -> schema10 migration: %v", err)
 	}
-	if result.Previous == nil || result.Previous.DatabaseSchemaVersion != 7 || result.Current.DatabaseSchemaVersion != 10 {
+	if result.Previous == nil || result.Previous.DatabaseSchemaVersion != 7 || result.Current.DatabaseSchemaVersion != CurrentDatabaseSchemaVersion {
 		t.Fatalf("unexpected upgrade result: %+v", result)
 	}
 	keys, err := client.APIKey.Query().All(ctx)

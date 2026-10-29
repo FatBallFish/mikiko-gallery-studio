@@ -19,13 +19,14 @@ import { parseUserHashState, userHashForRoute, type UserRouteOptions } from './r
 import { oidcAuthorizeHref, readOIDCCallback, sanitizeOIDCReturnTo, stripSSOSilent } from './oidcLogin'
 import { applyThemePreference, readLocalThemePreference, serializeThemePreference, themePreferenceFromProfile, writeLocalThemePreference } from './themePreferences'
 import { DEFAULT_FEATURE_FLAGS, featureAvailability } from './featureAvailability'
+import { createCanvasRouteLoading } from './canvasRouteLoading'
 
 const sessionKey = 'pic-gallery-user-session'
 const LandingPage = lazy(() => import('./pages/LandingPage'))
 const CreationPage = lazy(async () => ({ default: (await import('./features/creation/CreationPage')).CreationPage }))
 const MediaAssetsPage = lazy(async () => ({ default: (await import('./features/media/MediaAssetsPage')).MediaAssetsPage }))
-const CanvasListPage = lazy(async () => ({ default: (await import('./features/canvas/CanvasListPage')).CanvasListPage }))
-const CanvasEditorPage = lazy(async () => ({ default: (await import('./features/canvas/CanvasEditorPage')).CanvasEditorPage }))
+const CanvasListRoute = createCanvasRouteLoading(async () => ({ default: (await import('./features/canvas/CanvasListPage')).CanvasListPage }))
+const CanvasEditorRoute = createCanvasRouteLoading(async () => ({ default: (await import('./features/canvas/CanvasEditorPage')).CanvasEditorPage }))
 
 function WorkspaceRouteFallback() {
   return <div className="grid min-h-full place-items-center text-sm text-[var(--muted)]" role="status">正在载入创作工作台...</div>
@@ -100,7 +101,10 @@ function UserApplication() {
   ))
 
   const notify = useCallback((tone: ToastTone, message: string) => {
-    setToasts((items) => [...items, { id: Date.now() + Math.random(), tone, message, durationMs: 4200 }])
+    setToasts((items) => [...items, { id: Date.now() + Math.random(), tone, message, durationMs: tone === 'error' || tone === 'warn' ? 6500 : 4200 }].slice(-4))
+  }, [])
+  const dismissToast = useCallback((id: number) => {
+    setToasts((items) => items.filter((toast) => toast.id !== id))
   }, [])
 
   useEffect(() => {
@@ -330,7 +334,7 @@ function UserApplication() {
       setSession(sessionRef.current)
       window.localStorage.setItem(sessionKey, JSON.stringify(sessionRef.current))
     } catch {
-      notify('error', '主题偏好已应用到本机，但暂未同步到账户')
+      notify('warn', '主题偏好已应用到本机，但暂未同步到账户')
     }
   }, [installSession, notify, themePreference])
 
@@ -428,7 +432,9 @@ function UserApplication() {
         return <Shell><Suspense fallback={<WorkspaceRouteFallback />}><CreationPage initialTaskId={routeTaskId} initialMedia={routeMedia} initialAssetId={routeAssetId} videoCreationEnabled={featureFlags.video_creation} /></Suspense></Shell>
       case 'creative-canvas':
         if (!featureAvailability(featureFlags).canOpenCanvasHistory(routeCanvasId)) return <Shell><HomePage /></Shell>
-        return <Suspense fallback={<WorkspaceRouteFallback />}>{routeCanvasId ? <CanvasEditorPage canvasID={routeCanvasId} onBack={() => writeHash('creative-canvas')} /> : <Shell scrollMode="document"><CanvasListPage onOpen={(canvasID) => writeHash('creative-canvas', { canvasId: canvasID })} /></Shell>}</Suspense>
+        return routeCanvasId
+          ? <CanvasEditorRoute key={routeCanvasId} pageProps={{ canvasID: routeCanvasId, onBack: () => writeHash('creative-canvas') }} onBack={() => writeHash('creative-canvas')} backLabel="返回画布列表" />
+          : <Shell scrollMode="document"><CanvasListRoute pageProps={{ onOpen: (canvasID) => writeHash('creative-canvas', { canvasId: canvasID }) }} onBack={() => writeHash('home')} backLabel="返回工作台" /></Shell>
       case 'gallery':
         return <Shell><Suspense fallback={<WorkspaceRouteFallback />}><MediaAssetsPage /></Suspense></Shell>
       case 'projects':
@@ -460,9 +466,9 @@ function UserApplication() {
   return (
     <AppContext.Provider value={appValue}>
       {session && projectUserID ? (
-        <ProjectProvider key={projectUserID} userID={projectUserID}>{page}{featureFlags.media_upload ? <UploadTray hidden={route === 'creative-canvas' && Boolean(routeCanvasId)} /> : null}</ProjectProvider>
+        <ProjectProvider key={projectUserID} userID={projectUserID}>{page}{featureFlags.media_upload ? <UploadTray hidden={route === 'oauth-consent' || (route === 'creative-canvas' && Boolean(routeCanvasId))} /> : null}</ProjectProvider>
       ) : page}
-      <ToastViewport toasts={toasts} onExpire={(id) => setToasts((items) => items.filter((toast) => toast.id !== id))} />
+      <ToastViewport toasts={toasts} onExpire={dismissToast} />
     </AppContext.Provider>
   )
 }

@@ -739,6 +739,20 @@ export type CashierOrderSyncResponse = {
   order: CashierOrder
   sync: CashierOrderSyncResult
 }
+export type DeveloperEndpoints = {
+  canonical_configured: boolean
+  api_origin: string
+  rest_base: string
+  openai_base: string
+  mcp_url: string
+  disabled_reason: string
+  authorization_endpoint: string
+  token_endpoint: string
+  registration_endpoint: string
+  protected_resource_metadata_url: string
+  web_url: string
+}
+
 export type MediaAccessPurpose = 'thumbnail' | 'poster' | 'hover' | 'preview' | 'waveform' | 'content' | 'download'
 export type MediaAccessProjection = {
   url: string
@@ -784,6 +798,7 @@ export type MediaAssetFilters = {
   source_type?: string
   group_name?: string
   status?: string
+  visibility_status?: 'all' | 'private' | 'pending' | 'public' | 'rejected' | 'offline'
   keyword?: string
   sort_by?: 'created_at' | 'updated_at' | 'name' | 'file_size_bytes' | 'duration_ms'
   sort_order?: 'asc' | 'desc'

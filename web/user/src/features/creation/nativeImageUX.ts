@@ -2,11 +2,11 @@ import type { NativeImageAnnotation, NativeImageProfile, NativeImageRequestField
 
 /** User drafts only carry controls the user can currently see. Platform defaults stay server-side. */
 export function userNativeImageFields(value: NativeImageRequestFields, profile: NativeImageProfile | undefined, referenceCount: number): NativeImageRequestFields {
-  if (!profile) return { operation: undefined, native_options: undefined, seed: undefined, negative_prompt: undefined }
+  if (!profile) return { operation: value.operation === 'layer_decomposition' ? 'layer_decomposition' : undefined, native_options: undefined, seed: undefined, negative_prompt: undefined }
   const negative = profile.negative_prompt ? value.native_options?.negative_prompt ?? value.negative_prompt : undefined
   const annotations = profile.adapter === 'seedream_image' && referenceCount > 0 ? value.native_options?.annotations : undefined
   return {
-    operation: value.operation === 'layer_decomposition' && profile.layer_decomposition && profile.operations.includes('layer_decomposition') ? 'layer_decomposition' : referenceCount ? 'edit' : 'generate',
+    operation: value.operation === 'layer_decomposition' ? 'layer_decomposition' : referenceCount ? 'edit' : 'generate',
     seed: undefined, negative_prompt: undefined,
     native_options: negative || annotations?.length ? { ...(negative ? { negative_prompt: negative } : {}), ...(annotations?.length ? { annotations } : {}) } : undefined,
   }

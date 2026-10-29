@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/fatballfish/pic-gallery/internal/service/mediaasset"
 	"github.com/fatballfish/pic-gallery/internal/service/openplatform"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -29,6 +30,8 @@ func (f ValidateAccessFunc) ValidateAccess(ctx context.Context, token string) (o
 
 // Config URLs must come from validated deployment configuration, never request Host.
 type Config struct {
+	// Preview opens only an already-authorized canonical asset capability, without HTTP fetching.
+	Preview             func(context.Context, openplatform.Principal, string) (mediaasset.ContentStream, error)
 	Service             Executor
 	Validator           AccessValidator
 	ResourceURL         string
@@ -61,13 +64,67 @@ func NewHandler(cfg Config) (http.Handler, error) {
 		}
 		origins[u.Scheme+"://"+u.Host] = true
 	}
-	server := mcp.NewServer(&mcp.Implementation{Name: "studio", Version: "1.0.0"}, nil)
+	server := mcp.NewServer(&mcp.Implementation{Name: "studio", Version: "1.0.0"}, &mcp.ServerOptions{PageSize: 5})
+	cache := newSnapshotCache()
+	readSpec := readToolSpec()
+	readInputSchema, err := resolveSchema(readSpec.InputSchema)
+	if err != nil {
+		return nil, fmt.Errorf("MCP tool %s input schema: %w", readSpec.Name, err)
+	}
+	server.AddTool(&mcp.Tool{Name: readSpec.Name, Description: readSpec.Description, InputSchema: readSpec.InputSchema, OutputSchema: boundedOutputSchema, Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: boolPtr(false)}}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		principal, ok := ctx.Value(principalKey{}).(openplatform.Principal)
+		if !ok {
+			return toolError("unauthorized"), nil
+		}
+		args := req.Params.Arguments
+		if len(args) == 0 {
+			args = json.RawMessage(`{}`)
+		}
+		var input any
+		if json.Unmarshal(args, &input) != nil || readInputSchema.Validate(input) != nil {
+			return toolError("invalid tool arguments"), nil
+		}
+		var in struct {
+			Token  string `json:"token"`
+			Path   string `json:"path"`
+			Offset int    `json:"offset"`
+			Limit  int    `json:"limit"`
+		}
+		_ = json.Unmarshal(args, &in)
+		if in.Offset < 0 || in.Limit < 0 {
+			return toolError("offset and limit must be non-negative"), nil
+		}
+		data, err := cache.get(in.Token, principal, readSpec.Scope)
+		if err != nil {
+			return toolError(err.Error()), nil
+		}
+		root, err := decodeResult(data)
+		if err != nil {
+			return toolError("snapshot is invalid"), nil
+		}
+		value, err := jsonPointer(root, in.Path)
+		if err != nil {
+			return toolError(err.Error()), nil
+		}
+		env, err := readPage(in.Token, in.Path, in.Offset, in.Limit, value)
+		if err != nil {
+			return toolError(err.Error()), nil
+		}
+		return envelopeResult(env), nil
+	})
+	nativeOutputs := map[string]map[string]any{}
+	for _, operation := range openplatform.Specs() {
+		nativeOutputs[operation.Name] = map[string]any{"type": "object", "properties": map[string]any{"data": operation.OutputSchema}, "required": []string{"data"}, "additionalProperties": false}
+	}
 	for _, spec := range Catalogue() {
+		if spec.Name == readSpec.Name {
+			continue
+		}
 		inputSchema, err := resolveSchema(spec.InputSchema)
 		if err != nil {
 			return nil, fmt.Errorf("MCP tool %s input schema: %w", spec.Name, err)
 		}
-		outputSchema, err := resolveSchema(spec.OutputSchema)
+		outputSchema, err := resolveSchema(nativeOutputs[spec.Name])
 		if err != nil {
 			return nil, fmt.Errorf("MCP tool %s output schema: %w", spec.Name, err)
 		}
@@ -97,16 +154,38 @@ func NewHandler(cfg Config) (http.Handler, error) {
 			output := map[string]any{"data": result}
 			data, err := json.Marshal(output)
 			if err != nil {
+				if !spec.ReadOnly {
+					return envelopeResult(receipt(result, spec.Name)), nil
+				}
 				return toolError("could not encode operation result"), nil
 			}
 			var encoded any
-			if err := json.Unmarshal(data, &encoded); err != nil {
+			err = json.Unmarshal(data, &encoded)
+			if err != nil {
+				if !spec.ReadOnly {
+					return envelopeResult(receipt(result, spec.Name)), nil
+				}
 				return toolError("could not encode operation result"), nil
 			}
 			if err := outputSchema.Validate(encoded); err != nil {
+				if !spec.ReadOnly {
+					return envelopeResult(receipt(result, spec.Name)), nil
+				}
 				return toolError("operation returned an invalid result"), nil
 			}
-			return &mcp.CallToolResult{StructuredContent: output, Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}, nil
+			if spec.Name == "list_image_models" || spec.Name == "list_video_models" {
+				token, err := cache.put(principal, spec.Scope, result)
+				if err != nil {
+					return toolError("model catalogue exceeds snapshot capacity; narrow the query"), nil
+				}
+				summary := modelSummary(result)
+				out := map[string]any{"data": summary, "details": map[string]any{"tool": "read_tool_result", "token": token, "path": "", "expires_in_seconds": 120, "instructions": "Read entries at the original model path for full task-specific constraints and prices before preflight."}}
+				if r := envelopeResult(out); fitsResult(r) {
+					return r, nil
+				}
+				return boundedResult(principal, out, cache, spec.Scope, true, spec.Name), nil
+			}
+			return withImagePreview(ctx, cfg, principal, spec.Name, arguments, result, boundedResult(principal, result, cache, spec.Scope, spec.ReadOnly, spec.Name)), nil
 		})
 	}
 	transport := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, MaxRequestBodyBytes: 1 << 20})
@@ -158,6 +237,9 @@ func challenge(w http.ResponseWriter, metadata, scope string, invalid bool) {
 	http.Error(w, "OAuth bearer access token required", http.StatusUnauthorized)
 }
 func toolError(message string) *mcp.CallToolResult {
+	if len(message) > 4096 {
+		message = strings.ToValidUTF8(message[:4096], "") + " (diagnostic shortened)"
+	}
 	return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: message}}}
 }
 func scopeError(scope, metadata string) *mcp.CallToolResult {

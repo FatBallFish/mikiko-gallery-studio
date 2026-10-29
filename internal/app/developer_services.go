@@ -156,7 +156,7 @@ func configureDeveloperServices(cfg config.Config, client *repoent.Client, api *
 	oauthMux.HandleFunc("/oauth/register", oauthHTTP.Register)
 	oauthMux.HandleFunc("/api/v1/oauth/consent", oauthHTTP.Consent)
 	oauthMux.HandleFunc("/api/v1/oauth/connected-apps", oauthHTTP.ConnectedApps)
-	mcp, err := mcpserver.NewHandler(mcpserver.Config{Service: shared, ResourceURL: oauth.Resource(), ResourceMetadataURL: strings.TrimRight(cfg.Runtime.PublicAPIURL, "/") + "/.well-known/oauth-protected-resource/mcp", AllowedOrigins: cfg.HTTP.CORSAllowedOrigins, Validator: mcpserver.ValidateAccessFunc(func(ctx context.Context, token string) (openplatform.Principal, error) {
+	mcp, err := mcpserver.NewHandler(mcpserver.Config{Preview: access.OpenPreviewURL, Service: shared, ResourceURL: oauth.Resource(), ResourceMetadataURL: strings.TrimRight(cfg.Runtime.PublicAPIURL, "/") + "/.well-known/oauth-protected-resource/mcp", AllowedOrigins: cfg.HTTP.CORSAllowedOrigins, Validator: mcpserver.ValidateAccessFunc(func(ctx context.Context, token string) (openplatform.Principal, error) {
 		p, e := oauth.ValidateAccess(ctx, token)
 		if e != nil {
 			return openplatform.Principal{}, e

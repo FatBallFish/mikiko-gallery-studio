@@ -7,6 +7,8 @@ import type { CanvasDocument, CanvasEdge, CanvasNode } from './core/types'
 import { inspectCanvasConnection, nextCanvasReferenceOrdinal } from './core/canvasState'
 import { canvasMediaSize } from './core/canvasMediaSizing'
 import { canvasNodeMediaKind, isCanvasGenerationNode } from './core/canvasNodeKinds'
+import { nativeLayerModeUnavailableReason } from '../../pages/workspaceParameters'
+import { nativeImageReferencePolicy } from '../../../../shared/native-image'
 import type { createCanvasStore } from './store/canvasStore'
 
 export function canvasEstimateSufficient(balance: string | undefined, estimate: { points?: string; detail?: Record<string, unknown> }) {
@@ -98,8 +100,11 @@ export function canvasReferencePolicy(document: CanvasDocument, targetID: string
     const scoped = model.capabilities_by_task_type?.[task]
     const profile = scoped?.native_image_profile ?? model.native_image_profile
     const limit = scoped?.max_reference_image_count ?? (model.capabilities_by_task_type ? undefined : model.max_reference_image_count) ?? profile?.max_reference_images
-    if (draft.operation === 'layer_decomposition' && !profile?.operations.includes('layer_decomposition')) return { limits: {}, reason: '当前型号不支持图层拆分，请手动调整操作' }
-    return { limits: { image: draft.operation === 'layer_decomposition' ? 1 : limit, video: 0, audio: 0, first_frame: 0, last_frame: 0 } }
+    if (draft.operation === 'layer_decomposition') {
+      const reason = nativeLayerModeUnavailableReason(profile, (scoped?.native_image_layer_pricing_confirmed ?? model.native_image_layer_pricing_confirmed) === true, scoped?.native_image_layer_unavailable_reason ?? model.native_image_layer_unavailable_reason)
+      if (reason) return { limits: {}, reason }
+    }
+    return { limits: { image: draft.operation === 'layer_decomposition' ? Math.min(1, limit ?? 1) : limit, video: 0, audio: 0, first_frame: 0, last_frame: 0 } }
   }
   if (!context.video) return { limits: {}, reason: '正在加载视频模型能力' }
   const model = context.video.model_groups.find((item) => item.code === code)
@@ -128,6 +133,16 @@ export function validateCanvasReference(document: CanvasDocument, source: Canvas
   const expected = role === 'reference_video' ? 'video' : role === 'reference_audio' ? 'audio' : 'image'
   if (canvasNodeMediaKind(source) !== expected) return `请选择${expected === 'video' ? '视频' : expected === 'audio' ? '音频' : '图片'}素材`
   if (document.edges.some((edge) => edge.target === targetID && (edge.source === source.id || document.nodes.find((node) => node.id === edge.source)?.asset_id === source.asset_id))) return '该素材已经添加'
+  if (target.type === 'image_v2' && context?.image) {
+    const draft = (target.payload?.draft ?? {}) as Record<string, unknown>
+    const model = context.image.model_groups.find((item) => item.code === (draft.route_model_code ?? draft.abstract_model))
+    const profile = model?.capabilities_by_task_type?.image_edit?.native_image_profile ?? model?.native_image_profile
+    if (profile) {
+      const policy = nativeImageReferencePolicy(profile, draft.operation === 'layer_decomposition' ? 'layer_decomposition' : 'edit')
+      if (source.payload?.mime_type && !policy.allowedMIMETypes.includes(String(source.payload.mime_type))) return '当前生成方式不支持此来源图片格式'
+      if (Number(source.payload?.file_size_bytes ?? 0) > policy.maxBytes) return '来源图片大小超出当前生成方式限制'
+    }
+  }
   if (target.type === 'video_v2' && context?.video) {
     const draft = (target.payload?.draft ?? {}) as Record<string, unknown>
     const model = context.video.model_groups.find((item) => item.code === draft.route_model_code)

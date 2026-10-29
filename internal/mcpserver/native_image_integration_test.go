@@ -33,6 +33,133 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// nativeSnapshotEnvelope keeps transport diagnostics bounded: fixtures may carry
+// image data URLs, so failed assertions report metadata instead of whole results.
+func nativeSnapshotEnvelope(t *testing.T, operation string, result *mcp.CallToolResult) map[string]any {
+	t.Helper()
+	wire, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("%s result marshal: %v", operation, err)
+	}
+	if len(wire) >= 40<<10 {
+		t.Fatalf("%s result wire=%d bytes exceeds budget", operation, len(wire))
+	}
+	raw, err := json.Marshal(result.StructuredContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil || out == nil {
+		t.Fatalf("%s missing structured object: %v", operation, err)
+	}
+	return out
+}
+
+// Reconstruct every value using only the public continuation protocol. Array
+// references retain their type even when empty; string offsets consume UTF-8 bytes.
+func nativeReadSnapshot(t *testing.T, ctx context.Context, session *mcp.ClientSession, token, path, valueType string, depth int) any {
+	t.Helper()
+	if depth > 64 {
+		t.Fatal("snapshot reference depth exceeded")
+	}
+	object := map[string]any{}
+	array := []any{}
+	var text strings.Builder
+	offset := 0
+	for pages := 0; pages < 10000; pages++ {
+		result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "read_tool_result", Arguments: map[string]any{"token": token, "path": path, "offset": offset, "limit": 8192}})
+		if err != nil {
+			t.Fatalf("snapshot path %q transport: %v", path, err)
+		}
+		if result.IsError {
+			t.Fatalf("snapshot path %q returned tool error (content omitted)", path)
+		}
+		page := nativeSnapshotEnvelope(t, "read_tool_result", result)
+		if page["path"] != path || page["offset"] != float64(offset) {
+			t.Fatalf("snapshot path %q returned incorrect path/offset", path)
+		}
+		complete, ok := page["complete"].(bool)
+		if !ok {
+			t.Fatalf("snapshot path %q missing complete", path)
+		}
+		switch page["type"] {
+		case "value":
+			if !complete {
+				t.Fatal("scalar snapshot did not complete")
+			}
+			return page["value"]
+		case "string":
+			fragment, ok := page["value"].(string)
+			if !ok {
+				t.Fatal("snapshot string missing fragment")
+			}
+			text.WriteString(fragment)
+		case "entries":
+			entries, ok := page["items"].([]any)
+			if !ok {
+				t.Fatal("snapshot entries missing items")
+			}
+			for _, raw := range entries {
+				entry, ok := raw.(map[string]any)
+				if !ok {
+					t.Fatal("snapshot entry is not object")
+				}
+				key, ok := entry["key"].(string)
+				if !ok {
+					t.Fatal("snapshot entry missing key")
+				}
+				value := entry["value"]
+				if ref, ok := value.(map[string]any); ok && ref["type"] == "reference" {
+					child, ok := ref["path"].(string)
+					if !ok || child == path {
+						t.Fatal("invalid snapshot reference path")
+					}
+					typ, ok := ref["value_type"].(string)
+					if !ok {
+						t.Fatal("snapshot reference missing value_type")
+					}
+					value = nativeReadSnapshot(t, ctx, session, token, child, typ, depth+1)
+				}
+				if valueType == "array" {
+					if key != fmt.Sprint(len(array)) {
+						t.Fatal("snapshot array entries skipped or repeated index")
+					}
+					array = append(array, value)
+				} else {
+					if _, duplicate := object[key]; duplicate {
+						t.Fatal("snapshot object repeated key")
+					}
+					object[key] = value
+				}
+			}
+		default:
+			t.Fatalf("snapshot path %q has unknown page type %v", path, page["type"])
+		}
+		next, ok := page["next_offset"].(float64)
+		if !ok || next != float64(int(next)) {
+			t.Fatal("snapshot missing integer next_offset")
+		}
+		if page["type"] == "string" && int(next) != text.Len() {
+			t.Fatal("snapshot string continuation did not consume exact bytes")
+		}
+		if complete {
+			if page["type"] == "string" {
+				return text.String()
+			}
+			if valueType == "array" {
+				return array
+			}
+			return object
+		}
+		if int(next) <= offset {
+			t.Fatal("snapshot continuation did not progress")
+		}
+		offset = int(next)
+	}
+	t.Fatal("snapshot page limit exceeded")
+	return nil
+}
+
 type nativeE2EUsers struct{}
 
 func (nativeE2EUsers) GetUserByID(id int64) (auth.User, bool) {
@@ -186,7 +313,7 @@ func TestNativeImageRESTAndMCPFakeProviderLifecycle(t *testing.T) {
 					if p.UserID != 7 || purpose != "download" {
 						t.Errorf("wrong access principal/purpose: %#v %s", p, purpose)
 					}
-					return map[string]any{"url": download.URL + "/" + id.String()}, nil
+					return map[string]any{"url": download.URL + "/" + id.String(), "expires_at": time.Now().UTC().Add(time.Minute), "range_supported": true}, nil
 				}})
 				var call func(string, map[string]any) map[string]any
 				if transport == "oauth_mcp" {
@@ -210,18 +337,30 @@ func TestNativeImageRESTAndMCPFakeProviderLifecycle(t *testing.T) {
 					call = func(op string, input map[string]any) map[string]any {
 						t.Helper()
 						result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: op, Arguments: input})
-						if err != nil || result.IsError {
-							t.Fatalf("%s: %v %#v", op, err, result)
-						}
-						raw, err := json.Marshal(result.StructuredContent)
 						if err != nil {
-							t.Fatal(err)
+							t.Fatalf("%s transport: %v", op, err)
 						}
-						var out map[string]any
-						if err = json.Unmarshal(raw, &out); err != nil {
-							t.Fatal(err)
+						if result.IsError {
+							t.Fatalf("%s returned tool error (content omitted)", op)
 						}
-						return out["data"].(map[string]any)
+						out := nativeSnapshotEnvelope(t, op, result)
+						if data, ok := out["data"].(map[string]any); ok {
+							return data
+						}
+						token, ok := out["snapshot_token"].(string)
+						if !ok || token == "" {
+							keys := make([]string, 0, len(out))
+							for key := range out {
+								keys = append(keys, key)
+							}
+							t.Fatalf("%s lacks data or continuation; envelope keys=%v", op, keys)
+						}
+						value := nativeReadSnapshot(t, ctx, session, token, "", "object", 0)
+						data, ok := value.(map[string]any)
+						if !ok {
+							t.Fatalf("%s reconstructed root is %T, want object", op, value)
+						}
+						return data
 					}
 				} else {
 					srv := httptest.NewServer(handlers.NewOpenPlatform(shared, func(r *http.Request) (openplatform.Principal, error) {

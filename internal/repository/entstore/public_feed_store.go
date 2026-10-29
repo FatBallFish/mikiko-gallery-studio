@@ -48,9 +48,17 @@ func publicFeedUnion(req domain.Request) sql.Querier {
 			}
 			b.WriteString(")")
 		}
-		b.WriteString(" UNION ALL SELECT v.id, 'video' AS media_type, COALESCE(v.published_at,v.created_at) AS published_at, v.created_at, 0 AS score FROM media_assets v LEFT JOIN video_tasks vt ON vt.id=v.source_task_id AND v.source_task_kind='video' LEFT JOIN users vu ON vu.id=v.user_id WHERE v.deleted_at IS NULL AND v.media_type='video' AND v.status='ready' AND v.visibility_status='approved'")
+		b.WriteString(" UNION ALL SELECT v.id, 'video' AS media_type, COALESCE(v.published_at,v.created_at) AS published_at, v.created_at, COALESCE(vs.score,0) AS score FROM media_assets v LEFT JOIN (SELECT video_id, SUM(CASE WHEN liked THEN 2 ELSE 0 END + CASE WHEN favorited THEN 3 ELSE 0 END) AS score FROM public_video_interactions GROUP BY video_id) vs ON vs.video_id=v.id LEFT JOIN video_tasks vt ON vt.id=v.source_task_id AND v.source_task_kind='video' LEFT JOIN users vu ON vu.id=v.user_id WHERE v.deleted_at IS NULL AND v.media_type='video' AND v.status='ready' AND v.visibility_status='approved'")
 		if req.Liked || req.Favorited {
-			b.WriteString(" AND 1=0")
+			b.WriteString(" AND EXISTS (SELECT 1 FROM public_video_interactions x WHERE x.video_id=v.id AND x.user_id=")
+			b.Arg(req.ViewerID)
+			if req.Liked {
+				b.WriteString(" AND x.liked=TRUE")
+			}
+			if req.Favorited {
+				b.WriteString(" AND x.favorited=TRUE")
+			}
+			b.WriteString(")")
 		}
 		if req.Query != "" {
 			b.WriteString(" AND (LOWER(v.name) LIKE ")
@@ -74,6 +82,8 @@ func (s *PublicFeedStore) List(ctx context.Context, req domain.Request) (domain.
 	if err != nil {
 		return out, fmt.Errorf("count public feed: %w", err)
 	}
+	// Hydration can observe withdrawals after selection. Keep this count and
+	// selected page window; skip unavailable items without borrowing from the next page.
 	out.Total = total
 	var rows []struct {
 		ID        uuid.UUID `json:"id"`
@@ -96,12 +106,18 @@ func (s *PublicFeedStore) List(ctx context.Context, req domain.Request) (domain.
 		if row.MediaType == "image" {
 			image, e := images.GetPublicImage(ctx, row.ID.String(), req.ViewerID)
 			if e != nil {
+				if isPublicItemUnavailable(e) {
+					continue
+				}
 				return out, e
 			}
 			out.Items = append(out.Items, domain.Item{MediaType: "image", Image: &image})
 		} else {
-			video, e := videos.Get(ctx, row.ID)
+			video, e := videos.GetForViewer(ctx, row.ID, req.ViewerID)
 			if e != nil {
+				if isPublicItemUnavailable(e) {
+					continue
+				}
 				return out, e
 			}
 			if video.Status != "approved" {

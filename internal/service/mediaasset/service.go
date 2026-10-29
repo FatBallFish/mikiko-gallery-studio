@@ -124,6 +124,11 @@ func (s *Service) ListAssets(ctx context.Context, req AssetListRequest) (AssetPa
 	if s == nil || s.store == nil {
 		return AssetPage{}, errs.Internal("media asset service is unavailable")
 	}
+	visibility, err := NormalizeVisibilityStatus(req.VisibilityStatus)
+	if err != nil {
+		return AssetPage{}, err
+	}
+	req.VisibilityStatus = visibility
 	return s.store.ListAssets(ctx, req)
 }
 

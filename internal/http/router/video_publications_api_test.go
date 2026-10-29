@@ -3,6 +3,7 @@ package router
 import (
 	"database/sql"
 	"encoding/json"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -84,6 +85,9 @@ func testVideoPublicationHTTPAccess(t *testing.T, databaseURL string) {
 		t.Fatal(e)
 	}
 	backend := storage.NewLocalBackend(t.TempDir())
+	if e = backend.Put(ctx, "original", "video/mp4", []byte("original01")); e != nil {
+		t.Fatal(e)
+	}
 	for _, kind := range []string{"proxy", "poster"} {
 		if e = backend.Put(ctx, kind, "video/mp4", []byte("0123456789")); e != nil {
 			t.Fatal(e)
@@ -173,6 +177,66 @@ func testVideoPublicationHTTPAccess(t *testing.T, databaseURL string) {
 	if e = json.Unmarshal(approved.Body.Bytes(), &decision); e != nil || decision.Data.Status != "approved" || decision.Data.PublishedAt == nil || decision.Data.ReviewReason != "" {
 		t.Fatalf("approved response=%s err=%v", approved.Body.String(), e)
 	}
+
+	// Reactions are authenticated, explicitly set and idempotent.
+	for _, kind := range []string{"like", "favorite"} {
+		if w := request("POST", base+"/"+kind, ""); w.Code != 401 {
+			t.Fatalf("anonymous %s=%d", kind, w.Code)
+		}
+		for i := 0; i < 2; i++ {
+			w := authenticatedMediaRequest(t, handler, owner.AccessToken, "POST", base+"/"+kind, `{"active":true}`, nil)
+			if w.Code != 200 {
+				t.Fatalf("reaction %s=%d %s", kind, w.Code, w.Body.String())
+			}
+		}
+	}
+	if w := authenticatedMediaRequest(t, handler, owner.AccessToken, "POST", base+"/like", `{}`, nil); w.Code != 400 {
+		t.Fatalf("missing active=%d", w.Code)
+	}
+	viewer := authenticatedMediaRequest(t, handler, owner.AccessToken, "GET", base, "", nil)
+	if !strings.Contains(viewer.Body.String(), `"liked_by_viewer":true`) || !strings.Contains(viewer.Body.String(), `"like_count":1`) {
+		t.Fatalf("viewer state %s", viewer.Body.String())
+	}
+	for _, method := range []string{"GET", "HEAD"} {
+		if w := request(method, base+"/download", "bytes=2-5"); w.Code != 401 {
+			t.Fatalf("anonymous download %s=%d", method, w.Code)
+		}
+		w := authenticatedMediaRequest(t, handler, owner.AccessToken, method, base+"/download", "", map[string]string{"Range": "bytes=2-5"})
+		if w.Code != 206 || w.Header().Get("Content-Range") != "bytes 2-5/10" || w.Header().Get("Content-Length") != "4" {
+			t.Fatalf("download %s=%d %s", method, w.Code, w.Body.String())
+		}
+		disposition, params, err := mime.ParseMediaType(w.Header().Get("Content-Disposition"))
+		if err != nil || disposition != "attachment" || params["filename"] != "Public clip.mp4" {
+			t.Fatalf("download disposition %s %v", w.Header().Get("Content-Disposition"), err)
+		}
+		if method == "GET" && w.Body.String() != "igin" {
+			t.Fatalf("download original body=%s", w.Body.String())
+		}
+		if method == "HEAD" && w.Body.Len() != 0 {
+			t.Fatal("HEAD body")
+		}
+	}
+	invalidDownload := authenticatedMediaRequest(t, handler, owner.AccessToken, "GET", base+"/download", "", map[string]string{"Range": "bytes=99-"})
+	if invalidDownload.Code != 416 || invalidDownload.Header().Get("Content-Range") != "bytes */10" {
+		t.Fatalf("invalid download range %d %s", invalidDownload.Code, invalidDownload.Body.String())
+	}
+	// Withdrawal revokes every download range and reaction before storage access.
+	if _, err := service.Withdraw(ctx, claims.UserID, asset.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, method := range []string{"GET", "HEAD"} {
+		w := authenticatedMediaRequest(t, handler, owner.AccessToken, method, base+"/download", "", map[string]string{"Range": "bytes=2-5"})
+		if w.Code != 404 {
+			t.Fatalf("withdrawn download %s=%d", method, w.Code)
+		}
+	}
+	if w := authenticatedMediaRequest(t, handler, owner.AccessToken, "POST", base+"/like", `{"active":true}`, nil); w.Code != 404 {
+		t.Fatalf("withdrawn reaction=%d", w.Code)
+	}
+	if w := authenticatedMediaRequest(t, handler, owner.AccessToken, "POST", "/api/agent/media/v1/video-publications/"+asset.ID.String(), "", nil); w.Code != 200 {
+		t.Fatal(w.Body.String())
+	}
+	moderate("approve", `{}`, 200)
 	moderate("approve", `{}`, 409)
 	moderate("reject", `{"reason":"copyright"}`, 409)
 	for _, test := range []struct {

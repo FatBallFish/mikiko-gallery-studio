@@ -368,10 +368,18 @@
 .a-banner svg { width: 16px; height: 16px; flex: none; margin-top: 2px; }
 .a-banner > div { min-width: 0; overflow-wrap: anywhere; }
 
-.a-toast-stack { position: fixed; right: 22px; bottom: 22px; z-index: 120; display: grid; gap: 8px; }
-.a-toast { display: flex; align-items: flex-start; gap: 9px; min-width: 280px; max-width: 420px; padding: 12px 14px; border: 1px solid var(--a-line-2); border-left: 3px solid var(--a-accent); border-radius: 9px; background: var(--a-surface); box-shadow: var(--a-shadow-md); font-size: 13px; animation: a-toast-in 240ms var(--ease-out); }
-.a-toast--ok { border-left-color: var(--a-success); }
-.a-toast--bad { border-left-color: var(--a-danger); }
+.a-toast-stack { position: fixed; right: 22px; bottom: 22px; z-index: 120; display: grid; width: min(420px, calc(100vw - 32px)); max-height: calc(100dvh - 44px); overflow-y: auto; gap: 8px; }
+.a-toast { --toast-tone: var(--a-info); display: flex; align-items: flex-start; gap: 9px; min-width: 0; padding: 12px 14px; border: 1px solid var(--a-line-2); border-left: 3px solid var(--toast-tone); border-radius: 9px; background: var(--a-surface); color: var(--a-ink); box-shadow: var(--a-shadow-md); font-size: 13px; animation: a-toast-in 240ms var(--ease-out); }
+.a-toast--success { --toast-tone: var(--a-success); }
+.a-toast--warning { --toast-tone: var(--a-warn); }
+.a-toast--danger { --toast-tone: var(--a-danger); }
+.a-toast__icon { flex: none; color: var(--toast-tone); }
+.a-toast__content { flex: 1; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.a-toast__close { flex: none; display: grid; place-items: center; width: 32px; height: 32px; padding: 7px; border: 0; border-radius: 6px; background: transparent; color: var(--a-ink-2); cursor: pointer; }
+.a-toast__close:focus-visible { outline: 2px solid var(--a-accent); outline-offset: 2px; }
+.a-toast__close:hover { background: var(--a-surface-2); }
+@media (max-width: 480px) { .a-toast-stack { right: 16px; bottom: 16px; } }
+@media (prefers-reduced-motion: reduce) { .a-toast { animation: none; } }
 .a-toast strong { display: block; font-size: 13px; }
 .a-toast span { color: var(--a-ink-3); font-size: 12px; }
 @keyframes a-toast-in { from { opacity: 0; transform: translateY(8px); } }

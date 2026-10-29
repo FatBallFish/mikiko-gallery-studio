@@ -1,23 +1,47 @@
-# Migrating developer integrations
+# 迁移到统一 API
 
-The signed developer user endpoints under `/api/open/image/v1` are directly replaced. There is no compatibility layer. Public gallery and provider/payment callbacks retain their existing paths and trust mechanisms.
+## 替换认证
 
-Send `Authorization: Bearer $MIKIKO_API_KEY` on every developer request. Remove access-key, timestamp, body-digest and request-signature headers and signing code. Use a server-side secret manager. Browser and administrator session tokens are separate credentials; MCP obtains its own OAuth grant through browser authorization.
+旧签名开发者接口已直接替换，无兼容层。每次开发者请求发送 Bearer SK：
 
-| Previous developer route | Replacement |
+```bash
+curl https://mikiko.studio/api/open/v1/me \
+  -H "Authorization: Bearer $MIKIKO_API_KEY"
+```
+
+- `MIKIKO_API_KEY` 填创建或轮换时一次显示的 SK（`sk-`）。
+- AK（`ak-`）只是密钥标识，不能代替 SK。
+- 移除旧 access-key、时间戳、body 摘要、签名请求头和签名代码。
+- SK 保存到服务端秘密管理器。MCP 使用独立[浏览器 OAuth](mcp.md)。
+
+## 替换接口路径
+
+新地址统一以 `https://mikiko.studio` 开头：
+
+| 旧开发者路径 | 新接口 |
 | --- | --- |
-| `GET /api/open/image/v1/capabilities` | `GET /api/open/v1/image-models` |
-| `GET /api/open/image/v1/balance` | `GET /api/open/v1/me/balance` |
-| `GET /api/open/image/v1/estimate` | `POST /api/open/v1/image-tasks/preflight` with complete JSON create payload |
-| `POST /api/open/image/v1/tasks` | `POST /api/open/v1/image-tasks` |
-| `GET /api/open/image/v1/tasks/{task_id}` | `GET /api/open/v1/image-tasks/{task_id}` |
-| Reference upload initialization and completion | `/api/open/v1/uploads` session workflow |
-| Reference lookup | `/api/open/v1/assets/{asset_id}` |
+| `GET /api/open/image/v1/capabilities` | `GET https://mikiko.studio/api/open/v1/image-models` |
+| `GET /api/open/image/v1/balance` | `GET https://mikiko.studio/api/open/v1/me/balance` |
+| `GET /api/open/image/v1/estimate` | `POST https://mikiko.studio/api/open/v1/image-tasks/preflight`，提交完整 JSON |
+| `POST /api/open/image/v1/tasks` | `POST https://mikiko.studio/api/open/v1/image-tasks` |
+| `GET /api/open/image/v1/tasks/{task_id}` | `GET https://mikiko.studio/api/open/v1/image-tasks/{task_id}` |
+| 旧参考上传初始化和完成 | `https://mikiko.studio/api/open/v1/uploads` 会话流程 |
+| 旧参考资产查询 | `GET https://mikiko.studio/api/open/v1/assets/{asset_id}` |
 
-Regenerate clients from the canonical OpenAPI. Do not reuse old request shapes merely because the concepts are similar: new creation accepts complete requests and quote/idempotency fields, and media uploads use sessions with part status and checksum handling. Discover permitted model parameters first. Re-run preflight whenever payload changes. Preserve point values as five-decimal strings.
+公开图库、支付回调和供应商回调保留各自路径与认证。浏览器和管理员会话不属于这次迁移。
 
-The scope catalogue is `account:read`, `models:read`, `images:read`, `images:write`, `videos:read`, `videos:write`, `videos:delete`, and `read`, `write`, `delete` variants for `assets`, `uploads`, `projects`, `groups`. Existing image keys retain image permissions only; explicitly grant video and destructive scopes when needed. Status, expiry, RPM and total/day quota still apply.
+## 更新请求结构
 
-Save task IDs and asset IDs. Retry the same business operation using the same idempotency key and payload. A completed request replay may return an existing task; using a key for another payload is a conflict. Fetch new asset access URLs when old links expire. Do not assume event replay or partial-image streaming support.
+1. 根据[接口参考](../../web/docs/public/openapi/openapi.yaml)重新生成类型，避免沿用旧请求结构。
+2. 发现模型允许的参数，选择自己的项目。
+3. 提交完整预检请求，取得报价后加入幂等键创建任务。
+4. 上传改用会话、分片状态和校验和流程。
+5. 参数变化后重新预检；积分保留为五位小数字符串。
 
-The docs reference is generated from `api/openapi`; do not edit `web/docs/public/openapi` by hand. Run `node web/docs/scripts/sync-openapi.mjs` after changing the canonical source.
+## 检查权限与恢复
+
+- `account:read`、`models:read`、图片/视频读写权限按操作授予。
+- 视频删除及资产、上传、项目、分组的 read/write/delete 权限需要显式授权。
+- 已有图片密钥不会自动获得视频或删除权限；过期、RPM 和额度仍适用。
+- 保存任务与资产 ID，重试复用相同幂等键和业务输入。
+- 访问链接过期后重新获取；不依赖历史事件重放或部分图片流。

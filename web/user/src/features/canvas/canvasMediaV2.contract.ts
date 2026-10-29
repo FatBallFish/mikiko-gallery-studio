@@ -57,3 +57,16 @@ for (const task of ['video_edit', 'video_extend'] as const) {
   assert.ok(normalizeCanvasVideoGraphDraft({ ...editGraph, edges: graph.edges }, 'target', capability).error, 'incompatible edit inputs are reported without silently changing mode')
 }
 console.log('canvas media V2 adapters: PASS')
+
+const { nativeImageProfile } = await import('../../../../shared/native-image')
+const layerProfile = nativeImageProfile('doubao-seedream-5-0-pro-260628')!
+const layerCapability: Capability = { ...image, model_groups: [{ ...image.model_groups[0], task_types: ['text_to_image', 'image_edit'], native_image_profile: layerProfile, native_image_layer_pricing_confirmed: true }] }
+const layerDraft = { route_model_code: 'i', operation: 'layer_decomposition', task_type: 'image_edit', output_image_count: 1 }
+assert.ok(canvasConsoleParameterErrors({ ...layerDraft, inputs: [] }, layerCapability, null, false).some((error) => error.includes('必填')))
+assert.ok(canvasConsoleParameterErrors({ ...layerDraft, inputs: [{ asset_id: 'a' }, { asset_id: 'b' }] }, layerCapability, null, false).some((error) => error.includes('已保留')))
+const missingPrice: Capability = { ...layerCapability, model_groups: [{ ...layerCapability.model_groups[0], native_image_layer_pricing_confirmed: false }] }
+assert.ok(canvasConsoleParameterErrors({ ...layerDraft, inputs: [{ asset_id: 'a' }] }, missingPrice, null, false).some((error) => error.includes('价格')))
+const unsupported: Capability = { ...layerCapability, model_groups: [{ ...layerCapability.model_groups[0], native_image_profile: nativeImageProfile('qwen-image-3.0')! }] }
+assert.ok(canvasConsoleParameterErrors({ ...layerDraft, inputs: [{ asset_id: 'a' }] }, unsupported, null, false).some((error) => error.includes('能力')))
+assert.equal(normalizeCanvasImageDraft(layerDraft, unsupported).operation, 'layer_decomposition', 'switching to unsupported model preserves mode for explicit validation')
+assert.equal(normalizeCanvasImageDraft({ ...layerDraft, inputs: [] }, layerCapability).operation, 'layer_decomposition', 'zero references keep selected mode')

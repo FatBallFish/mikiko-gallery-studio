@@ -2,8 +2,10 @@ import { FormEvent, useMemo, useState } from 'react'
 import type { ApiKey } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { userApi } from '../../../shared/user-api'
-import { Button, CopyButton, EmptyState, ErrorState, Modal, copyText, useApp } from '../components'
-import { openDocsEntry } from '../docsUrl'
+import { DeveloperConnectDrawer } from './DeveloperConnectDrawer'
+import { ApiKeyCredentialsModal } from './ApiKeyCredentialsModal'
+import { apiKeyCredentials, type ApiKeyCredentials } from './apiKeyCredentials'
+import { Button, EmptyState, ErrorState, Modal, copyText, useApp } from '../components'
 import { Check, Copy, Edit, RotateCcw, Trash2, X } from '../ui/icons'
 import { errorMessage, useApiResource } from '../useApiResource'
 import {
@@ -14,7 +16,6 @@ import {
   apiKeyEditForm,
   apiKeyGroupReadOnlyHint,
   apiKeyPageLabels,
-  apiKeyQuickstart,
   apiKeyRow,
   apiKeyScopeLabel,
   apiKeyStatusToggleLabel,
@@ -34,13 +35,13 @@ export function ApiKeysPage() {
   const app = useApp()
   const keys = useApiResource(() => userApi.listApiKeys(), [])
   const [creating, setCreating] = useState(false)
+  const [connecting, setConnecting] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [oneTimeSecret, setOneTimeSecret] = useState<{ keyId: string; name: string; secret: string } | null>(null)
+  const [credentials, setCredentials] = useState<ApiKeyCredentials | null>(null)
   const [editTarget, setEditTarget] = useState<ApiKey | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ApiKey | null>(null)
   const [busyKeyId, setBusyKeyId] = useState<string | null>(null)
   const selectedKey = useMemo(() => keys.data?.find((key) => key.id === selectedId) ?? keys.data?.[0] ?? null, [keys.data, selectedId])
-  const quickstart = apiKeyQuickstart(selectedKey)
   const activeCount = useMemo(() => (keys.data ?? []).filter((key) => key.status === 'active').length, [keys.data])
 
   async function copyValue(value: string, message: string) {
@@ -69,8 +70,8 @@ export function ApiKeysPage() {
     setBusyKeyId(key.id)
     try {
       const updated = await userApi.resetApiKeySecret(key.id)
-      if (updated.secret_preview) setOneTimeSecret({ keyId: updated.id, name: updated.name, secret: updated.secret_preview })
-      app.notify('success', 'Secret 已重置，仅展示一次')
+      setCredentials(apiKeyCredentials(updated))
+      app.notify('success', 'API Key 已轮换，仅展示一次；旧 API Key 已失效')
       await keys.reload()
       setSelectedId(updated.id)
     } catch (err) {
@@ -103,31 +104,15 @@ export function ApiKeysPage() {
             <div className="u-page-head__copy">
               <span className="u-eyebrow">API Access</span>
               <h1 className="u-h1" style={{ fontSize: 'clamp(32px, 3.4vw, 38px)' }}>API 密钥</h1>
-              <p className="u-sub">用于服务端调用与第三方集成。仅使用 Authorization: Bearer sk-… 调用。Secret 只显示一次；轮换后旧密钥立即失效。</p>
+              <p className="u-sub">用于服务端调用与第三方集成。API Key（sk-…）通过 Authorization: Bearer 认证，仅展示一次；轮换后旧 API Key 立即失效。</p>
             </div>
             <div className="u-page-head__actions">
               <button className="u-btn u-btn--primary u-btn--sm" type="button" onClick={() => setCreating(true)}>
                 {apiKeyPageLabels.create}
               </button>
+              <button className="u-btn u-btn--sm" type="button" aria-haspopup="dialog" aria-expanded={connecting} onClick={() => setConnecting(true)}>如何接入</button>
             </div>
           </div>
-
-          {oneTimeSecret ? (
-            <div className="ak-secret">
-              <span className="acct-secret-mark" aria-hidden="true">!</span>
-              <div className="acct-secret-copy">
-                <strong style={{ fontSize: 13 }}>{oneTimeSecret.name} 已创建，请立即保存 Secret</strong>
-                <div className="acct-secret-value">
-                  <code className="ak-code acct-secret-code">{oneTimeSecret.secret}</code>
-                  <button className="u-btn u-btn--sm" type="button" onClick={() => void copyValue(oneTimeSecret.secret, 'Secret 已复制')}>复制</button>
-                </div>
-                <span className="u-meta">关闭此提示后将无法再次查看完整 Secret。</span>
-              </div>
-              <button className="u-icon-btn u-icon-btn--plain" type="button" aria-label="关闭提示" onClick={() => setOneTimeSecret(null)}>
-                <X size={17} strokeWidth={1.6} aria-hidden="true" />
-              </button>
-            </div>
-          ) : null}
 
           <div className="u-stat-row">
             <div className="u-stat">
@@ -151,7 +136,7 @@ export function ApiKeysPage() {
             <div className="acct-keys-head">
               <div style={{ display: 'grid', gap: 4, minWidth: 0 }}>
                 <h2 className="u-h3">密钥列表</h2>
-                <span className="u-meta">Access Key 仅用于识别；请求只需 Bearer Secret，无需签名。</span>
+                <span className="u-meta">密钥标识（ak-…）仅用于识别。请求使用 API Key（sk-…），无需签名。</span>
               </div>
               <button className="u-btn u-btn--sm" type="button" disabled={keys.loading} onClick={() => void keys.reload()}>刷新</button>
             </div>
@@ -192,7 +177,6 @@ export function ApiKeysPage() {
                             </div>
                           </td>
                           <td><span className="u-chip u-chip--mono acct-key-chip" title={key.access_key}>{row.accessKeyMasked}</span></td>
-                          <td><span className="u-chip u-chip--mono acct-key-chip">{row.secretMasked}</span></td>
                           <td><span className={cn('u-status', apiKeyStatusTone(key.status))}><span className="u-dot" aria-hidden="true" />{badge.label}</span></td>
                           <td className="u-num">{key.rpm_limit ?? '—'}</td>
                           <td>
@@ -211,7 +195,7 @@ export function ApiKeysPage() {
                           </td>
                           <td>
                             <div className="ak-actions">
-                              <button type="button" title="复制 Access Key" aria-label="复制 Access Key" onClick={(event) => { event.stopPropagation(); void copyValue(key.access_key, 'Access Key 已复制') }}>
+                              <button type="button" title="复制密钥标识" aria-label="复制密钥标识" onClick={(event) => { event.stopPropagation(); void copyValue(key.access_key, '密钥标识已复制') }}>
                                 <Copy size={13} strokeWidth={1.7} aria-hidden="true" />
                               </button>
                               <button type="button" title={apiKeyPageLabels.edit} aria-label={apiKeyPageLabels.edit} disabled={busyKeyId === key.id} onClick={(event) => { event.stopPropagation(); setEditTarget(key) }}>
@@ -237,34 +221,17 @@ export function ApiKeysPage() {
             ) : null}
           </div>
 
-          <div className="u-split">
-            <div className="u-plate u-plate--pad">
-              <div className="u-panel-title">
-                <h3>{apiKeyPageLabels.quickstartTitle}</h3>
-                <CopyButton text={quickstart.code} label={quickstart.copyLabel} />
-              </div>
-              <pre className="acct-code-block">{quickstart.code}</pre>
-              <p className="u-meta" style={{ marginTop: 12 }}>
-                查看完整 <button type="button" className="u-link acct-inline-link" onClick={() => openDocsEntry('api-keys')}>开发文档</button> 获取更多语言示例。
-              </p>
-            </div>
-            <div className="u-plate u-plate--pad">
-              <div className="u-panel-title"><h3>安全建议</h3></div>
-              <ul className="acct-security-list">
-                <li className="u-meta">只把 Secret 放在服务端环境变量中，不要提交到仓库。</li>
-                <li className="u-meta">为不同集成创建独立密钥，便于单独停用与轮换。</li>
-                <li className="u-meta">设置日额度，避免脚本异常消耗积分。</li>
-              </ul>
-            </div>
-          </div>
         </div>
       </div>
 
+      {connecting ? <DeveloperConnectDrawer onClose={() => setConnecting(false)} /> : null}
       {creating ? <CreateKeyModal onClose={() => setCreating(false)} onCreated={async (key) => {
-        await keys.reload()
+        setCreating(false)
         setSelectedId(key.id)
-        if (key.secret_preview) setOneTimeSecret({ keyId: key.id, name: key.name, secret: key.secret_preview })
+        setCredentials(apiKeyCredentials(key))
+        await keys.reload()
       }} /> : null}
+      {credentials ? <ApiKeyCredentialsModal credentials={credentials} onConfirm={() => setCredentials(null)} /> : null}
       {editTarget ? <EditKeyModal keyItem={editTarget} onClose={() => setEditTarget(null)} onSaved={async (key) => { await keys.reload(); setSelectedId(key.id); setEditTarget(null) }} /> : null}
       {deleteTarget ? <DeleteKeyModal keyItem={deleteTarget} busy={busyKeyId === deleteTarget.id} onCancel={() => setDeleteTarget(null)} onConfirm={() => void remove(deleteTarget)} /> : null}
     </div>
@@ -303,9 +270,8 @@ function CreateKeyModal({ onClose, onCreated }: { onClose: () => void; onCreated
     setBusy(true)
     try {
       const key = await userApi.createApiKey(apiKeyCreatePayload({ name: name.trim(), scopes, rpmLimit: rpm, expiresAt, totalQuotaPoints, dailyQuotaPoints }))
-      app.notify('success', '密钥已创建，Secret 仅展示一次')
+      app.notify('success', '密钥已创建，API Key 仅展示一次')
       await onCreated(key)
-      onClose()
     } catch (err) {
       app.notify('error', errorMessage(err))
     } finally {

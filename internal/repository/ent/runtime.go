@@ -45,6 +45,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providermodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicimageinteraction"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicimagestat"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicvideointeraction"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/redeemcode"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/referenceasset"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/refreshsession"
@@ -3830,6 +3831,29 @@ func init() {
 	publicimagestatDescCommentCount := publicimagestatFields[3].Descriptor()
 	// publicimagestat.DefaultCommentCount holds the default value on creation for the comment_count field.
 	publicimagestat.DefaultCommentCount = publicimagestatDescCommentCount.Default.(int)
+	publicvideointeractionMixin := schema.PublicVideoInteraction{}.Mixin()
+	publicvideointeractionMixinFields0 := publicvideointeractionMixin[0].Fields()
+	_ = publicvideointeractionMixinFields0
+	publicvideointeractionFields := schema.PublicVideoInteraction{}.Fields()
+	_ = publicvideointeractionFields
+	// publicvideointeractionDescCreatedAt is the schema descriptor for created_at field.
+	publicvideointeractionDescCreatedAt := publicvideointeractionMixinFields0[0].Descriptor()
+	// publicvideointeraction.DefaultCreatedAt holds the default value on creation for the created_at field.
+	publicvideointeraction.DefaultCreatedAt = publicvideointeractionDescCreatedAt.Default.(func() time.Time)
+	// publicvideointeractionDescUpdatedAt is the schema descriptor for updated_at field.
+	publicvideointeractionDescUpdatedAt := publicvideointeractionMixinFields0[1].Descriptor()
+	// publicvideointeraction.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	publicvideointeraction.DefaultUpdatedAt = publicvideointeractionDescUpdatedAt.Default.(func() time.Time)
+	// publicvideointeraction.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	publicvideointeraction.UpdateDefaultUpdatedAt = publicvideointeractionDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// publicvideointeractionDescLiked is the schema descriptor for liked field.
+	publicvideointeractionDescLiked := publicvideointeractionFields[2].Descriptor()
+	// publicvideointeraction.DefaultLiked holds the default value on creation for the liked field.
+	publicvideointeraction.DefaultLiked = publicvideointeractionDescLiked.Default.(bool)
+	// publicvideointeractionDescFavorited is the schema descriptor for favorited field.
+	publicvideointeractionDescFavorited := publicvideointeractionFields[3].Descriptor()
+	// publicvideointeraction.DefaultFavorited holds the default value on creation for the favorited field.
+	publicvideointeraction.DefaultFavorited = publicvideointeractionDescFavorited.Default.(bool)
 	redeemcodeMixin := schema.RedeemCode{}.Mixin()
 	redeemcodeMixinFields0 := redeemcodeMixin[0].Fields()
 	_ = redeemcodeMixinFields0

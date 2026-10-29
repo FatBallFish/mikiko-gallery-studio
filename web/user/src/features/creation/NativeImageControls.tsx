@@ -3,8 +3,28 @@ import type { NativeImageProfile, NativeImageRequestFields } from '../../../../s
 import { userApi } from '../../../../shared/user-api'
 import { ReferenceMarkModal, markAnnotations, type Mark } from './ReferenceMarkModal'
 import { bindReferenceAnnotations, remapReferenceAnnotations, userNativeImageFields } from './nativeImageUX'
-import { nativeLayerUnavailableReason } from '../../pages/workspaceParameters'
+import { nativeLayerModeUnavailableReason, nativeLayerUnavailableReason } from '../../pages/workspaceParameters'
 import './nativeImageUX.css'
+
+/** Mode availability is independent of whether the required source has been added. */
+export function NativeImageModeControl({ profile, value, referenceCount, layerPriceReady = false, layerUnavailableReason, disabled, onChange, variant = 'workspace' }: {
+  profile?: NativeImageProfile; value: NativeImageRequestFields; referenceCount: number; layerPriceReady?: boolean; layerUnavailableReason?: string
+  disabled?: boolean; onChange: (value: NativeImageRequestFields) => void; variant?: 'workspace' | 'canvas'
+}) {
+  const layer = value.operation === 'layer_decomposition'
+  const unavailable = nativeLayerModeUnavailableReason(profile, layerPriceReady, layerUnavailableReason)
+  const change = (decompose: boolean) => {
+    if (disabled || decompose && unavailable) return
+    onChange({ ...userNativeImageFields(value, profile, referenceCount), operation: decompose ? 'layer_decomposition' : referenceCount ? 'edit' : 'generate' })
+  }
+  return <div className="native-image-mode">
+    {variant === 'canvas' ? <label className="canvas-console-v2__field"><span>生成方式</span><select aria-label="生成方式" value={layer ? 'layer_decomposition' : 'regular'} disabled={disabled} onChange={(event) => change(event.target.value === 'layer_decomposition')}><option value="regular">常规生图</option><option value="layer_decomposition" disabled={Boolean(unavailable)}>图层拆分</option></select></label> : <div className="vd-modes" role="group" aria-label="生成方式">
+      <button type="button" className={`vd-mode${!layer ? ' is-active' : ''}`} aria-pressed={!layer} disabled={disabled} onClick={() => change(false)}><b>常规生图</b><span>按引用自动文生图 / 图生图</span></button>
+      <button type="button" className={`vd-mode${layer ? ' is-active' : ''}`} aria-pressed={layer} disabled={disabled || Boolean(unavailable)} onClick={() => change(true)}><b>图层拆分</b><span>单张来源图 · 输出数量固定为 1</span></button>
+    </div>}
+    <small className="u-meta" role="status">{layer ? nativeLayerUnavailableReason(profile, referenceCount, layerPriceReady, layerUnavailableReason) || '图层拆分来源已就绪，输出数量固定为 1' : unavailable}</small>
+  </div>
+}
 
 export function NativeImageControls({ profile, value, onChange, disabled, references = [], editingReferenceID, onEditingReferenceChange, onUploadMarkedReference, onPendingChange, onEditedChange, onRestoreReference, accessToken, layerPriceReady = false, layerUnavailableReason, mappingManaged = false, persistedMarks, onPersistMarks, persistenceKey, onRefreshReference }: {
   onRefreshReference?: (assetID: string) => Promise<string>
@@ -21,8 +41,8 @@ export function NativeImageControls({ profile, value, onChange, disabled, refere
   const [drafts, setDrafts] = useState<Record<string, Mark[]>>({})
   const [pendingIDs, setPendingIDs] = useState<string[]>([])
   const [paintedIDs, setPaintedIDs] = useState<string[]>([])
-  const live = useRef({ active: true, model: profile?.model, ids: references.map((item) => item.id) })
-  live.current.model = profile?.model; live.current.ids = references.map((item) => item.id)
+  const live = useRef({ active: true, model: profile?.model, operation: value.operation, ids: references.map((item) => item.id) })
+  live.current.model = profile?.model; live.current.operation = value.operation; live.current.ids = references.map((item) => item.id)
   useEffect(() => { live.current.active = true; return () => { live.current.active = false } }, [])
   const hydrated = useRef(false)
   useEffect(() => {
@@ -89,7 +109,6 @@ export function NativeImageControls({ profile, value, onChange, disabled, refere
   const asset = supported ? references.find((item) => item.id === editingReferenceID) : undefined
   const initial: Mark[] = asset ? drafts[asset.id] ?? savedMarks.current[asset.id] ?? (bound.current[asset.id] ?? []).map((annotation) => annotation.point ? { kind: 'point', points: [annotation.point] } : { kind: 'box', points: [[annotation.bbox[0], annotation.bbox[1]], [annotation.bbox[2], annotation.bbox[3]]] }) : []
   return <>
-    {profile && (profile.layer_decomposition || profile.operations.includes('layer_decomposition')) ? <div className="native-layer-entry"><button className="u-btn" type="button" disabled={disabled || value.operation !== 'layer_decomposition' && (!profile.layer_decomposition || !profile.operations.includes('layer_decomposition') || references.length !== 1 || !layerPriceReady)} aria-pressed={value.operation === 'layer_decomposition'} onClick={() => { if (value.operation !== 'layer_decomposition' && (!profile.layer_decomposition || !profile.operations.includes('layer_decomposition') || references.length !== 1 || !layerPriceReady)) return; onChange({ ...userNativeImageFields(value, profile, references.length), operation: value.operation === 'layer_decomposition' ? references.length ? 'edit' : 'generate' : 'layer_decomposition' }) }}>{value.operation === 'layer_decomposition' ? '退出图层拆分' : '图层拆分'}</button><small role="status">{nativeLayerUnavailableReason(profile, references.length, layerPriceReady, layerUnavailableReason) || '独立拆层功能，提交前以有效报价为准'}</small></div> : null}
     {pendingIDs.length ? <p className="u-meta" role="status">有未保存的引用标记，请打开对应参考图保存，或取消更改。</p> : null}
     {asset ? <ReferenceMarkModal key={asset.id} asset={originals.current.get(asset.id) ?? asset} initial={initial} accessToken={accessToken} onMediaRefresh={async () => {
       const original = originals.current.get(asset.id) ?? asset
@@ -97,6 +116,7 @@ export function NativeImageControls({ profile, value, onChange, disabled, refere
       return userApi.imageAssetUrl(url, accessToken)
     }} onDraft={(marks) => { persist({ drafts: { ...drafts, [asset.id]: marks }, pending: [...new Set([...pendingIDs, asset.id])] }); setDrafts((current) => ({ ...current, [asset.id]: marks })); setPendingIDs((current) => [...new Set([...current, asset.id])]) }} onClose={() => onEditingReferenceChange?.('')} onCancel={() => { const remaining = { ...drafts }; delete remaining[asset.id]; persist({ drafts: remaining, pending: pendingIDs.filter((id) => id !== asset.id) }); setDrafts((current) => { const next = { ...current }; delete next[asset.id]; return next }); setPendingIDs((current) => current.filter((id) => id !== asset.id)); onEditingReferenceChange?.('') }} onSave={async (marks, file) => {
       const saveModel = profile?.model
+      const saveOperation = value.operation
       const saveIDs = JSON.stringify(ids)
       let targetID = asset.id
       const original = originals.current.get(asset.id) ?? asset
@@ -109,7 +129,7 @@ export function NativeImageControls({ profile, value, onChange, disabled, refere
         targetID = await onUploadMarkedReference(file, asset.id)
         if (!targetID) throw new Error('上传尚未完成，草稿已保留')
       }
-      if (!live.current.active || live.current.model !== saveModel || (JSON.stringify(live.current.ids) !== saveIDs && JSON.stringify(live.current.ids) !== JSON.stringify(ids.map((id) => id === asset.id ? targetID : id)))) throw new Error('引用上下文已变化，未写入旧标记')
+      if (!live.current.active || live.current.model !== saveModel || live.current.operation !== saveOperation || (JSON.stringify(live.current.ids) !== saveIDs && JSON.stringify(live.current.ids) !== JSON.stringify(ids.map((id) => id === asset.id ? targetID : id)))) throw new Error('引用上下文已变化，未写入旧标记')
       originals.current.delete(asset.id)
       if (file) originals.current.set(targetID, original)
       delete savedMarks.current[asset.id]; savedMarks.current[targetID] = marks

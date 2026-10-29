@@ -53,7 +53,8 @@ func (a *API) HandleMediaAssets(w http.ResponseWriter, r *http.Request) {
 	request := mediaassetservice.AssetListRequest{
 		UserID: user.ID, MediaType: domainmedia.MediaType(strings.ToLower(strings.TrimSpace(r.URL.Query().Get("media_type")))),
 		SourceType: r.URL.Query().Get("source_type"), GroupName: r.URL.Query().Get("group_name"), Status: r.URL.Query().Get("status"),
-		Keyword: r.URL.Query().Get("keyword"), SortBy: r.URL.Query().Get("sort_by"), SortOrder: r.URL.Query().Get("sort_order"),
+		VisibilityStatus: r.URL.Query().Get("visibility_status"),
+		Keyword:          r.URL.Query().Get("keyword"), SortBy: r.URL.Query().Get("sort_by"), SortOrder: r.URL.Query().Get("sort_order"),
 		Cursor: r.URL.Query().Get("cursor"), Limit: mediaQueryInt(r, "limit", 40),
 	}
 	if projectID := strings.TrimSpace(r.URL.Query().Get("project_id")); projectID != "" {

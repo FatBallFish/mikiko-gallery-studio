@@ -46,6 +46,7 @@ func main() {
 		Doctor:          mgsctl.ProductionDoctorDependencies(),
 		SelfUpdate:      mgsctl.ProductionSelfUpdateDependencies(),
 		Upgrade:         mgsctl.UpgradeDeploymentDependencies(executors),
+		Reconfigure:     mgsctl.ReconfigureDeploymentDependencies(executors),
 		Uninstall:       mgsctl.UninstallRuntimeDependencies(executors),
 		SetupTokenReset: mgsctl.SetupTokenResetRuntimeDependencies(executors),
 		ExecuteRuntimeAction: func(ctx context.Context, kind mgsctl.CommandKind, runtimeDir string) error {

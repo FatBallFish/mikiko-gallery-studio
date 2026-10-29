@@ -19,6 +19,12 @@ import (
 var ErrInvalid = errors.New("invalid OAuth request or credential")
 var ErrConflict = errors.New("OAuth record conflict")
 var ErrNotFound = errors.New("OAuth record not found")
+var ErrInvalidScope = fmt.Errorf("invalid scope: %w", ErrInvalid)
+var ErrInvalidTarget = fmt.Errorf("invalid resource: %w", ErrInvalid)
+var ErrUnsupportedGrant = fmt.Errorf("unsupported grant type: %w", ErrInvalid)
+var ErrInvalidRequest = fmt.Errorf("malformed request: %w", ErrInvalid)
+var ErrAuthorizationExpired = fmt.Errorf("authorization request expired: %w", ErrInvalid)
+var ErrRegistrationDisabled = errors.New("OAuth registration disabled")
 
 type Record struct {
 	ID, Kind string
@@ -49,6 +55,8 @@ type Config struct {
 	Clients              []Client
 	User                 func(context.Context, int64) (User, error)
 	EnableRegistration   bool
+	// RegistrationNow supplies the registration limiter clock; nil uses time.Now.
+	RegistrationNow func() time.Time
 }
 type Service struct {
 	store            Store
@@ -105,7 +113,7 @@ type Grant struct {
 
 func New(store Store, cfg Config) (*Service, error) {
 	u, e := url.Parse(cfg.PublicAPIURL)
-	if e != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Scheme != "https" && !(u.Scheme == "http" && loopbackHost(u.Hostname()))) {
+	if e != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") || (u.Scheme != "https" && !(u.Scheme == "http" && loopbackHost(u.Hostname()))) {
 		return nil, fmt.Errorf("OAuth public API URL must be canonical HTTPS (HTTP loopback development only)")
 	}
 	if store == nil || cfg.User == nil {
@@ -143,7 +151,10 @@ func (s *Service) save(ctx context.Context, r Record, v any) error {
 }
 func (s *Service) active(ctx context.Context, id int64) (User, error) {
 	u, e := s.cfg.User(ctx, id)
-	if e != nil || !u.Active {
+	if e != nil {
+		return User{}, e
+	}
+	if !u.Active {
 		return User{}, ErrInvalid
 	}
 	return u, nil
@@ -168,7 +179,7 @@ func scopes(input string, allowed []string) ([]string, error) {
 	seen := map[string]bool{}
 	for _, x := range strings.Fields(input) {
 		if !a[x] {
-			return nil, ErrInvalid
+			return nil, ErrInvalidScope
 		}
 		if !seen[x] {
 			out = append(out, x)
@@ -176,7 +187,7 @@ func scopes(input string, allowed []string) ([]string, error) {
 		}
 	}
 	if len(out) == 0 {
-		return nil, ErrInvalid
+		return nil, ErrInvalidScope
 	}
 	sort.Strings(out)
 	return out, nil
@@ -200,7 +211,7 @@ func (s *Service) Begin(ctx context.Context, q url.Values) (string, error) {
 	}
 	ok := false
 	for _, r := range c.RedirectURIs {
-		if r == q.Get("redirect_uri") {
+		if redirectURIMatches(r, q.Get("redirect_uri")) {
 			ok = true
 		}
 	}
@@ -221,11 +232,17 @@ func (s *Service) Consent(ctx context.Context, id string, uid int64) (Authorizat
 	for i := 0; i < 8; i++ {
 		r, e := s.store.Get(ctx, "request:"+id)
 		if e != nil {
-			return Authorization{}, "", ErrInvalid
+			if errors.Is(e, ErrNotFound) {
+				return Authorization{}, "", ErrInvalid
+			}
+			return Authorization{}, "", e
 		}
 		var a Authorization
-		if json.Unmarshal(r.Payload, &a) != nil || a.Used || a.Expires <= time.Now().Unix() || (a.UserID != 0 && a.UserID != uid) {
+		if json.Unmarshal(r.Payload, &a) != nil || a.Used || (a.UserID != 0 && a.UserID != uid) {
 			return Authorization{}, "", ErrInvalid
+		}
+		if a.Expires <= time.Now().Unix() {
+			return Authorization{}, "", ErrAuthorizationExpired
 		}
 		csrf := secret()
 		a.UserID = uid
@@ -244,11 +261,17 @@ func (s *Service) Decide(ctx context.Context, id string, uid int64, csrf string,
 	}
 	r, e := s.store.Get(ctx, "request:"+id)
 	if e != nil {
-		return "", ErrInvalid
+		if errors.Is(e, ErrNotFound) {
+			return "", ErrInvalid
+		}
+		return "", e
 	}
 	var a Authorization
-	if json.Unmarshal(r.Payload, &a) != nil || a.Used || a.UserID != uid || a.CSRFHash != hash(csrf) || csrf == "" || a.Expires <= time.Now().Unix() {
+	if json.Unmarshal(r.Payload, &a) != nil || a.Used || a.UserID != uid || a.CSRFHash != hash(csrf) || csrf == "" {
 		return "", ErrInvalid
+	}
+	if a.Expires <= time.Now().Unix() {
+		return "", ErrAuthorizationExpired
 	}
 	a.Used = true
 	if e = s.save(ctx, r, a); e != nil {
@@ -278,7 +301,7 @@ func (s *Service) Decide(ctx context.Context, id string, uid int64, csrf string,
 func (s *Service) Token(ctx context.Context, q url.Values) (TokenResponse, error) {
 	for k, v := range q {
 		if len(v) != 1 || k == "client_secret" {
-			return TokenResponse{}, ErrInvalid
+			return TokenResponse{}, ErrInvalidRequest
 		}
 	}
 	typ := q.Get("grant_type")
@@ -288,14 +311,20 @@ func (s *Service) Token(ctx context.Context, q url.Values) (TokenResponse, error
 		raw = q.Get("refresh_token")
 		prefix = "refresh:"
 	} else if typ != "authorization_code" {
-		return TokenResponse{}, ErrInvalid
+		return TokenResponse{}, ErrUnsupportedGrant
 	}
-	if raw == "" || q.Get("resource") != s.resource {
-		return TokenResponse{}, ErrInvalid
+	if q.Get("resource") != s.resource {
+		return TokenResponse{}, ErrInvalidTarget
+	}
+	if raw == "" || q.Get("client_id") == "" {
+		return TokenResponse{}, ErrInvalidRequest
 	}
 	idx, e := s.store.Get(ctx, prefix+hash(raw))
 	if e != nil {
-		return TokenResponse{}, ErrInvalid
+		if errors.Is(e, ErrNotFound) {
+			return TokenResponse{}, ErrInvalid
+		}
+		return TokenResponse{}, e
 	}
 	var id string
 	if json.Unmarshal(idx.Payload, &id) != nil {
@@ -304,7 +333,10 @@ func (s *Service) Token(ctx context.Context, q url.Values) (TokenResponse, error
 	for i := 0; i < 12; i++ {
 		r, e := s.store.Get(ctx, "family:"+id)
 		if e != nil {
-			return TokenResponse{}, ErrInvalid
+			if errors.Is(e, ErrNotFound) {
+				return TokenResponse{}, ErrInvalid
+			}
+			return TokenResponse{}, e
 		}
 		var f family
 		if json.Unmarshal(r.Payload, &f) != nil || f.Revoked || f.ClientID != q.Get("client_id") || f.Resource != q.Get("resource") {
@@ -410,7 +442,10 @@ func (s *Service) Disconnect(ctx context.Context, uid int64, id string) error {
 	for i := 0; i < 12; i++ {
 		r, e := s.store.Get(ctx, "family:"+id)
 		if e != nil {
-			return ErrInvalid
+			if errors.Is(e, ErrNotFound) {
+				return ErrInvalid
+			}
+			return e
 		}
 		var f family
 		if json.Unmarshal(r.Payload, &f) != nil || f.UserID != uid {
@@ -429,13 +464,19 @@ func (s *Service) Revoke(ctx context.Context, token, client string) error {
 	for _, prefix := range []string{"access:", "refresh:"} {
 		r, e := s.store.Get(ctx, prefix+hash(token))
 		if e != nil {
-			continue
+			if errors.Is(e, ErrNotFound) {
+				continue
+			}
+			return e
 		}
 		var id string
 		_ = json.Unmarshal(r.Payload, &id)
 		r, e = s.store.Get(ctx, "family:"+id)
 		if e != nil {
-			continue
+			if errors.Is(e, ErrNotFound) {
+				continue
+			}
+			return e
 		}
 		var f family
 		if json.Unmarshal(r.Payload, &f) == nil && f.ClientID == client {

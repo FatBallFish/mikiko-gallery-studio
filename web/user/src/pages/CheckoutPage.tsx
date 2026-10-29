@@ -117,15 +117,15 @@ export function CheckoutPage() {
   async function createOrder(event: FormEvent) {
     event.preventDefault()
     if (!selectedMethod) {
-      app.notify('error', '请选择支付方式')
+      app.notify('warn', '请选择支付方式')
       return
     }
     if (purchaseType === 'plan' && !selectedPlan) {
-      app.notify('error', '请选择积分包')
+      app.notify('warn', '请选择积分包')
       return
     }
     if (purchaseType === 'custom_amount' && !normalizedCustomAmount.valid) {
-      app.notify('error', normalizedCustomAmount.error ?? '请输入有效金额')
+      app.notify('warn', normalizedCustomAmount.error ?? '请输入有效金额')
       return
     }
     const selectedPaymentMethod = methods.find((method) => method.method === selectedMethod)

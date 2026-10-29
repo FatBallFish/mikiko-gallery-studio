@@ -30,6 +30,7 @@ type CLIDependencies struct {
 	ImportConfig         ImportConfigDependencies
 	Doctor               DoctorDependencies
 	Upgrade              UpgradeDependencies
+	Reconfigure          ReconfigureDependencies
 	SelfUpdate           SelfUpdateDependencies
 	Uninstall            UninstallDependencies
 	SetupTokenReset      SetupTokenResetDependencies
@@ -38,6 +39,7 @@ type CLIDependencies struct {
 	ExecuteImportConfig  func(context.Context, ImportConfigOptions, ImportConfigDependencies) (ImportConfigResult, error)
 	ExecuteDoctor        func(context.Context, string, DoctorDependencies) DoctorReport
 	ExecuteUpgrade       func(context.Context, UpgradeOptions, UpgradeDependencies) (UpgradeResult, error)
+	ExecuteReconfigure   func(context.Context, ReconfigureOptions, ReconfigureDependencies) (ReconfigureResult, error)
 	ExecuteSelfUpdate    func(context.Context, SelfUpdateOptions, SelfUpdateDependencies) (SelfUpdateResult, error)
 	ExecuteUninstall     func(context.Context, UninstallOptions, UninstallDependencies) error
 	CreateClusterToken   func(context.Context, string, ClusterTokenCreateOptions) (ClusterTokenCreateResult, error)
@@ -183,6 +185,16 @@ func Run(ctx context.Context, args []string, dependencies CLIDependencies) int {
 		if !report.Healthy() {
 			return 1
 		}
+		return 0
+	case CommandReconfigure:
+		execute := dependencies.ExecuteReconfigure
+		if execute == nil {
+			execute = Reconfigure
+		}
+		if _, executeErr := execute(ctx, *command.Reconfigure, dependencies.Reconfigure); executeErr != nil {
+			return writeRunError(dependencies.Stderr, executeErr)
+		}
+		fmt.Fprintln(dependencies.Stdout, "Public API URL configured. Deployment configuration and installation binding are consistent.")
 		return 0
 	case CommandUpgrade:
 		execute := dependencies.ExecuteUpgrade
@@ -331,7 +343,7 @@ func Run(ctx context.Context, args []string, dependencies CLIDependencies) int {
 
 func commandRequiresInstalledRuntime(kind CommandKind) bool {
 	switch kind {
-	case CommandStatus, CommandDoctor, CommandRestart, CommandUpgrade, CommandUninstall,
+	case CommandStatus, CommandDoctor, CommandRestart, CommandUpgrade, CommandReconfigure, CommandUninstall,
 		CommandSetupStatus, CommandSetupTokenShow, CommandSetupTokenReset, CommandClusterTokenCreate:
 		return true
 	default:
@@ -341,6 +353,9 @@ func commandRequiresInstalledRuntime(kind CommandKind) bool {
 
 func setCommandRuntimeDirectory(command *Command, runtimeDir string) {
 	command.RuntimeDir = runtimeDir
+	if command.Reconfigure != nil {
+		command.Reconfigure.RuntimeDir = runtimeDir
+	}
 	if command.Upgrade != nil {
 		command.Upgrade.RuntimeDir = runtimeDir
 	}

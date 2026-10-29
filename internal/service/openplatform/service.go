@@ -177,29 +177,30 @@ func projectOperationError(err error) error {
 func unavailable() error { return errs.Internal("operation service is unavailable") }
 
 type resourceInput struct {
-	GroupID         *uuid.UUID              `json:"group_id"`
-	ID              string                  `json:"id"`
-	ProjectID       *uuid.UUID              `json:"project_id"`
-	Name            *string                 `json:"name"`
-	GroupName       *string                 `json:"group_name"`
-	ExpectedVersion int64                   `json:"expected_version"`
-	TargetProjectID string                  `json:"target_project_id"`
-	IdempotencyKey  string                  `json:"idempotency_key"`
-	Purpose         string                  `json:"purpose"`
-	MediaType       domainmedia.MediaType   `json:"media_type"`
-	SourceType      string                  `json:"source_type"`
-	Status          string                  `json:"status"`
-	Keyword         string                  `json:"keyword"`
-	SortBy          string                  `json:"sort_by"`
-	SortOrder       string                  `json:"sort_order"`
-	Cursor          string                  `json:"cursor"`
-	Limit           int                     `json:"limit"`
-	Filename        string                  `json:"filename"`
-	MIMEType        string                  `json:"mime_type"`
-	SizeBytes       int64                   `json:"size_bytes"`
-	Checksum        string                  `json:"checksum"`
-	PartNumber      int                     `json:"part_number"`
-	Parts           []storage.CompletedPart `json:"parts"`
+	GroupID          *uuid.UUID              `json:"group_id"`
+	ID               string                  `json:"id"`
+	ProjectID        *uuid.UUID              `json:"project_id"`
+	Name             *string                 `json:"name"`
+	GroupName        *string                 `json:"group_name"`
+	ExpectedVersion  int64                   `json:"expected_version"`
+	TargetProjectID  string                  `json:"target_project_id"`
+	IdempotencyKey   string                  `json:"idempotency_key"`
+	Purpose          string                  `json:"purpose"`
+	MediaType        domainmedia.MediaType   `json:"media_type"`
+	SourceType       string                  `json:"source_type"`
+	Status           string                  `json:"status"`
+	VisibilityStatus string                  `json:"visibility_status"`
+	Keyword          string                  `json:"keyword"`
+	SortBy           string                  `json:"sort_by"`
+	SortOrder        string                  `json:"sort_order"`
+	Cursor           string                  `json:"cursor"`
+	Limit            int                     `json:"limit"`
+	Filename         string                  `json:"filename"`
+	MIMEType         string                  `json:"mime_type"`
+	SizeBytes        int64                   `json:"size_bytes"`
+	Checksum         string                  `json:"checksum"`
+	PartNumber       int                     `json:"part_number"`
+	Parts            []storage.CompletedPart `json:"parts"`
 }
 
 func (s *Service) projectOperation(ctx context.Context, userID int64, op string, raw json.RawMessage) (any, error) {
@@ -259,7 +260,7 @@ func (s *Service) mediaOperation(ctx context.Context, userID int64, op string, r
 	}
 	switch op {
 	case "list_assets":
-		return s.deps.Assets.ListAssets(ctx, mediaasset.AssetListRequest{UserID: userID, ProjectID: in.ProjectID, MediaType: in.MediaType, SourceType: in.SourceType, GroupName: group, Status: in.Status, Keyword: in.Keyword, SortBy: in.SortBy, SortOrder: in.SortOrder, Cursor: in.Cursor, Limit: in.Limit})
+		return s.deps.Assets.ListAssets(ctx, mediaasset.AssetListRequest{UserID: userID, ProjectID: in.ProjectID, MediaType: in.MediaType, SourceType: in.SourceType, GroupName: group, Status: in.Status, VisibilityStatus: in.VisibilityStatus, Keyword: in.Keyword, SortBy: in.SortBy, SortOrder: in.SortOrder, Cursor: in.Cursor, Limit: in.Limit})
 	case "get_asset":
 		return s.deps.Assets.GetAsset(ctx, userID, id)
 	case "update_asset":

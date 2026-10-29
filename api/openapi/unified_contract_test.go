@@ -44,6 +44,12 @@ func TestUnifiedDeveloperContractMatchesOperationCatalogue(t *testing.T) {
 				}
 				continue
 			}
+			if path == "/api/open/v1/asset-access/{grant}/content" {
+				if (method != "get" && method != "head") || len(op.Security) != 0 {
+					t.Errorf("asset capability must be GET/HEAD without developer Bearer")
+				}
+				continue
+			}
 			if len(op.Security) != 1 {
 				t.Errorf("%s must require Bearer", path)
 				continue

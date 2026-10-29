@@ -20,6 +20,7 @@ import { userHashForRoute } from '../../routeState'
 import { MediaAssetCard, formatBytes } from './MediaAssetCard'
 import { MediaGroupSelectionDialog } from './MediaGroupSelectionDialog'
 import { VideoPublicationControls } from './VideoPublicationControls'
+import { ImagePublicationControls, PublicationControls } from './PublicationControls'
 import { videoPublicationApi } from './videoPublicationApi'
 import { MediaPreviewDialog } from './MediaPreviewDialog'
 import {
@@ -43,15 +44,17 @@ type FilterState = {
   sourceType: string
   groupName: string
   status: string
+  visibilityStatus: NonNullable<import('../../../../shared/api-types').MediaAssetFilters['visibility_status']>
   keyword: string
   sort: string
 }
 
-const initialFilters: FilterState = { mediaType: '', sourceType: '', groupName: '', status: '', keyword: '', sort: 'created_at:desc' }
+const initialFilters: FilterState = { mediaType: '', sourceType: '', groupName: '', status: '', visibilityStatus: 'all', keyword: '', sort: 'created_at:desc' }
 
 function publishStatusForAsset(value: string): PublishStatus {
   if (value === 'public' || value === 'approved') return 'public'
-  if (value === 'pending_review' || value === 'reviewing') return 'pending_review'
+  if (value === 'pending' || value === 'pending_review' || value === 'reviewing') return 'pending_review'
+  if (value === 'offline') return 'unpublished'
   if (value === 'rejected' || value === 'unpublished') return value
   return 'private'
 }
@@ -137,7 +140,7 @@ export function MediaAssetsPage() {
     }
   }, [filters, nextCursor, projects.selectedProjectID])
 
-  useEffect(() => { void load(false) }, [projects.selectedProjectID, filters.mediaType, filters.sourceType, filters.groupName, filters.status, filters.keyword, filters.sort, refreshKey])
+  useEffect(() => { void load(false) }, [projects.selectedProjectID, filters.mediaType, filters.sourceType, filters.groupName, filters.status, filters.visibilityStatus, filters.keyword, filters.sort, refreshKey])
   useEffect(() => {
     const refresh = (event: Event) => {
       const detail = (event as CustomEvent<{ projectID?: string }>).detail
@@ -311,7 +314,7 @@ export function MediaAssetsPage() {
         }))
       }
       const failed = result.items.filter((item) => item.status !== 'succeeded').length
-      app.notify(failed ? 'error' : 'success', failed ? `${result.items.length - failed} 项成功，${failed} 项失败` : `已处理 ${result.items.length} 项资产`)
+      app.notify(failed ? failed < result.items.length ? 'warn' : 'error' : 'success', failed ? `${result.items.length - failed} 项成功，${failed} 项失败` : `已处理 ${result.items.length} 项资产`)
     } catch (caught) {
       app.notify('error', caught instanceof Error ? caught.message : '批量操作失败')
     } finally { setBusy(false) }
@@ -319,9 +322,9 @@ export function MediaAssetsPage() {
 
   const groupSelected = () => setGroupTarget('batch')
   const publishSelected = async () => {
-    const images = selectedItems.filter((item) => item.media_type === 'image' && item.legacy_image_id)
+    const images = selectedItems.filter((item) => item.media_type === 'image' && item.legacy_image_id && item.status === 'ready')
     const videos = selectedItems.filter((item) => item.media_type === 'video' && item.status === 'ready')
-    if (!images.length && !videos.length) { app.notify('error', '请选择可公开的图片或就绪视频'); return }
+    if (!images.length && !videos.length) { app.notify('warn', '请选择关联历史图片记录的就绪图片或就绪视频'); return }
     setBusy(true)
     try {
       const succeededMediaIDs = new Set<string>()
@@ -336,7 +339,9 @@ export function MediaAssetsPage() {
       }
       setSelected((current) => new Set(Array.from(current).filter((id) => !succeededMediaIDs.has(id))))
       setRefreshKey((value) => value + 1)
-      app.notify(failed ? 'error' : 'success', failed ? `${failed} 项资产公开申请失败，已保留选择以便重试` : '已提交公开审核')
+      const skipped = selectedItems.length - images.length - videos.length
+      const unsuccessful = failed + skipped
+      app.notify(unsuccessful ? succeededMediaIDs.size ? 'warn' : 'error' : 'success', unsuccessful ? `${succeededMediaIDs.size} 项已提交，${failed} 项失败，${skipped} 项不支持公开；未成功项保留选择` : '已提交公开审核')
     } catch (caught) { app.notify('error', caught instanceof Error ? caught.message : '公开失败') } finally { setBusy(false) }
   }
   const continueCreation = (options: Parameters<typeof userHashForRoute>[1]) => {
@@ -484,6 +489,9 @@ export function MediaAssetsPage() {
             <select className="u-filter" aria-label="状态" value={filters.status} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}>
               <option value="">全部状态</option><option value="ready">就绪</option><option value="processing">处理中</option><option value="failed">失败</option>
             </select>
+            <select className="u-filter" aria-label="公开状态" value={filters.visibilityStatus} onChange={(event) => setFilters((current) => ({ ...current, visibilityStatus: event.target.value as FilterState['visibilityStatus'] }))}>
+              <option value="all">全部公开状态</option><option value="private">私有</option><option value="pending">待审核</option><option value="public">已公开</option><option value="rejected">未通过</option><option value="offline">已下架</option>
+            </select>
             <select className="u-filter" aria-label="排序" value={filters.sort} onChange={(event) => setFilters((current) => ({ ...current, sort: event.target.value }))}>
               <option value="created_at:desc">最新优先</option>
               <option value="created_at:asc">最早优先</option>
@@ -547,7 +555,7 @@ export function MediaAssetsPage() {
               onSelect={selectCard}
               onOpen={openCard}
               onRetry={(item) => void userApi.retryMediaAssetProcessing(item.id).then(patchAsset).catch((caught) => app.notify('error', caught instanceof Error ? caught.message : '重试处理失败'))}
-              footer={asset.media_type === 'video' && asset.status === 'ready' ? <VideoPublicationControls key={`${asset.id}:${asset.visibility_status}`} assetID={asset.id} onChanged={() => setRefreshKey((value) => value + 1)} /> : undefined}
+              footer={asset.media_type === 'image' ? <ImagePublicationControls asset={asset} onChanged={() => setRefreshKey((value) => value + 1)} /> : asset.media_type === 'video' && asset.status === 'ready' ? <VideoPublicationControls key={`${asset.id}:${asset.visibility_status}`} assetID={asset.id} onChanged={() => setRefreshKey((value) => value + 1)} /> : asset.media_type === 'video' ? <PublicationControls mediaType="video" initialStatus={asset.visibility_status} restriction="视频处理完成后才可申请公开。" change={async () => ({ status: asset.visibility_status })} onChanged={() => undefined} /> : undefined}
             />
           ))}
         </section>

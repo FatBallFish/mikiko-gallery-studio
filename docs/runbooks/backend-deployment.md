@@ -69,6 +69,20 @@ The same Setup-pending plan resumes automatically after a failed startup. A diff
 
 On Linux, `scripts/install.sh` installs `mgsctl` under the user-local binary directory and adds that directory to `.profile` plus the active shell startup file when needed. Start a new shell after installation, or source the updated startup file before invoking `mgsctl` directly.
 
+## Changing the Public HTTPS Origin After Setup
+
+For a completed single-node Linux Docker installation, use the matching mgsctl tool:
+
+```bash
+mgsctl reconfigure --runtime-dir /home/mikiko --public-api-url https://studio.example.com
+```
+
+Replace the example origin with the actual HTTPS entry point. Configure DNS, TLS, and the outer reverse proxy before running the command. The origin must not contain an API path, credentials, query, or fragment. Back up the database and runtime directory first and allow a maintenance window. The command stops application services while preserving managed PostgreSQL and Redis, verifies the existing installation proof, updates the configuration revision and both durable bindings, refreshes hash-verified managed Nginx assets, validates the candidate configuration, and recreates application containers. It preserves application image versions. Modified managed Nginx files are rejected rather than overwritten.
+
+Do not edit `PUBLIC_API_URL` directly in a completed installation or manually rewrite binding digests. Interrupted configuration operations retain private recovery records under `config/`; rerun the same command to recover. These records contain runtime backups and must be protected like `runtime.env`. Native and multi-node reconfiguration are not supported by this command.
+
+Verify `/api/v1/public/developer-endpoints`, `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource/mcp`, and the unauthenticated `/mcp` challenge through the public origin. Discovery must return JSON and the exact configured issuer/resource, not a successful SPA HTML response. The outer proxy must forward these paths and `/oauth/` without rewriting the origin or buffering streaming MCP responses.
+
 ## TUI, Help, and Endpoint Handoff
 
 Running `mgsctl` without arguments opens the TUI only when both input and output are terminals. Number keys and Arrow keys select, Enter confirms, Space toggles multi-select fields, Esc returns, and Ctrl+C exits. For scripts, redirected output, or command discovery, use `mgsctl -h` or `mgsctl --help`; a no-argument non-terminal invocation prints the same help and exits without blocking.

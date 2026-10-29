@@ -1,6 +1,7 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useToastLifetime } from './ui/useToastLifetime'
 import { createPortal } from 'react-dom'
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw, CircleCheck, TriangleAlert, CircleX, Info } from 'lucide-react'
 import type { AdminMetric, AdminSession, ProviderHealth, UserGroup } from '../../shared/api-types'
 import { cn } from '../../shared/classnames'
 import { navGroups, normalizeRoute, protectedRoutes, routeHref, routeTitles } from './layout/admin-navigation'
@@ -160,15 +161,12 @@ export function useHashRoute() {
 export function useToasts() {
   const [toasts, setToasts] = useState<ToastMessage[]>([])
 
-  const pushToast = (toast: Omit<ToastMessage, 'id'>) => {
+  const pushToast = useCallback((toast: Omit<ToastMessage, 'id'>) => {
     const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
     setToasts((current) => [{ ...toast, id }, ...current].slice(0, 4))
-    window.setTimeout(() => {
-      setToasts((current) => current.filter((item) => item.id !== id))
-    }, 5200)
-  }
+  }, [])
 
-  const dismissToast = (id: string) => setToasts((current) => current.filter((item) => item.id !== id))
+  const dismissToast = useCallback((id: string) => setToasts((current) => current.filter((item) => item.id !== id)), [])
 
   return { toasts, pushToast, dismissToast }
 }
@@ -441,17 +439,30 @@ export function StatusStrip({ children, columns = 5 }: { children: React.ReactNo
 
 export function ToastRail({ toasts, onDismiss }: { toasts: ToastMessage[]; onDismiss: (id: string) => void }) {
   return (
-    <aside className="a-toast-stack" aria-live="polite" aria-label="操作反馈">
-      {toasts.map((toast) => (
-        <button key={toast.id} type="button" className={cn('a-toast', toast.tone === 'success' ? 'a-toast--ok' : toast.tone === 'danger' ? 'a-toast--bad' : '')} onClick={() => onDismiss(toast.id)}>
-          <div>
-            <strong>{toast.title}</strong>
-            {toast.detail ? <span>{toast.detail}</span> : null}
-          </div>
-        </button>
-      ))}
+    <aside className="a-toast-stack" aria-label="操作反馈">
+      {toasts.map((toast) => <AdminToastItem key={toast.id} toast={toast} onDismiss={onDismiss} />)}
     </aside>
   )
+}
+
+const adminToastPresentation = {
+  success: { label: '成功', Icon: CircleCheck },
+  warning: { label: '警告', Icon: TriangleAlert },
+  danger: { label: '错误', Icon: CircleX },
+  neutral: { label: '提示', Icon: Info },
+} as const
+
+function AdminToastItem({ toast, onDismiss }: { toast: ToastMessage; onDismiss: (id: string) => void }) {
+  const lifetime = useToastLifetime(toast.tone === 'danger' || toast.tone === 'warning' ? 6500 : 5200, () => onDismiss(toast.id))
+  const { label, Icon } = adminToastPresentation[toast.tone]
+  return <div {...lifetime} className={`a-toast a-toast--${toast.tone}`}>
+    <Icon size={20} className="a-toast__icon" aria-hidden="true" />
+    <div className="a-toast__content" role={toast.tone === 'danger' ? 'alert' : 'status'} aria-atomic="true">
+      <strong>{label} · {toast.title}</strong>
+      {toast.detail ? <span>{toast.detail}</span> : null}
+    </div>
+    <button type="button" className="a-toast__close" aria-label={`关闭${label}通知`} onClick={() => onDismiss(toast.id)}><XIcon /></button>
+  </div>
 }
 
 export function PageHeader({

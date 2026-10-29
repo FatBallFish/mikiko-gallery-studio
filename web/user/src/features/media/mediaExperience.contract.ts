@@ -6,7 +6,16 @@ import {
   reconcileBatchSelection,
   withSingleAccessRefresh,
   buildMediaAssetQuery,
+  mediaAssetMetadata,
 } from './mediaExperience'
+
+const videoMeta = mediaAssetMetadata({ media_type: 'video', width: 1920, height: 1080, duration_ms: 12500, container: 'mp4', mime_type: 'video/mp4' })
+if (videoMeta !== '1920×1080 · MP4 · 12.5 秒') throw new Error(`video must show pixels, format and duration together: ${videoMeta}`)
+const partialVideoMeta = mediaAssetMetadata({ media_type: 'video', duration_ms: 5000, mime_type: 'video/webm' })
+if (partialVideoMeta !== 'WEBM · 5 秒') throw new Error('missing dimensions must not hide known video duration')
+
+const visibilityQuery = buildMediaAssetQuery('project-a', { mediaType: 'video', sourceType: '', groupName: '', status: 'ready', visibilityStatus: 'pending', keyword: '', sort: 'created_at:desc' }, 'next-page')
+if (visibilityQuery.visibility_status !== 'pending' || visibilityQuery.status !== 'ready' || visibilityQuery.cursor !== 'next-page') throw new Error('visibility must reach the API independently of processing state and pagination')
 
 const publicSortQuery = buildMediaAssetQuery('project-a', { mediaType: '', sourceType: '', groupName: '', status: '', keyword: '', sort: 'duration_ms:desc' })
 if (publicSortQuery.sort_by !== 'duration_ms') throw new Error('public duration sort field must reach the API query')

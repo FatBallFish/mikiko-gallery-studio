@@ -8,6 +8,7 @@ WORKDIR /src/web/docs
 RUN npm ci
 WORKDIR /src
 COPY api/openapi ./api/openapi
+COPY docs/api ./docs/api
 COPY web/docs ./web/docs
 WORKDIR /src/web/docs
 ARG VITE_BASE_PATH=./

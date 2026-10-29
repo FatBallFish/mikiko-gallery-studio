@@ -65,7 +65,7 @@ func TestCORSExposesMCPTransportHeadersForConfiguredOrigins(t *testing.T) {
 				t.Errorf("missing allowed header %s", name)
 			}
 		}
-		for _, name := range []string{"WWW-Authenticate", "MCP-Protocol-Version", "Mcp-Session-Id", "Mcp-Previous-Session-Id"} {
+		for _, name := range []string{"WWW-Authenticate", "MCP-Protocol-Version", "Mcp-Session-Id", "Mcp-Previous-Session-Id", "Content-Disposition", "Content-Range", "Accept-Ranges", "Retry-After"} {
 			if !strings.Contains(rec.Header().Get("Access-Control-Expose-Headers"), name) {
 				t.Errorf("missing exposed header %s", name)
 			}

@@ -8,13 +8,16 @@
     "dev": "vite --host 0.0.0.0 --port 5175",
     "prebuild": "node scripts/sync-openapi.mjs",
     "build": "vite build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:guides": "node scripts/check-guides.mjs"
   },
   "dependencies": {
     "@scalar/api-reference-react": "^0.9.54",
     "lucide-react": "^0.468.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",

@@ -83,17 +83,18 @@ type Asset struct {
 }
 
 type AssetListRequest struct {
-	UserID     int64
-	ProjectID  *uuid.UUID
-	MediaType  domainmedia.MediaType
-	SourceType string
-	GroupName  string
-	Status     string
-	Keyword    string
-	SortBy     string
-	SortOrder  string
-	Cursor     string
-	Limit      int
+	UserID           int64
+	ProjectID        *uuid.UUID
+	MediaType        domainmedia.MediaType
+	SourceType       string
+	GroupName        string
+	Status           string
+	VisibilityStatus string
+	Keyword          string
+	SortBy           string
+	SortOrder        string
+	Cursor           string
+	Limit            int
 }
 
 type AssetPage struct {

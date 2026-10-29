@@ -2,10 +2,17 @@ import type { CapabilityModelGroup, ImageTaskType } from '../../../shared/api-ty
 import type { NativeImageProfile } from '../../../shared/native-image'
 import { calculateImageSizeForBaseResolution, validateCustomImageSize, type CustomImageSizeNormalization } from '../../../shared/image-size'
 
-export function nativeLayerUnavailableReason(profile: NativeImageProfile | undefined, referenceCount: number, layerPriceReady: boolean, reason?: string): string {
+export function nativeLayerModeUnavailableReason(profile: NativeImageProfile | undefined, layerPriceReady: boolean, reason?: string): string {
   if (!profile?.layer_decomposition || !profile.operations.includes('layer_decomposition')) return '当前型号拆层操作能力尚未开放'
-  if (referenceCount !== 1) return '拆层需要一张参考图'
   if (!layerPriceReady) return reason?.trim() || '当前路由尚未完成拆层价格配置'
+  return ''
+}
+
+export function nativeLayerUnavailableReason(profile: NativeImageProfile | undefined, referenceCount: number, layerPriceReady: boolean, reason?: string): string {
+  const unavailable = nativeLayerModeUnavailableReason(profile, layerPriceReady, reason)
+  if (unavailable) return unavailable
+  if (referenceCount === 0) return '请添加一张图层拆分来源（必填）'
+  if (referenceCount !== 1) return '图层拆分仅支持一张来源图；已有多张引用已保留，请移除多余图片或切回常规生图'
   return ''
 }
 

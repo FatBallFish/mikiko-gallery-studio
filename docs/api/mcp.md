@@ -1,39 +1,213 @@
-# MCP and browser OAuth
+# MCP 连接与授权
 
-Connect a standard MCP client to `${MIKIKO_BASE_URL}/mcp` using Streamable HTTP. Set `MIKIKO_BASE_URL` to the canonical `Runtime.PublicAPIURL`: for this local environment, `http://localhost:5273`, so the MCP connection URL is **`http://localhost:5273/mcp`**. Do not enter the internal API listener `http://localhost:8091/mcp` (or substitute `127.0.0.1` for the configured `localhost` issuer). The server uses the official Go SDK pinned at `v1.7.0`, targeting protocol `2026-07-28`; tested prior negotiated versions are `2025-11-25`, `2025-06-18`, `2025-03-26`, and `2024-11-05`. Use the negotiated `initialize.protocolVersion`, not an assumed version string. Transport is stateless: POST carries MCP messages; standalone GET and DELETE return 405. Do not depend on an MCP session ID or resumable server event history.
+## 接入地址与凭据
 
-## Discovery and authorization
+Mikiko Studio 的 MCP 地址为 `https://mikiko.studio/mcp`。客户端打开浏览器完成登录和授权，无需在配置中填写令牌。
 
-The canonical issuer is configured by `Runtime.PublicAPIURL`: HTTPS except loopback development. It is not inferred from an untrusted Host header. Protected resource metadata is served at `/.well-known/oauth-protected-resource` and `/.well-known/oauth-protected-resource/mcp`. Authorization server metadata is at `/.well-known/oauth-authorization-server`. Use discovery to obtain endpoints rather than constructing alternate issuer URLs.
+- REST/兼容接口的 `MIKIKO_API_KEY` 是一次显示的 SK（`sk-`）；AK（`ak-`）只作标识。
+- MCP 使用独立 OAuth 令牌，不能用 SK 或浏览器会话替代。
+- 配置文件不保存 API Key、access token 或 refresh token。
 
-In local Studio development, Vite forwards exact `/mcp`, discovery paths (including the `/mcp` metadata suffix), and `/oauth/authorize`, `/oauth/token`, `/oauth/register`, `/oauth/revoke` to its configured API target while preserving the public Host. Discovery must return JSON, and MCP POST must preserve the streaming response; SPA HTML at these URLs indicates a missing proxy. The browser page `/?oauth_request=...#/oauth-consent` remains a Studio route. Login preserves `oauth_request` through local and OIDC authentication; consent submits that request ID with its server CSRF token and follows the server-returned registered client callback. Proxying does not relax canonical issuer or resource validation.
+## 客户端配置
 
-The authorization code flow uses `/oauth/authorize`, PKCE S256, exact registered redirect URI, resource `${issuer}/mcp`, and requested scopes. The client opens the Studio browser login/consent flow. Existing Studio login, including OIDC, establishes the browser user; there is no MCP password-login tool and no password requirement for OIDC-only accounts. Consent requests are stored by the server and protected by CSRF tokens. Registered clients, bounded dynamic registration at `/oauth/register`, and validated Client ID Metadata Documents are supported as configured.
+### Mikiko / ZCode
 
-Exchange codes or refresh tokens using form-encoded POST `/oauth/token`, with `client_id` and `resource`. Authorization-code exchange also supplies `code`, `redirect_uri`, and `code_verifier`. Public clients use `token_endpoint_auth_method=none`; do not send a client secret or browser Authorization header. Tokens are opaque and bound to client, user, scopes, resource and grant. Never put access or refresh tokens in URLs.
+合并至工作区 `.mikiko/config.json`（兼容名 `zcode.json`）或用户 `~/.mikiko/cli/config.json`：
 
-A 401 challenge points to resource metadata. Insufficient tool scope is returned as a tool error with `_meta["mcp/www_authenticate"]` so clients can initiate additional consent. A live token does not bypass current account or grant state.
+```json
+{
+  "mcp": {
+    "servers": {
+      "studio": { "type": "http", "url": "https://mikiko.studio/mcp" }
+    }
+  }
+}
+```
 
-## Tools and durable work
+1. 在设置 → MCP 中检查该 HTTP 服务，重启受影响会话。
+2. 使用客户端提供的浏览器授权入口登录并同意权限。
+3. 连接后检查工具列表。
 
-Discover schemas and annotations through `tools/list`. The shared operation catalogue includes:
+用户同名服务覆盖工作区配置。不添加猜测的 `oauth` 字段。若客户端版本没有浏览器授权入口，先升级或确认版本支持。
 
-- `get_current_user`, `get_balance`, `list_image_models`, `list_video_models`.
-- `preflight_image_task`, `create_image_task`, `get_image_task`, `list_image_tasks` and video equivalents, plus `cancel_video_task`.
-- `get_image_task_layers` (`images:read`, input `{id}`) returns the native decomposition manifest: `{version:1,task_id,operation,layers:[{image_id,width,height,format,layer,access_operation,access_input}]}`. Use each entry's `get_image_result_access` with `{task_id,image_id,purpose:"download"}` for OAuth-authorized downloads; browser session ZIP URLs are not OAuth capabilities.
-- `get_image_result_access`, `get_video_result_access` renew owned task output URLs using image/video read scope without broad asset-library access.
-- `list_assets`, `get_asset`, `update_asset`, `delete_asset`, `get_asset_access`.
-- `create_upload`, `get_upload`, `get_upload_part_url`, `complete_upload`, `abort_upload`.
-- List/create/get/update/delete operations for projects and groups.
+### Codex
 
-Tool results use `structuredContent: {"data": <operation result>}` with a JSON text representation of that same envelope. The tool output schema wraps `data`. Generated tasks persist independently of the client connection; query by task ID and retrieve new asset access links. Send files through returned upload targets; do not pass large base64 files or assume arbitrary remote URL import.
+合并至 `~/.codex/config.toml`：
 
-## Scopes and revocation
+```toml
+[mcp_servers.studio]
+url = "https://mikiko.studio/mcp"
+```
 
-Scopes are `account:read`, `models:read`, `images:read`, `images:write`, `videos:read`, `videos:write`, `videos:delete`, plus `read/write/delete` for `assets`, `uploads`, `projects`, `groups`. Request only what the operation needs. Deleting a group removes grouping, not assets.
+```bash
+codex mcp login studio
+codex mcp list
+```
 
-Use form-encoded POST `/oauth/revoke` with `token` and `client_id` to revoke the associated grant. The browser connected-app screen uses GET `/api/v1/oauth/connected-apps` and DELETE with `grant_id`. Browser consent GET/POST lives at `/api/v1/oauth/consent`; it is not an API-key or MCP tool endpoint. Revocation affects the current grant; it does not log out all Studio browser sessions. Refresh tokens rotate, and reuse detection revokes the grant family. Account disablement and revocation are checked on subsequent operations.
+按浏览器提示完成授权。配置说明见 [Codex 官方文档](https://developers.openai.com/codex/mcp)。MCP 地址不要填到模型 provider 的 BaseURL。
 
-## Limits
+### Claude Code
 
-Platform lifecycle SSE events are not partially generated images. Partial-image support requires real provider support and an adapter that exposes it. Do not assume event replay, large inline file support, remote URL import, or protocol versions beyond those negotiated. The canonical OpenAPI and actual tool catalogue take precedence over generic SDK examples.
+```bash
+claude mcp add --transport http studio https://mikiko.studio/mcp
+claude mcp list
+```
+
+在 Claude Code 输入 `/mcp`，选择 studio，再按 Authenticate 提示授权。此处针对 Claude Code CLI；桌面连接器入口不同。见 [Claude Code 官方文档](https://code.claude.com/docs/en/mcp)。
+
+## OAuth 协议流程
+
+### 发现与注册
+
+1. 未认证的 MCP POST 返回 401 和 `WWW-Authenticate`，客户端读取其中的 resource metadata URL。
+2. 受保护元数据给出精确资源 `https://mikiko.studio/mcp`、`authorization_servers`、`scopes_supported` 和 `bearer_methods_supported:["header"]`。
+3. 获取 `https://mikiko.studio/.well-known/oauth-authorization-server`，校验 issuer 和各端点。HTTP 200 却返回 HTML 通常是代理路由错误。
+4. 根据策略使用预注册客户端、经过校验的 Client ID Metadata Document，或动态注册。
+
+动态注册请求发送到 discovery 返回的 `registration_endpoint`：
+
+```json
+{
+  "client_name": "你的客户端名称",
+  "redirect_uris": ["REPLACE_WITH_CLIENT_CALLBACK"],
+  "token_endpoint_auth_method": "none",
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"]
+}
+```
+
+201 响应包含 `client_id`，不发 `client_secret`。动态注册可能被关闭、限速或受活动客户端容量限制。
+
+Discovery 还声明 `revocation_endpoint`、支持的 response/grant/token-auth 类型、`code_challenge_methods_supported` 和 `client_id_metadata_document_supported`。
+
+### 浏览器授权
+
+客户端生成随机 `state`、PKCE verifier 和 S256 challenge，打开 `authorization_endpoint`，携带：
+
+```text
+client_id, redirect_uri, resource, response_type=code,
+scope, code_challenge, code_challenge_method=S256, state
+```
+
+- `redirect_uri` 默认须与注册或 Client ID Metadata Document 中的值精确匹配。RFC 8252 例外仅适用于 `http` loopback IP literal（如 `127.0.0.1`、`[::1]`）：授权请求可使用不同的有效端口，hostname、路径、query 和其余内容仍须精确一致，不转换主机别名或规范化路径。`localhost` 和 HTTPS 回调不适用动态端口例外；拒绝 userinfo、fragment 和非法端口。换取令牌时须精确使用授权请求中实际提交的完整回调 URI（包含实际端口）。`resource` 须精确匹配 MCP 资源。
+- scope 使用空格分隔。
+- 服务器 303 跳转至 `/?oauth_request=...#/oauth-consent`，使用 Studio 本地登录或 OIDC。
+- 浏览器登录保留 `oauth_request`，不要修改请求 ID 或回调。
+
+浏览器会话读取 `GET https://mikiko.studio/api/v1/oauth/consent?request_id=...`，得到请求、客户端、资源、权限和 `csrf_token`。POST 同路径提交：
+
+```json
+{ "request_id": "REQUEST_ID", "csrf_token": "CSRF_TOKEN", "allow": true }
+```
+
+响应包含 `redirect_uri`。用户拒绝时回调返回 OAuth error；请求过期后从客户端重新发起。
+
+### 换取令牌与调用工具
+
+客户端校验回调 `state`，向 `token_endpoint` 发送 form：
+
+```text
+grant_type=authorization_code
+client_id, resource, code, redirect_uri, code_verifier
+```
+
+不携带浏览器 Authorization 或 client secret。响应字段为 `access_token`、`token_type:"Bearer"`、`expires_in`、`refresh_token`、`scope`，当前访问令牌有效期为 600 秒。
+
+1. 使用 OAuth Bearer 令牌调用 MCP initialize。
+2. 读取协商的 `protocolVersion`，后续携带 `MCP-Protocol-Version`，按 SDK 要求发送初始化通知。
+3. 调用 `tools/list`、`tools/call`。普通工具结果为 `structuredContent:{data:...}`，文本 JSON 使用同样包装；超长结果使用下面的有界读取协议。
+4. 创建任务后保存持久 ID，断线后继续查询。字段见[操作映射](developer-field-map.md)。
+
+### 有界目录、模型摘要与结果续读
+
+单次工具结果以 UTF-8 序列化后的完整响应计算预算，目标小于 40 KiB，并预留 JSON-RPC 包装空间。普通小结果保持原结构。`tools/list` 每页最多五个工具；客户端须继续使用返回的 `nextCursor` 读取，直到该字段为空，不能只读取第一页。
+
+`list_image_models` 和 `list_video_models` 默认返回选型摘要，包含模型 code、名称、任务类型和可用的价格下限／版本字段，不再重复传输完整能力、图标和参数组合。每个模型给出 `details_path`，响应的 `details` 给出 `read_tool_result` 的 token。生成前按模型路径读取真实任务约束、价格、参考图／mask、视频 combinations 和输入角色；各维度不代表任意组合都可用，最终仍以 preflight 校验为准。
+
+其他工具的超长结果返回 `snapshot_token`、`type`、`path`、`offset` 和 `complete:false`。用只读工具继续查询：
+
+```json
+{
+  "token": "REPLACE_WITH_SNAPSHOT_TOKEN",
+  "path": "/model_groups/0/capabilities_by_task_type",
+  "offset": 0,
+  "limit": 100
+}
+```
+
+上述对象是 `read_tool_result` 的工具参数。`path` 使用 RFC 6901 JSON Pointer，根路径为空字符串，键中的 `~` 和 `/` 分别转义为 `~0`、`~1`。
+
+- 对象和数组返回 `type:"entries"` 与 `items`，每项包含 `key`、`path`、`value`。对象按键排序，数组按原下标排序。大项的 value 为 `type:"reference"` 描述符，按其 path 单独读取，不能把描述符当作原始数据。
+- 字符串返回 `type:"string"`，`value` 是合法 UTF-8 片段。offset 和 limit 单位为 UTF-8 字节；使用响应的 `next_offset` 继续，拼接 value 可还原原字符串。极小 limit 可能返回一个完整字符，避免切断中文。
+- 使用每页 `next_offset` 继续，直到 `complete:true`。标量的 `type:"value"` 携带原值。不要重发原始写入来获取下一页。
+
+快照只在当前服务进程保存，固定两分钟有效，绑定同一用户、客户端、grant、分组、凭据版本和权限集合；续读沿用原工具 scope，不要求新增 OAuth 权限。每次 HTTP 请求仍重新验证当前 OAuth 授权。快照表示原请求被授权时的数据，不实时刷新资源变化；令牌被撤销或 scope 变化不能继续读取。服务重启、多副本未命中、容量耗尽或到期会使快照不可用。
+
+单快照上限 8 MiB、单主体 16 MiB、进程总量 64 MiB，并限制条目数量。超过上限的只读查询须缩小原查询；不承诺无限缓存。signed URL 和 quote 的原到期时间不因快照而延长，过期后使用对应 access 或 preflight 工具重新获取。
+
+写入已经成功时，即使结果过大或快照分配失败，也返回 `operation_completed:true`、可用的持久 ID 与后续查询工具。保留该 ID，查询已创建的资源；**不要重提 create、自动更换幂等键或因快照失效重复付费任务**。
+
+### 图片原生缩略图预览
+
+查询成功任务后，以 `get_image_result_access` 传入 `task_id`、`image_id`、`purpose:"preview"`。除原有访问 URL、有效期及 range 元数据外，服务尝试在 MCP `content` 中附加 `type:"image"`、`mimeType:"image/jpeg"` 的原生缩略图。它是最长边不超过 256 像素的有损预览，透明区域合成白底，不代表原图的尺寸、透明度或完整细节；需要原图时使用 `purpose:"download"` 保存并打开。
+
+缩略图原始 JPEG 最多 18 KiB，base64 最多 24 KiB，且计入完整响应小于 40 KiB 的预算，不在 text 或 structuredContent 中重复内嵌。服务仅从已授权的 canonical 资产 capability 内部读取，保留任务归属、主体、撤销及到期检查；不抓取任意远程 URL。源数据最多 16 MiB、32 百万像素，读取使用五秒 context 并在取消时关闭流；解码与缩放阶段检查取消，标准库解码不支持硬 CPU 中断。
+
+若缩略图无法生成或预算不足，结果仍保留访问元数据，并给出明确的 thumbnail unavailable 说明；不要因此重新提交生成任务。客户端是否展示原生图片取决于其 MCP 能力，resource link、远程 Markdown 和本地 artifact 路径均不保证在所有客户端直接显示。仅拿到 URL 或 HTTP 200 不能声称客户端已显示图片。
+
+### 刷新与撤销
+
+刷新向 `token_endpoint` 发送 form：
+
+```text
+grant_type=refresh_token
+client_id, resource, refresh_token
+```
+
+可请求已获批 scope 的子集。刷新令牌会轮换，应原子替换整组令牌；并发刷新或旧令牌重用可能撤销授权族。
+
+- 向 `revocation_endpoint` 发送 form `token,client_id` 撤销当前 grant。
+- 浏览器 `GET https://mikiko.studio/api/v1/oauth/connected-apps` 返回已连接应用 `items`。
+- 同路径 DELETE 使用 query `grant_id`，返回 `{revoked:true}`。
+- 刷新或撤销不会登出所有浏览器会话；账号禁用和 grant 撤销逐次检查。
+
+## 错误与恢复
+
+OAuth 使用 `{error:string}`，不同于原生 REST 的嵌套 error 对象。
+
+| 错误或状态 | 处理方式 |
+| --- | --- |
+| 401 `login_required` | 先登录 |
+| 401 `invalid_session` | 重新登录 |
+| consent 400 `authorization_request_expired` | 返回客户端重新连接 |
+| `invalid_request`、`invalid_client_metadata`、`invalid_client` | 核对请求和注册信息 |
+| `invalid_grant`、`invalid_scope`、`invalid_target`、`unsupported_grant_type` | 核对 grant、resource、scope、PKCE 和流程 |
+| `access_denied` | 尊重拒绝结果，需要时重新请求授权 |
+| `CANONICAL_URL_UNCONFIGURED` | 联系管理员检查可信公共端点配置 |
+| 429 `temporarily_unavailable` | 按 `Retry-After` 等待当前分钟窗口后退避 |
+| 动态注册 403 | 联系管理员确认是否允许注册 |
+| 503 或网络故障 | 保留重试；不能仅凭 503 判断未配置 |
+
+动态注册每分钟最多 10 次。其他 consent 400 不应笼统归为过期；token 400 应先修正请求，不无限重试。scope 不足会返回 tool error 和 `_meta["mcp/www_authenticate"]`。
+
+## 部署与传输边界
+
+可信端点可从 `GET https://mikiko.studio/api/v1/public/developer-endpoints` 的 `data` 读取：
+
+| 字段 | 含义 |
+| --- | --- |
+| `api_origin` | 公共 origin |
+| `rest_base` / `openai_base` | 原生 REST / OpenAI 地址 |
+| `mcp_url` / `web_url` | MCP / 登录与授权页面 |
+| OAuth 各 endpoint | 与 discovery 校验一致 |
+| `protected_resource_metadata_url` | 受保护资源元数据地址 |
+| `canonical_configured` / `disabled_reason` | 配置状态；未配时 URL 为空 |
+
+- 自建部署使用管理员配置的可信 HTTPS canonical（loopback 开发例外），不从 Host、浏览器地址或内部 listener 推导 issuer。
+- canonical 未配置时 OAuth 禁用；配置请求失败不能猜成未配置。
+- `/oauth`、`/.well-known`、`/mcp` 必须返回协议响应，登录/授权页必须可达。
+- 当前不支持 canonical 路径前缀，不任意替换主机名或 localhost/127.0.0.1。
+- MCP 为 stateless POST，独立 GET/DELETE 返回 405，不依赖 session ID 或历史重放。
+- 文件使用上传目标传输；平台生命周期 SSE 不是部分图片协议。
+
+配置格式检查与真实客户端授权是不同验收项；完成连接后还需验证工具发现、刷新和撤销。

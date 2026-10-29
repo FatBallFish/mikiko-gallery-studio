@@ -8,6 +8,23 @@ import (
 	"github.com/google/uuid"
 )
 
+func TestMediaAssetMatchesVisibilityAliases(t *testing.T) {
+	for _, pair := range [][2]string{{"public", "approved"}, {"approved", "public"}, {"pending", "pending_review"}, {"pending", "reviewing"}, {"offline", "unpublished"}, {"rejected", "rejected"}, {"private", "private"}} {
+		item := mediaassetservice.Asset{VisibilityStatus: pair[1], Status: "ready"}
+		req := mediaassetservice.AssetListRequest{VisibilityStatus: pair[0], Status: "ready"}
+		if !mediaAssetMatches(item, req) {
+			t.Errorf("%q should match %q", pair[0], pair[1])
+		}
+		req.Status = "processing"
+		if mediaAssetMatches(item, req) {
+			t.Error("visibility must not bypass processing filter")
+		}
+	}
+	if mediaAssetMatches(mediaassetservice.Asset{VisibilityStatus: "private"}, mediaassetservice.AssetListRequest{VisibilityStatus: "public"}) {
+		t.Fatal("private asset matched public")
+	}
+}
+
 func TestSortMediaAssetsAcceptsPublicFileSizeAndDurationFields(t *testing.T) {
 	durationShort, durationLong := int64(1000), int64(9000)
 	items := []mediaassetservice.Asset{

@@ -1,7 +1,7 @@
 import type { Capability, VideoCapability, VideoTaskType } from '../../../../shared/api-types'
 import { canvasImageDraftForTask, canvasImageParameterErrors } from './core/canvasState'
 import type { CanvasDocument } from './core/types'
-import { workspaceModelForTask } from '../../pages/workspaceParameters'
+import { nativeLayerUnavailableReason, workspaceModelForTask } from '../../pages/workspaceParameters'
 import { normalizeWorkspaceImageCount, workspaceTaskImageSafetyLimit } from '../../pages/workspaceViewModel'
 import { applyVideoCapability, defaultVideoDraft, videoDraftInvalidReason, VIDEO_TASK_INPUT_ROLES, videoTaskInputMissing, type VideoDraft } from '../creation/videoDraft'
 
@@ -80,8 +80,16 @@ export function normalizeCanvasVideoGraphDraft(document: CanvasDocument, nodeID:
 export function canvasConsoleParameterErrors(draft: Record<string, unknown>, image: Capability | null, video: VideoCapability | null, isVideo: boolean) {
   if (!isVideo) {
     if (!image) return ['正在加载图片模型能力']
-    const task = draft.task_type === 'image_edit' ? 'image_edit' : 'text_to_image'
-    return canvasImageParameterErrors(draft, image, task, workspaceTaskImageSafetyLimit)
+    const task = draft.operation === 'layer_decomposition' || draft.task_type === 'image_edit' ? 'image_edit' : 'text_to_image'
+    const errors = canvasImageParameterErrors(draft, image, task, workspaceTaskImageSafetyLimit)
+    if (draft.operation === 'layer_decomposition') {
+      const model = canvasImageModel({ ...draft, task_type: task }, image)
+      const references = Array.isArray(draft.inputs) ? draft.inputs.length : Array.isArray(draft.reference_asset_ids) ? draft.reference_asset_ids.length : 0
+      const reason = nativeLayerUnavailableReason(model?.native_image_profile, references, model?.native_image_layer_pricing_confirmed === true, model?.native_image_layer_unavailable_reason)
+      if (reason) errors.push(reason)
+      if (Number(draft.output_image_count ?? 1) !== 1) errors.push('图层拆分输出数量固定为 1')
+    }
+    return errors
   }
   if (!video) return ['正在加载视频模型能力']
   const next = canvasVideoDraft(draft, video)

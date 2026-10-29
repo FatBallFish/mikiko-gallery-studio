@@ -126,6 +126,9 @@ type PublicImageInteraction func(*sql.Selector)
 // PublicImageStat is the predicate function for publicimagestat builders.
 type PublicImageStat func(*sql.Selector)
 
+// PublicVideoInteraction is the predicate function for publicvideointeraction builders.
+type PublicVideoInteraction func(*sql.Selector)
+
 // RedeemCode is the predicate function for redeemcode builders.
 type RedeemCode func(*sql.Selector)
 
