@@ -179,25 +179,20 @@ func (s *Service) imageOperation(ctx context.Context, p Principal, user domainau
 		}
 	}
 	referenceIDs := append([]string(nil), in.ReferenceAssetIDs...)
+	for _, binding := range in.ReferenceBindings {
+		referenceIDs = append(referenceIDs, binding.AssetID)
+	}
 	if in.MaskAssetID != "" {
 		referenceIDs = append(referenceIDs, in.MaskAssetID)
 	}
-	for _, id := range referenceIDs {
+	if len(referenceIDs) > 0 {
 		if s.deps.References == nil {
 			return nil, unavailable()
 		}
-		if _, err := s.deps.References.GetWithContext(ctx, user.ID, id); err != nil {
-			parsed, parseErr := uuid.Parse(id)
-			if parseErr != nil || s.deps.Assets == nil {
-				return nil, err
-			}
-			asset, assetErr := s.deps.Assets.GetAsset(ctx, user.ID, parsed)
-			if assetErr != nil {
-				return nil, assetErr
-			}
-			if _, assetErr = s.deps.References.ImportMediaAssetAlias(ctx, user.ID, asset); assetErr != nil {
-				return nil, assetErr
-			}
+		// Resolve unified media IDs (and legacy IDs) without creating aliases.
+		// Validate availability before quoting; persisted replays above remain valid.
+		if err := s.deps.References.ValidateReferencesWithContext(ctx, user.ID, referenceIDs); err != nil {
+			return nil, err
 		}
 	}
 	estimate, err := s.deps.Images.Preflight(ctx, req)

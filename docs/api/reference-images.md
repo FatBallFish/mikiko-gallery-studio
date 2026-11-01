@@ -14,8 +14,11 @@
 
 1. 初始化上传会话。
 2. 按响应给出的分片大小、校验和及目标上传文件；目标 URL 可能属于存储服务，按响应使用。
-3. 完成上传，保存资产 ID。
-4. 中断后先查询上传状态，失效链接重新获取。
+3. 完成上传，保存返回的统一资产 ID。完成上传不代表媒体处理完成。
+4. 通过 `GET /api/open/v1/assets/{asset_id}`（MCP：`get_asset`）轮询，直到 `status` 为 `ready` 或 `ready_original`。`processing` 时等待，`failed` 时重新上传；已删除、类型不匹配及其他用户的资产不可引用。
+5. 中断后先查询上传状态，失效链接重新获取。
+
+这套上传服务与画布、普通工作台共用。资产会出现在 `list_assets` 中；同一个 ID 可直接用于图片编辑的 `reference_asset_ids`、命名绑定的 `asset_id`、模型支持的 `mask_asset_id`，以及视频的 `inputs[].asset_id`。无需创建或转换参考图 alias；历史参考 ID 由服务端兼容解析。
 
 任务和 MCP 工具传递资产 ID，不把大型 base64 放入工具输入。任意远程 URL 导入不属于已支持流程。
 

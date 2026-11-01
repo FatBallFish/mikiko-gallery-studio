@@ -20,7 +20,9 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaassetreference"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaderivative"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaprocessingjob"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/project"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/referenceasset"
 	mediaassetservice "github.com/fatballfish/pic-gallery/internal/service/mediaasset"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
@@ -257,6 +259,20 @@ func (s *MediaStore) DeleteAsset(ctx context.Context, req mediaassetservice.Dele
 		now := time.Now().UTC()
 		updated, err := tx.MediaAsset.UpdateOne(entity).SetStatus("deleted").SetDeletedAt(now).AddVersion(1).Save(ctx)
 		if err != nil {
+			return mediaassetservice.Asset{}, err
+		}
+		mappings := []predicate.ReferenceAsset{referenceasset.IDEQ(entity.ID), referenceasset.MediaAssetIDEQ(entity.ID)}
+		identity := []predicate.ReferenceAsset{referenceasset.MediaAssetIDIsNil(), referenceasset.SourceImageResultIDIsNil(), referenceasset.StorageDriverEQ(entity.StorageDriver), referenceasset.ObjectKeyEQ(entity.ObjectKey)}
+		if entity.StorageConfigID == nil {
+			identity = append(identity, referenceasset.StorageConfigIDIsNil())
+		} else {
+			identity = append(identity, referenceasset.StorageConfigIDEQ(*entity.StorageConfigID))
+		}
+		mappings = append(mappings, referenceasset.And(identity...))
+		if entity.LegacyImageResultID != nil {
+			mappings = append(mappings, referenceasset.SourceImageResultIDEQ(*entity.LegacyImageResultID))
+		}
+		if _, err := tx.ReferenceAsset.Update().Where(referenceasset.UserIDEQ(req.UserID), referenceasset.Or(mappings...), referenceasset.DeletedAtIsNil()).SetStatus("deleted").SetDeletedAt(now).Save(ctx); err != nil {
 			return mediaassetservice.Asset{}, err
 		}
 		if entity.LegacyImageResultID != nil {

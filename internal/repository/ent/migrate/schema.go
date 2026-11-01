@@ -2232,14 +2232,6 @@ var (
 					Where: "name_normalized IS NOT NULL AND deleted_at IS NULL AND status <> 'deleted'",
 				},
 			},
-			{
-				Name:    "reference_asset_active_media_asset",
-				Unique:  true,
-				Columns: []*schema.Column{ReferenceAssetsColumns[4], ReferenceAssetsColumns[19]},
-				Annotation: &entsql.IndexAnnotation{
-					Where: "media_asset_id IS NOT NULL AND deleted_at IS NULL AND status <> 'deleted'",
-				},
-			},
 		},
 	}
 	// RefreshSessionsColumns holds the columns for the "refresh_sessions" table.

@@ -228,8 +228,21 @@ func (s *Service) prepare(ctx context.Context, req CreateRequest) (preparedReque
 		case domainvideo.InputRoleReferenceAudio:
 			allowedKind = "audio"
 		}
-		if string(asset.MediaType) != allowedKind || !(asset.Status == "ready" || asset.Status == "ready_original") {
-			return preparedRequest{}, errs.BadRequest("video input asset must be a ready " + allowedKind)
+		if asset.DeletedAt != nil || asset.Status == "deleted" || asset.Status == "deleting" {
+			return preparedRequest{}, videoInputAssetError(asset, "MEDIA_ASSET_DELETED", "引用素材已删除，请重新选择")
+		}
+		if string(asset.MediaType) != allowedKind {
+			err := videoInputAssetError(asset, "MEDIA_ASSET_TYPE_MISMATCH", "引用素材类型不匹配，请选择正确类型的素材")
+			err.Details["media_type"] = string(asset.MediaType)
+			err.Details["expected_media_type"] = allowedKind
+			return preparedRequest{}, err
+		}
+		switch asset.Status {
+		case "ready", "ready_original":
+		case "failed", "processing_failed":
+			return preparedRequest{}, videoInputAssetError(asset, "MEDIA_ASSET_PROCESSING_FAILED", "引用素材处理失败，请重新上传")
+		default:
+			return preparedRequest{}, videoInputAssetError(asset, "MEDIA_ASSET_NOT_READY", "引用素材正在处理中，请稍后重试")
 		}
 		domainInput := domainvideo.Input{AssetID: asset.ID.String(), Role: input.Role, Ordinal: input.Ordinal, MediaType: string(asset.MediaType), Format: asset.MIMEType, SizeBytes: asset.FileSizeBytes, Width: intValuePtr(asset.Width), Height: intValuePtr(asset.Height)}
 		if asset.MediaType == "video" && asset.DurationMS != nil {
@@ -260,6 +273,14 @@ func (s *Service) prepare(ctx context.Context, req CreateRequest) (preparedReque
 	// drafts persisted with "720P" before the option values were pinned).
 	videoReq := domainvideo.Request{TaskType: req.TaskType, Prompt: resolved.Expanded, DurationSeconds: req.DurationSeconds, Resolution: req.Resolution, AspectRatio: req.AspectRatio, AudioMode: req.AudioMode, OutputCount: req.OutputCount, Inputs: domainInputs}
 	return preparedRequest{video: videoReq, resolved: resolved, inputRecords: inputRecords}, nil
+}
+
+func videoInputAssetError(asset mediaassetservice.Asset, code, message string) *errs.Error {
+	status := 409
+	if code == "MEDIA_ASSET_TYPE_MISMATCH" {
+		status = 400
+	}
+	return errs.WithDetails(errs.New(status, code, message), map[string]any{"asset_id": asset.ID.String(), "status": asset.Status})
 }
 
 func normalizeEnums(req *CreateRequest) {

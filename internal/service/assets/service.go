@@ -139,7 +139,7 @@ func (s *Service) UploadWithMetadataContext(ctx context.Context, userID int64, f
 			return domainassets.ReferenceAsset{}, err
 		}
 	}
-	if assetID, ok := s.assetsByHash[key]; ok {
+	if assetID, ok := s.assetsByHash[key]; s.store == nil && ok {
 		if stored, exists := s.assetsByID[assetID]; exists && stored.Asset.Status != "deleted" {
 			return stored.Asset, nil
 		}
@@ -408,6 +408,9 @@ func (s *Service) ImportMediaAssetAlias(ctx context.Context, userID int64, asset
 	if err != nil {
 		return domainassets.ReferenceAsset{}, err
 	}
+	if err := ValidateReferenceAvailability(alias); err != nil {
+		return domainassets.ReferenceAsset{}, err
+	}
 	return s.ProjectURLs(ctx, alias)
 }
 
@@ -473,6 +476,9 @@ func (s *Service) Download(userID int64, assetID string) (domainassets.Reference
 func (s *Service) LoadInput(userID int64, assetID string) (provider.ImageInput, error) {
 	asset, err := s.getStored(context.Background(), userID, assetID)
 	if err != nil {
+		return provider.ImageInput{}, err
+	}
+	if err := ValidateReferenceAvailability(asset); err != nil {
 		return provider.ImageInput{}, err
 	}
 	backend, err := s.router.BackendFor(context.Background(), asset.StorageConfigID, asset.StorageDriver)

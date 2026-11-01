@@ -163,7 +163,7 @@ func TestAssetsStoreLazilyBackfillsHistoricalUnnamedAssets(t *testing.T) {
 	}
 }
 
-func TestAssetsStoreDeleteSoftDeletesAndEnqueuesCanonicalObjectOnce(t *testing.T) {
+func TestAssetsStoreDeleteBorrowedReferenceNeverEnqueuesSharedObject(t *testing.T) {
 	ctx := t.Context()
 	client, err := repoent.Open(dialect.SQLite, "file:assetstore-cleanup?mode=memory&cache=shared&_fk=1")
 	if err != nil {
@@ -181,7 +181,7 @@ func TestAssetsStoreDeleteSoftDeletesAndEnqueuesCanonicalObjectOnce(t *testing.T
 	if err := store.DeleteByUserAndID(ctx, 9, asset.ID); err != nil {
 		t.Fatal(err)
 	}
-	if count, err := client.ObjectDeletionJob.Query().Count(ctx); err != nil || count != 1 {
+	if count, err := client.ObjectDeletionJob.Query().Count(ctx); err != nil || count != 0 {
 		t.Fatalf("cleanup jobs=%d err=%v", count, err)
 	}
 	row, err := client.ReferenceAsset.Query().Only(ctx)
@@ -191,7 +191,7 @@ func TestAssetsStoreDeleteSoftDeletesAndEnqueuesCanonicalObjectOnce(t *testing.T
 	if err := store.DeleteByUserAndID(ctx, 9, asset.ID); !errors.Is(err, repoerr.ErrNotFound) {
 		t.Fatalf("repeat delete=%v", err)
 	}
-	if count, _ := client.ObjectDeletionJob.Query().Count(ctx); count != 1 {
+	if count, _ := client.ObjectDeletionJob.Query().Count(ctx); count != 0 {
 		t.Fatalf("repeat delete created %d jobs", count)
 	}
 }

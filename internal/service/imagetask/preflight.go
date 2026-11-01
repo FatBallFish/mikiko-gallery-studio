@@ -54,7 +54,12 @@ func (s *Service) prepareRequest(ctx context.Context, req domainimagetask.Create
 				var typed *errs.Error
 				if errors.As(err, &typed) {
 					copy := *typed
-					return req, errs.WithDetails(&copy, map[string]any{"field": "reference_asset_ids"})
+					copy.Details = make(map[string]any, len(typed.Details)+1)
+					for key, value := range typed.Details {
+						copy.Details[key] = value
+					}
+					copy.Details["field"] = "reference_asset_ids"
+					return req, &copy
 				}
 				return req, fmt.Errorf("load trusted reference dimensions: %w", err)
 			}
@@ -122,7 +127,12 @@ func (s *Service) validateAssetMetadata(ctx context.Context, userID int64, id, f
 		var typed *errs.Error
 		if errors.As(err, &typed) {
 			copy := *typed
-			return errs.WithDetails(&copy, map[string]any{"field": field})
+			copy.Details = make(map[string]any, len(typed.Details)+1)
+			for key, value := range typed.Details {
+				copy.Details[key] = value
+			}
+			copy.Details["field"] = field
+			return &copy
 		}
 		return fmt.Errorf("validate %s metadata: %w", field, err)
 	}

@@ -46,7 +46,7 @@ import { buildPromptReferenceBindings, buildPromptVariableInputs, expandedPrompt
 import { parsePromptTemplate } from './promptTemplateParser'
 import { applyOptimizedPrompt, beginPromptOptimization, confirmPromptOptimization, failPromptOptimization, initialPromptOptimizationState, receivePromptEstimate, receivePromptOptimization, undoPromptOptimization } from './workspacePromptOptimization'
 import { useProjects } from '../ProjectContext'
-
+import { MEDIA_ASSETS_CHANGED_EVENT, MEDIA_UPLOAD_COMPLETED_EVENT, type MediaUploadCompletedDetail } from '../features/media/UploadTray'
 import { workspaceProjectReadiness, workspaceSubmissionIsCurrent, type WorkspaceProjectSelection } from './workspaceProjectLifecycle'
 
 type OutputTab = 'current' | 'history'
@@ -214,6 +214,15 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const [initialTaskReloadKey, setInitialTaskReloadKey] = useState(0)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const referenceUploadsRef = useRef(new Set<AbortController>())
+
+  useEffect(() => {
+    setBusy(false)
+    return () => {
+      referenceUploadsRef.current.forEach((controller) => controller.abort())
+      referenceUploadsRef.current.clear()
+    }
+  }, [selectedProjectID, projects.selectionGeneration])
   const [previewImage, setPreviewImage] = useState<ImagePreviewPayload | null>(null)
   const previewDetailImage: ImageResult | null = previewImage?.detailImage ?? (previewImage ? {
     id: previewImage.alt || 'preview',
@@ -790,18 +799,44 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const referenceFormatLabel = referencePolicy.allowedFormats.map((format) => format.toUpperCase()).join('、')
   const maxReferenceImages = pendingRestore || admissionPolicy.reason ? 0 : admissionPolicy.limits.image ?? 0
   const editRemainingLimit = Math.max(0, maxReferenceImages - editRefs.length - (reservations.pending().image ?? 0))
+  useEffect(() => {
+    const pending = new Set<string>()
+    const controllers = new Set<AbortController>()
+    const selection = { ...projectSelectionRef.current }
+    const onMediaUploadCompleted = (event: Event) => {
+      const detail = (event as CustomEvent<MediaUploadCompletedDetail>).detail
+      if (!detail?.assetID || detail.mediaType !== 'image' || detail.target || detail.projectID !== selectedProjectID || pending.has(detail.assetID)) return
+      pending.add(detail.assetID)
+      const controller = new AbortController()
+      controllers.add(controller)
+      void admitReferences([detail.asset], (asset) => asset.id, async () => {
+        const reference = await userApi.getReadyMediaReference(detail.asset, selectedProjectID, { signal: controller.signal })
+        if (controller.signal.aborted || !workspaceSubmissionIsCurrent(selection, projectSelectionRef.current)) throw new DOMException('操作已取消', 'AbortError')
+        return [reference]
+      }).catch((error) => {
+        if (!controller.signal.aborted && workspaceSubmissionIsCurrent(selection, projectSelectionRef.current)) notifyRef.current('error', uploadErrorMessage(error))
+      }).finally(() => { pending.delete(detail.assetID); controllers.delete(controller) })
+    }
+    window.addEventListener(MEDIA_UPLOAD_COMPLETED_EVENT, onMediaUploadCompleted)
+    return () => {
+      window.removeEventListener(MEDIA_UPLOAD_COMPLETED_EVENT, onMediaUploadCompleted)
+      controllers.forEach((controller) => controller.abort())
+    }
+  }, [maxReferenceImages, selectedProjectID, projects.selectionGeneration, model, nativeDraft.operation])
   const remainingGalleryImportLimit = editRemainingLimit
 
   async function admitReferences<T>(incoming: T[], key: ((item: T) => string) | undefined, load: () => Promise<ReferenceAsset[]>) {
     if (restoreGeneration.pending(restoreContext.current)) { app.notify('warn', '正在恢复创作引用，请等待完成后再添加。'); return null }
     const context = admissionLive.current
+    const selection = { ...projectSelectionRef.current }
     const request = reservations.reserve<unknown>(context.policy, context.refs, incoming, () => 'image', key ? (item) => typeof item === 'object' && item !== null && 'id' in item ? String(item.id) : key(item as T) : undefined)
     if (!request.ok || request.token === undefined) { app.notify('warn', request.reason); return null }
     setReservationVersion((value) => value + 1)
     try {
       const assets = await load()
       const live = admissionLive.current
-      if (!admissionMounted.current || context.model !== live.model || context.projectID !== live.projectID || context.operation !== live.operation) { app.notify('warn', '型号、操作或项目已变化，本批引用未添加，请重试。'); return null }
+      if (!admissionMounted.current || !workspaceSubmissionIsCurrent(selection, projectSelectionRef.current)) return null
+      if (context.model !== live.model || context.projectID !== live.projectID || context.operation !== live.operation) { app.notify('warn', '型号、操作或项目已变化，本批引用未添加，请重试。'); return null }
       for (const asset of assets) {
         const formatError = referenceAssetError(asset)
         if (formatError) { app.notify('warn', formatError); return null }
@@ -968,6 +1003,10 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 
   async function uploadReferenceFiles(files: File[], target: UploadTarget) {
     if (!files.length) return
+    if (!projectReadiness.ready || !selectedProjectID) {
+      app.notify('error', projectReadiness.reason || '请先选择项目再上传参考图。')
+      return
+    }
     const accepted: File[] = []
     const rejected: string[] = []
     for (const file of files) {
@@ -979,15 +1018,26 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     if (rejected.length) {
       app.notify('warn', rejected.length === 1 ? rejected[0] : `${rejected.length} 个文件不符合上传要求，本批未上传。${rejected[0] ? ` ${rejected[0]}` : ''}`)
     }
-    if (rejected.length) return
+    if (rejected.length || !accepted.length) return
+    const selection = { ...projectSelectionRef.current }
+    const controller = new AbortController()
+    referenceUploadsRef.current.add(controller)
     setBusy(true)
     try {
-      const uploaded = await admitReferences(accepted, undefined, () => Promise.all(accepted.map((file) => userApi.uploadReferenceAsset(file))))
-      if (uploaded) app.notify('success', `已上传 ${uploaded.length} 张参考图`)
+      const uploaded = await admitReferences(accepted, undefined, async () => {
+        const results = await Promise.allSettled(accepted.map((file) => userApi.uploadReferenceAsset(file, selectedProjectID, { signal: controller.signal, accessToken: app.session?.token })))
+        if (controller.signal.aborted || !workspaceSubmissionIsCurrent(selection, projectSelectionRef.current)) throw new DOMException('操作已取消', 'AbortError')
+        const failed = results.find((result) => result.status === 'rejected')
+        window.dispatchEvent(new CustomEvent(MEDIA_ASSETS_CHANGED_EVENT, { detail: { projectID: selectedProjectID } }))
+        if (failed?.status === 'rejected') throw new Error(`本批参考图未添加，已上传的文件可在资产列表查看。${uploadErrorMessage(failed.reason)}`)
+        return results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
+      })
+      if (uploaded?.length) app.notify('success', `已上传并处理完成 ${uploaded.length} 张参考图`)
     } catch (err) {
-      app.notify('error', uploadErrorMessage(err))
+      if (!controller.signal.aborted && workspaceSubmissionIsCurrent(selection, projectSelectionRef.current)) app.notify('error', uploadErrorMessage(err))
     } finally {
-      setBusy(false)
+      referenceUploadsRef.current.delete(controller)
+      if (!controller.signal.aborted && workspaceSubmissionIsCurrent(selection, projectSelectionRef.current)) setBusy(false)
     }
   }
 
@@ -1717,7 +1767,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
             const validation = selectedModel?.native_image_profile ? nativeImageReferenceFileError(file, selectedModel.native_image_profile, nativeDraft.operation) : ''
             if (validation) throw new Error(validation)
             const uploadContext = JSON.stringify(workspaceMarkContext.current)
-            const uploaded = await userApi.uploadReferenceAsset(file)
+            const uploaded = await userApi.uploadReferenceAsset(file, selectedProjectID, { accessToken: app.session?.token })
             if (JSON.stringify(workspaceMarkContext.current) !== uploadContext) throw new Error('引用上下文已变化，已上传资产可从资产库恢复')
             if (!uploaded.id || !['ready', 'ready_original'].includes(uploaded.status)) throw new Error('标记图尚未就绪，请重试')
             originalReferences.current.set(original.id, original)

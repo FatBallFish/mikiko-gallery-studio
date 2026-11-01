@@ -121,13 +121,14 @@ func taskProperties(kind string) map[string]any {
 		p[k] = map[string]any{"type": "integer"}
 	}
 	p["prompt_variables"] = map[string]any{"type": "array", "items": objectSchema(map[string]any{"name": stringProperty(), "value": stringProperty()}, "name", "value")}
-	p["reference_bindings"] = map[string]any{"type": "array", "items": objectSchema(map[string]any{"name": stringProperty(), "asset_id": stringProperty()}, "name", "asset_id")}
+	p["reference_bindings"] = map[string]any{"type": "array", "description": "Named bindings use the same unified asset IDs returned by complete_upload/list_assets. Poll get_asset until ready or ready_original; no alias conversion is required.", "items": objectSchema(map[string]any{"name": stringProperty(), "asset_id": stringProperty()}, "name", "asset_id")}
 	if kind == "image" {
 		p["operation"] = map[string]any{"type": "string", "enum": []string{"", "generate", "edit", "layer_decomposition"}}
 		p["native_options"] = nativeImageOptionsSchema()
-		p["reference_asset_ids"] = map[string]any{"type": "array", "items": stringProperty()}
+		p["mask_asset_id"] = map[string]any{"type": "string", "description": "Unified image asset ID for the mask; must belong to you and be ready or ready_original. No alias conversion is required."}
+		p["reference_asset_ids"] = map[string]any{"type": "array", "description": "Unified image asset IDs from complete_upload/list_assets, used directly. Poll get_asset until ready or ready_original before preflight; processing, failed, deleted and foreign assets are rejected.", "items": stringProperty()}
 	} else {
-		p["inputs"] = map[string]any{"type": "array", "items": objectSchema(map[string]any{"asset_id": stringProperty(), "role": stringProperty(), "ordinal": map[string]any{"type": "integer"}}, "asset_id", "role", "ordinal")}
+		p["inputs"] = map[string]any{"type": "array", "description": "Use unified asset IDs directly, including the same uploaded image ID used for image editing. Poll get_asset until ready or ready_original and follow model input roles and media types.", "items": objectSchema(map[string]any{"asset_id": stringProperty(), "role": stringProperty(), "ordinal": map[string]any{"type": "integer"}}, "asset_id", "role", "ordinal")}
 	}
 	return p
 }
@@ -180,9 +181,13 @@ func constrainInput(spec *OperationSpec) {
 	case "get_upload_part_url":
 		p["part_number"] = integer(1)
 	case "create_upload":
+		spec.Description = "Create a unified media upload session, shared with canvas and workbench. Complete the upload, then poll get_asset until ready or ready_original before using the same asset ID in image edits or video inputs."
 		p["idempotency_key"] = map[string]any{"type": "string", "minLength": 1, "maxLength": 128}
 		p["size_bytes"] = map[string]any{"type": "integer", "minimum": 1, "maximum": 1 << 30}
+	case "get_asset":
+		spec.Description = "Get a unified media asset and its current processing status. After complete_upload, poll this operation until ready or ready_original before referencing its unchanged ID in image or video tasks. Failed assets must be uploaded again."
 	case "complete_upload":
+		spec.Description = "Complete a unified media upload and return its asset ID. Completion may still mean processing: poll get_asset until ready or ready_original before image edits or video references. Use the same ID directly without alias conversion."
 		p["parts"] = map[string]any{"type": "array", "items": jsonTypeSchema(reflect.TypeFor[storage.CompletedPart]())}
 		item := p["parts"].(map[string]any)["items"].(map[string]any)["properties"].(map[string]any)
 		item["part_number"] = integer(1)

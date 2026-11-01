@@ -81,6 +81,16 @@ mikiko-gallery-studio-media-backfill --env-file ./config/runtime.env --verify --
 
 验收要求：`completed=true`、verification 的 source/asset count 与 bytes 一致、各 storage identity 聚合一致、样本的 asset ID、legacy image ID、user、project、object key 全部一致。历史图片缺 project 时，预期项目是该用户的默认项目。
 
+## 参考图统一资产迁移与客户端接入
+
+API 和 Worker 启动时，在存储身份回填完成后、接收请求或执行清理前，自动将历史 `reference_assets` 元数据纳入 `media_assets`。独立上传保留原 UUID；已有媒体或生成结果关联复用现有媒体记录。旧参考图记录仅用于历史 ID 兼容，不再要求新客户端创建 alias。迁移复用原存储配置和 object key，不复制文件，不覆盖统一资产后续的重命名、项目移动或删除。多实例通过事务和 checkpoint 串行推进批次；重复启动重新检查历史记录，已迁移数据不重复创建。
+
+迁移失败会阻止对应实例进入服务，必须检查错误中的记录及存储身份，不能跳过迁移后启动清理器。恢复后重新启动即可重试；不得通过删除旧参考图或重置资产状态处理冲突。滚动升级期间仍在旧版本写入的参考图会在下一次启动检查中补齐，新版本兼容上传会立即写入统一资产。
+
+工作台、画布及 MCP 客户端应遵循相同的上传流程：初始化统一媒体上传会话，上传分片，完成上传，然后查询资产详情，等待 `ready` 或 `ready_original`。完成接口返回 `processing` 只表示文件已归档，尚不能作为生成输入。就绪后直接使用返回的媒体 ID：图片请求放入 `reference_asset_ids` / `reference_bindings[].asset_id`，视频请求放入 `inputs[].asset_id`，不调用 `reference-assets:import-from-media`。旧接口保留兼容，但不再创建不同 UUID 的媒体 alias。
+
+资产处理失败应提示重新上传或通过资产处理重试入口恢复；处理中应提示等待；已删除和类型不符应提示重新选择。资产抽屉和任务服务均检查状态，不能仅凭缩略图可见就认定可引用。
+
 ## 发布、回滚与故障恢复
 
 ### v0.0.25 视频原生销售费率迁移

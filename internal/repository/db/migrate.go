@@ -226,6 +226,9 @@ func migrateLocked(ctx context.Context, database *sql.DB, req MigrationRequest) 
 	if err := client.Schema.Create(ctx); err != nil {
 		return MigrationResult{}, fmt.Errorf("create database schema: %w", err)
 	}
+	if err := RetireReferenceMediaAliasUniqueness(ctx, client); err != nil {
+		return MigrationResult{}, err
+	}
 	if err := RetireLegacyVideoPricingConfiguration(ctx, client); err != nil {
 		return MigrationResult{}, fmt.Errorf("retire legacy video pricing configuration: %w", err)
 	}
