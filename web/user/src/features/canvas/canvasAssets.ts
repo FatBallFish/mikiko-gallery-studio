@@ -7,7 +7,7 @@ export function canvasAssetUnavailableReason(asset: Pick<MediaAsset, 'status'>):
     case 'ready': case 'ready_original': return ''
     case 'uploading': return '资产正在上传，请等待上传完成'
     case 'processing': return '资产正在处理，请稍后再试'
-    case 'failed': return '资产处理失败，请在媒体库重试处理'
+    case 'failed': case 'processing_failed': return '资产处理失败，请在媒体库重试处理'
     case 'deleting': return '资产正在删除，无法使用'
     case 'deleted': return '资产已删除，请重新选择'
     case 'expired': return '资产已过期，请重新上传'

@@ -3506,7 +3506,7 @@ assert_public_gallery_viewer_list_state "$favorited_public_gallery_body" "$PUBLI
 # intentionally breaking storage. No reference import/alias conversion is used.
 edit_model_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/model-accounts/${MODEL_ACCOUNT_ID}/models" \
   -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
-  --data '{"model_code":"smoke-edit","display_name":"Smoke Image Edit","task_types":["image_edit"],"base_resolution":["1k"],"quality":["auto"],"size_modes":["pixel"],"supported_pixel_sizes":["1024x1024"],"max_image_count":1,"max_reference_image_count":1,"cost_per_image":"0.12345","currency":"USD","enabled":true}')"
+  --data '{"model_code":"smoke-edit","display_name":"Smoke Image Edit","task_types":["image_edit"],"base_resolution":["1k"],"quality":["auto"],"size_modes":["pixel"],"supported_pixel_sizes":["1024x1024"],"min_width":512,"max_width":2048,"min_height":512,"max_height":2048,"max_image_count":1,"max_reference_image_count":1,"cost_per_image":"0.12345","currency":"USD","enabled":true}')"
 EDIT_ACCOUNT_MODEL_ID="$(assert_json_field "$edit_model_body" data.id)"
 edit_route_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/route-models" \
   -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \

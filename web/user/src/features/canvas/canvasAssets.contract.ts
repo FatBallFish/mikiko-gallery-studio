@@ -6,7 +6,7 @@ import type { CanvasDocument } from './core/types'
 
 const asset = (id: string, status = 'ready'): MediaAsset => ({ id, project_id: 'project-a', name: id, status, media_type: 'image' } as MediaAsset)
 for (const status of ['ready', 'ready_original']) assert.equal(canvasAssetUnavailableReason(asset('a', status)), '')
-for (const [status, copy] of [['uploading', '上传'], ['processing', '处理'], ['failed', '失败'], ['deleted', '已删除'], ['deleting', '正在删除'], ['expired', '已过期'], ['unknown', '尚不可用']]) {
+for (const [status, copy] of [['uploading', '上传'], ['processing', '处理'], ['failed', '失败'], ['processing_failed', '失败'], ['deleted', '已删除'], ['deleting', '正在删除'], ['expired', '已过期'], ['unknown', '尚不可用']]) {
   assert.ok(canvasAssetUnavailableReason(asset('a', status)).includes(copy))
 }
 const merged = mergeCanvasAssetPage([asset('a'), asset('b', 'processing')], [asset('b'), asset('c')])
