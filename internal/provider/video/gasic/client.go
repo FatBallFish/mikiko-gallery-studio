@@ -360,6 +360,9 @@ func decimal3(value any) string {
 // presigned URLs that only resolve inside the deployment network are
 // unreachable upstream. The relay accepts data URIs for reference images.
 func (c *Client) inlinePrivateImage(ctx context.Context, input videoprovider.Input) (string, error) {
+	if len(input.Data) > 0 {
+		return videoprovider.InlineImageDataURL(input)
+	}
 	if input.URL == "" || publiclyRoutableImageURL(input.URL) {
 		return "", nil
 	}

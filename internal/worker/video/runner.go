@@ -305,7 +305,7 @@ func (r *Runner) submit(ctx context.Context, item WorkItem) error {
 		return r.applyFailure(ctx, prepared, "provider_unavailable", err.Error(), false)
 	}
 	request := providerRequest(prepared)
-	request, err = r.signInputs(ctx, request)
+	request, err = r.signInputs(ctx, request, prepared.ProviderCode)
 	if err != nil {
 		return r.applyFailure(ctx, prepared, "provider_input_unavailable", err.Error(), false)
 	}
@@ -333,7 +333,13 @@ func (r *Runner) reconcile(ctx context.Context, item WorkItem) error {
 	if !ok {
 		return r.applyFailure(ctx, item, "reconcile_unsupported", "provider cannot reconcile an uncertain submission", true)
 	}
-	job, found, err := reconciler.Reconcile(ctx, providerRequest(item))
+	request, err := r.signInputs(ctx, providerRequest(item), item.ProviderCode)
+	if err != nil {
+		// Submission may already exist upstream. Preserve this attempt and its
+		// idempotency key until its original inputs can be restored safely.
+		return r.schedule(ctx, item, item.State, "reconciling", "provider_input_unavailable", err.Error())
+	}
+	job, found, err := reconciler.Reconcile(ctx, request)
 	if err != nil {
 		return r.schedule(ctx, item, item.State, "reconciling", "reconcile_failed", err.Error())
 	}
@@ -893,7 +899,8 @@ func logVideoStatus(ctx context.Context, item WorkItem, status providervideo.Sta
 	}
 }
 
-func (r *Runner) signInputs(ctx context.Context, request providervideo.Request) (providervideo.Request, error) {
+func (r *Runner) signInputs(ctx context.Context, request providervideo.Request, providerCode string) (providervideo.Request, error) {
+	var inlineBytes int64
 	for index := range request.Inputs {
 		input := &request.Inputs[index]
 		ref, err := r.storage.BackendFor(ctx, input.StorageConfigID, input.StorageDriver)
@@ -904,7 +911,41 @@ func (r *Runner) signInputs(ctx context.Context, request providervideo.Request) 
 		if err != nil {
 			return providervideo.Request{}, fmt.Errorf("sign input asset: %w", err)
 		}
-		if !supported || !strings.HasPrefix(access.URL, "http") {
+		if !supported {
+			if ref.Driver != "local" || (input.MediaType != "" && input.MediaType != "image") || (providerCode != "minimax" && providerCode != "seedance" && providerCode != "gasic") {
+				return providervideo.Request{}, errors.New("input asset requires publicly reachable storage for this media type or provider")
+			}
+			const maxImageBytes int64 = 10 << 20
+			const maxRequestBytes int64 = 20 << 20
+			limit := min(maxImageBytes, maxRequestBytes-inlineBytes)
+			if limit <= 0 || input.SizeBytes > limit {
+				return providervideo.Request{}, errors.New("local image input exceeds inline byte limit")
+			}
+			getter, ok := ref.Backend.(storage.BoundedGetter)
+			if !ok {
+				return providervideo.Request{}, errors.New("input asset storage cannot perform bounded reads")
+			}
+			data, err := getter.GetBounded(ctx, input.ObjectKey, limit)
+			if err != nil {
+				return providervideo.Request{}, fmt.Errorf("read local image input: %w", err)
+			}
+			if len(data) == 0 || int64(len(data)) > limit || (input.SizeBytes > 0 && int64(len(data)) != input.SizeBytes) {
+				return providervideo.Request{}, errors.New("local image input size does not match asset metadata")
+			}
+			mimeType := http.DetectContentType(data)
+			if (mimeType != "image/png" && mimeType != "image/jpeg" && mimeType != "image/webp" && mimeType != "image/gif") || input.MIMEType != mimeType {
+				return providervideo.Request{}, errors.New("local image input MIME type does not match asset metadata")
+			}
+			sum := sha256.Sum256(data)
+			if input.SHA256 != "" && !strings.EqualFold(input.SHA256, hex.EncodeToString(sum[:])) {
+				return providervideo.Request{}, errors.New("local image input checksum does not match asset metadata")
+			}
+			input.Data = data
+			input.URL = ""
+			inlineBytes += int64(len(data))
+			continue
+		}
+		if !strings.HasPrefix(access.URL, "http") {
 			return providervideo.Request{}, errors.New("input asset storage cannot issue an externally reachable temporary URL")
 		}
 		input.URL = access.URL
