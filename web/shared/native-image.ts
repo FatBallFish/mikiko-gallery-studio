@@ -139,16 +139,29 @@ export function nativeImageCountLimit(profile: NativeImageProfile | undefined, l
   return profile ? Math.max(1, Math.min(legacyLimit, profile.max_output_images)) : legacyLimit
 }
 const nativeFormatMIME: Record<string, string> = { jpeg: 'image/jpeg', png: 'image/png', bmp: 'image/bmp', tiff: 'image/tiff', webp: 'image/webp', gif: 'image/gif', heic: 'image/heic', heif: 'image/heif' }
-export function nativeImageReferencePolicy(profile: NativeImageProfile, operation?: NativeImageOperation) {
+// Upstream provider caps on reference images. The platform attachment policy
+// (reference_image_max_bytes) may lower these but must never raise them, so the
+// effective per-model limit is min(platform policy, upstream cap).
+export const NATIVE_UPSTREAM_REFERENCE_MAX_BYTES: Record<string, number> = {
+  qwen_image: 10 * 1024 * 1024,
+}
+export const NATIVE_DEFAULT_UPSTREAM_REFERENCE_MAX_BYTES = 30 * 1024 * 1024
+export const DEFAULT_PLATFORM_REFERENCE_MAX_BYTES = 20 * 1024 * 1024
+export function nativeUpstreamReferenceMaxBytes(adapter: string) {
+  return NATIVE_UPSTREAM_REFERENCE_MAX_BYTES[adapter] ?? NATIVE_DEFAULT_UPSTREAM_REFERENCE_MAX_BYTES
+}
+export function nativeImageReferencePolicy(profile: NativeImageProfile, operation?: NativeImageOperation, platformMaxBytes = DEFAULT_PLATFORM_REFERENCE_MAX_BYTES) {
   const allowedFormats = operation === 'layer_decomposition' ? ['jpeg', 'png'] : profile.input_formats ?? ['jpeg', 'png']
-  return { maxBytes: (profile.adapter === 'qwen_image' ? 10 : 30) * 1024 * 1024, allowedFormats, allowedMIMETypes: allowedFormats.map((format) => nativeFormatMIME[format]).filter(Boolean) }
+  const platformCap = platformMaxBytes > 0 ? platformMaxBytes : DEFAULT_PLATFORM_REFERENCE_MAX_BYTES
+  const maxBytes = Math.min(platformCap, nativeUpstreamReferenceMaxBytes(profile.adapter))
+  return { maxBytes, allowedFormats, allowedMIMETypes: allowedFormats.map((format) => nativeFormatMIME[format]).filter(Boolean) }
 }
 export function nativeImageReferenceAccept(profile: NativeImageProfile, operation?: NativeImageOperation) {
   const policy = nativeImageReferencePolicy(profile, operation)
   return [...policy.allowedMIMETypes, ...policy.allowedFormats.flatMap((format) => format === 'jpeg' ? ['.jpg', '.jpeg'] : format === 'tiff' ? ['.tif', '.tiff'] : [`.${format}`])].join(',')
 }
-export function nativeImageReferenceFileError(file: { name: string; type: string; size: number }, profile: NativeImageProfile, operation?: NativeImageOperation) {
-  const policy = nativeImageReferencePolicy(profile, operation)
+export function nativeImageReferenceFileError(file: { name: string; type: string; size: number }, profile: NativeImageProfile, operation?: NativeImageOperation, platformMaxBytes = DEFAULT_PLATFORM_REFERENCE_MAX_BYTES) {
+  const policy = nativeImageReferencePolicy(profile, operation, platformMaxBytes)
   if (file.size > policy.maxBytes) return `${file.name} 超过单张最大 ${policy.maxBytes / 1024 / 1024} MB。`
   const ext = file.name.toLowerCase().split('.').pop() ?? ''
   const format = ext === 'jpg' ? 'jpeg' : ext === 'tif' ? 'tiff' : ext

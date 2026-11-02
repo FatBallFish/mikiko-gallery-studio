@@ -316,6 +316,9 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	if err := requireLegacyStorageIdentityBackfill(startupContext, client, storageConfigSvc, cfg.Storage.Driver); err != nil {
 		return fmt.Errorf("prepare object cleanup storage identities: %w", err)
 	}
+	if err := requireReferenceMediaBackfill(startupContext, client); err != nil {
+		return err
+	}
 	storageRegistry := storage.NewRegistry(storageConfigSvc, 30*time.Second)
 	if err := probeDefaultStorageAtStartup(startupContext, storageConfigSvc, storageRegistry); err != nil {
 		return err

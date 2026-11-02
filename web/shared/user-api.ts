@@ -60,6 +60,7 @@ import { API_PATHS } from './api-types'
 import { fillPath, normalizePage, sharedApiClient, withQuery } from './http-client'
 import { mediaAssetURL } from './media-url'
 import { normalizeCreativeCanvas } from './canvas-document'
+import { readUnifiedImageReference, uploadUnifiedImage, type MediaReadyOptions } from './unified-reference-upload'
 
 export { resolveGenerationResolution } from './generation-resolution'
 
@@ -660,7 +661,7 @@ export const userApi = {
     const response = await sharedApiClient.request<MediaAssetPage | MediaAsset[]>(API_PATHS.agent.mediaAssets, { query: filters })
     return Array.isArray(response) ? { items: response } : { items: response.items ?? [], next_cursor: response.next_cursor }
   },
-  getMediaAsset: (asset_id: string) => sharedApiClient.request<MediaAsset>(API_PATHS.agent.mediaAssetDetail, { pathParams: { asset_id } }),
+  getMediaAsset: (asset_id: string, signal?: AbortSignal) => sharedApiClient.request<MediaAsset>(API_PATHS.agent.mediaAssetDetail, { pathParams: { asset_id }, signal }),
   updateMediaAsset: (asset: Pick<MediaAsset, 'id' | 'version'>, patch: { name?: string; group_name?: string; project_id?: string }) => sharedApiClient.request<MediaAsset>(API_PATHS.agent.mediaAssetDetail, {
     method: 'PATCH', pathParams: { asset_id: asset.id }, body: { ...patch, expected_version: asset.version },
   }),
@@ -691,18 +692,15 @@ export const userApi = {
   completeMediaUpload: (upload_id: string, parts: MediaCompletedPart[], signal?: AbortSignal) => sharedApiClient.request<MediaAsset>(API_PATHS.agent.mediaUploadComplete, {
     method: 'POST', pathParams: { upload_id }, body: { parts }, signal,
   }),
-  abortMediaUpload: (upload_id: string) => sharedApiClient.request<{ status: string }>(API_PATHS.agent.mediaUploadDetail, { method: 'DELETE', pathParams: { upload_id } }),
+  abortMediaUpload: (upload_id: string, signal?: AbortSignal) => sharedApiClient.request<{ status: string }>(API_PATHS.agent.mediaUploadDetail, { method: 'DELETE', pathParams: { upload_id }, signal }),
   estimatePromptOptimization: (prompt: string, mediaType?: 'image' | 'video', routeModelCode?: string) => sharedApiClient.request<PromptOptimizationEstimate>(API_PATHS.agent.promptOptimizationEstimate, { method: 'POST', body: { prompt, ...(mediaType ? { media_type: mediaType } : {}), ...(routeModelCode ? { route_model_code: routeModelCode } : {}) } }),
   optimizePrompt: (prompt: string, quote: string, mediaType?: 'image' | 'video', routeModelCode?: string) => sharedApiClient.request<PromptOptimizationResult>(API_PATHS.agent.promptOptimizations, { method: 'POST', body: { prompt, quote, ...(mediaType ? { media_type: mediaType } : {}), ...(routeModelCode ? { route_model_code: routeModelCode } : {}) } }),
   estimate: async (req: EstimateRequest) => toEstimate(await sharedApiClient.request(API_PATHS.agent.estimate, { query: (() => { const { native_options, reference_asset_ids, ...fields } = buildEstimateWireRequest(req); return { ...fields, ...(reference_asset_ids?.length ? { reference_asset_ids: reference_asset_ids.join(',') } : {}), ...(native_options ? { native_options: JSON.stringify(native_options) } : {}) } })() }), req),
-  uploadReferenceAsset: async (file: File | string, sizeBytes?: number) => {
-    if (typeof file === 'string') {
-      return { id: '', name: file, preview_url: '', status: 'ready', size_bytes: sizeBytes ?? 0, created_at: '' } satisfies ReferenceAsset
-    }
-    const formData = new FormData()
-    formData.set('file', file)
-    return toReferenceAsset(await sharedApiClient.request(API_PATHS.agent.referenceAssets, { method: 'POST', formData }))
+  uploadReferenceAsset: async (file: File, projectID: string, options: MediaReadyOptions & { accessToken?: string | null } = {}): Promise<ReferenceAsset> => {
+    const asset = await uploadUnifiedImage(file, projectID, userApi, options)
+    return readUnifiedImageReference(asset, projectID, userApi, options)
   },
+  getReadyMediaReference: (asset: MediaAsset, projectID: string, options: MediaReadyOptions = {}): Promise<ReferenceAsset> => readUnifiedImageReference(asset, projectID, userApi, options),
   listReferenceAssets: async () => [] as ReferenceAsset[],
   importReferenceAssetsFromGallery: async (galleryImageIds: string[]) => {
     const response = await sharedApiClient.request<{ items?: any[]; assets?: any[]; references?: any[] } | any[]>(API_PATHS.agent.importReferenceAssetsFromGallery, {
@@ -718,7 +716,7 @@ export const userApi = {
     })
     return (response.items ?? []).map(toReferenceAsset)
   },
-  getReferenceAsset: async (asset_id: string) => toReferenceAsset(await sharedApiClient.request(API_PATHS.agent.referenceAssetDetail, { pathParams: { asset_id } })),
+  getReferenceAsset: async (asset_id: string, signal?: AbortSignal): Promise<ReferenceAsset> => toReferenceAsset(await sharedApiClient.request(API_PATHS.agent.referenceAssetDetail, { pathParams: { asset_id }, signal })),
   renameReferenceAsset: async (asset_id: string, name: string) => toReferenceAsset(await sharedApiClient.request(API_PATHS.agent.referenceAssetDetail, { method: 'PATCH', pathParams: { asset_id }, body: { name } })),
   refreshReferenceAssetAccess: (asset_id: string, purpose: MediaAccessPurpose = 'preview') =>
     sharedApiClient.request<MediaAccessProjection>(API_PATHS.agent.referenceAssetAccess, { pathParams: { asset_id }, query: { purpose } }),

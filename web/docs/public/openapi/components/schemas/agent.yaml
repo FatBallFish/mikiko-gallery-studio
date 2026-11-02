@@ -1342,6 +1342,7 @@ components:
           description: Constrained by deployed capabilities and platform limits; Qwen 3.0 up to 3, Qwen 2.1 and Seedream up to 10, decomposition exactly 1.
         reference_asset_ids:
           type: array
+          description: Owned unified media asset IDs of ready or ready_original images. Use the ID returned by media upload completion directly; no reference import or alias conversion is required. Historical reference IDs remain accepted for compatibility.
           items:
             type: string
             format: uuid

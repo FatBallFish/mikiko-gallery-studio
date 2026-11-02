@@ -255,10 +255,10 @@ func (s *canvasAliasStore) Save(context.Context, int64, domainassets.ReferenceAs
 }
 func (s *canvasAliasStore) DeleteByUserAndID(context.Context, int64, string) error { return nil }
 func (s *canvasAliasStore) GetByUserAndID(_ context.Context, user int64, id string) (domainassets.ReferenceAsset, error) {
-	if user != s.asset.UserID || id != s.alias.ID || id == "" {
+	if user != s.asset.UserID || id != s.asset.ID.String() || id == "" {
 		return domainassets.ReferenceAsset{}, repoerr.ErrNotFound
 	}
-	return s.alias, nil
+	return domainassets.ReferenceAsset{ID: id, MediaAssetID: id, Status: s.asset.Status, MimeType: s.asset.MIMEType, ObjectKey: s.asset.ObjectKey, Name: s.asset.Name}, nil
 }
 func (s *canvasAliasStore) ImportMediaAssetAlias(_ context.Context, user int64, a media.Asset) (domainassets.ReferenceAsset, error) {
 	s.imports++
@@ -311,8 +311,8 @@ func TestCanvasCanonicalReferenceAliasEstimateGenerateParity(t *testing.T) {
 	if !reflect.DeepEqual(a, b) {
 		t.Fatalf("estimate/create differ: %#v %#v", a, b)
 	}
-	if a.ReferenceAssetIDs[0] == store.asset.ID.String() || a.ReferenceAssetIDs[0] != store.alias.ID || a.ReferenceBindings[0].AssetID != store.alias.ID || a.ReferenceBindings[0].Name != "stable" {
-		t.Fatalf("canonical alias mapping failed: %#v", a)
+	if a.ReferenceAssetIDs[0] != store.asset.ID.String() || a.ReferenceBindings[0].AssetID != store.asset.ID.String() || a.ReferenceBindings[0].Name != "stable" || store.imports != 0 {
+		t.Fatalf("canonical IDs or binding changed: %#v", a)
 	}
 	for _, tc := range []struct {
 		name    string

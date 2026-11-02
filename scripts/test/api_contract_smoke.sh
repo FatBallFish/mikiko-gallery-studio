@@ -1412,6 +1412,9 @@ class Handler(BaseHTTPRequestHandler):
             if self.headers.get("Authorization") != "Bearer mm-smoke-key":
                 self.send_json({"error": {"message": "unauthorized"}}, 401)
                 return
+            payload = json.loads(raw_body)
+            if any(entry.get("role") == "first_frame" and entry.get("image_url", {}).get("url") for entry in payload.get("content", [])):
+                print("minimax-first-frame-input", flush=True)
             with VIDEO_JOBS_LOCK:
                 job_id = f"mm-smoke-job-{len(VIDEO_JOBS) + 1}"
                 VIDEO_JOBS.add(job_id)
@@ -1467,6 +1470,9 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path not in ("/chat/completions", "/v1/chat/completions"):
             self.send_error(404)
             return
+        payload = json.loads(raw_body)
+        if any(isinstance(message.get("content"), list) and any(part.get("type") == "image_url" and part.get("image_url", {}).get("url", "").startswith("data:image/") for part in message["content"]) for message in payload.get("messages", [])):
+            print("image-edit-reference-input", flush=True)
         print("provider-call", flush=True)
         body = {
             "choices": [
@@ -1996,6 +2002,7 @@ PY
     -H "Content-Type: application/json" \
     --data "{\"parts\":[{\"part_number\":1,\"etag\":\"${upload_etag}\"}]}")"
   uploaded_asset_id="$(assert_json_field "$uploaded_asset_body" "data.id")"
+  UNIFIED_UPLOAD_ASSET_ID="$uploaded_asset_id"
   uploaded_asset_ready_body="$(wait_for_media_asset_status "$uploaded_asset_id" "ready")"
   [[ "$(assert_json_field "$uploaded_asset_ready_body" "data.sha256")" == "$image_checksum" ]]
   [[ "$(assert_json_field "$uploaded_asset_ready_body" "data.media_type")" == "image" ]]
@@ -2035,11 +2042,11 @@ PY
   minimax_account_id="$(assert_json_field "$minimax_account_body" "data.id")"
   minimax_model_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/model-accounts/${minimax_account_id}/models" \
     -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
-    --data '{"model_code":"MiniMax-H3","display_name":"Smoke MiniMax H3","task_types":["text_to_video"],"max_image_count":1,"enabled":true}')"
+    --data '{"model_code":"MiniMax-H3","display_name":"Smoke MiniMax H3","task_types":["text_to_video","image_to_video"],"max_image_count":1,"enabled":true}')"
   minimax_model_id="$(assert_json_field "$minimax_model_body" "data.id")"
   capability_body="$(request -X PUT "$BASE_URL/api/ops/admin/v1/model-account-models/${minimax_model_id}/video-capability" \
     -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
-    --data '{"expected_version":"","capability_version":"smoke-cap-v1","validation_status":"verified","enabled":true,"capability":{"schema_version":1,"provider_native_max_n":1,"prompt_max_runes":2000,"task_types":{"text_to_video":{"durations":{"values":[5]},"resolutions":["768p"],"aspect_ratios":["16:9"],"audio_modes":["silent"]}}}}')"
+    --data '{"expected_version":"","capability_version":"smoke-cap-v1","validation_status":"verified","enabled":true,"capability":{"schema_version":1,"provider_native_max_n":1,"prompt_max_runes":2000,"task_types":{"text_to_video":{"durations":{"values":[5]},"resolutions":["768p"],"aspect_ratios":["16:9"],"audio_modes":["silent"]},"image_to_video":{"durations":{"values":[5]},"resolutions":["768p"],"aspect_ratios":["16:9"],"audio_modes":["silent"],"inputs":{"first_frame":{"required":true,"max_count":1,"media_types":["image"],"formats":["png"]}}}}}}')"
   [[ "$(assert_json_field "$capability_body" "data.validation_status")" == "verified" ]]
 
   local rate_card_body route_body route_id candidate_body simulation_body route_config_body
@@ -2057,7 +2064,7 @@ PY
   assert_json_field "$candidate_body" "data.id" >/dev/null
   route_config_body="$(request -X PUT "$BASE_URL/api/ops/admin/v1/route-models/${route_id}/video-config" \
     -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
-    --data "{\"expected_version\":\"\",\"config_version\":\"smoke-route-v1\",\"candidate_parameter_mappings\":{\"${minimax_model_id}\":{\"resolutions\":{\"720p\":\"768p\"}}},\"minimum_task_points\":\"0.00000\",\"rounding_step_points\":1,\"task_types\":[\"text_to_video\"],\"visible_options\":{},\"defaults\":{\"task_type\":\"text_to_video\",\"duration_seconds\":5,\"resolution\":\"720p\",\"aspect_ratio\":\"16:9\",\"audio_mode\":\"silent\",\"output_count\":1},\"visible_combinations\":[{\"task_type\":\"text_to_video\",\"resolution\":\"720p\",\"aspect_ratio\":\"16:9\",\"audio_mode\":\"silent\",\"duration_seconds\":5}],\"max_output_count\":4,\"enabled\":true}")"
+    --data "{\"expected_version\":\"\",\"config_version\":\"smoke-route-v1\",\"candidate_parameter_mappings\":{\"${minimax_model_id}\":{\"resolutions\":{\"720p\":\"768p\"}}},\"minimum_task_points\":\"0.00000\",\"rounding_step_points\":1,\"task_types\":[\"text_to_video\",\"image_to_video\"],\"visible_options\":{},\"defaults\":{\"task_type\":\"text_to_video\",\"duration_seconds\":5,\"resolution\":\"720p\",\"aspect_ratio\":\"16:9\",\"audio_mode\":\"silent\",\"output_count\":1},\"visible_combinations\":[{\"task_type\":\"text_to_video\",\"resolution\":\"720p\",\"aspect_ratio\":\"16:9\",\"audio_mode\":\"silent\",\"duration_seconds\":5},{\"task_type\":\"image_to_video\",\"resolution\":\"720p\",\"aspect_ratio\":\"16:9\",\"audio_mode\":\"silent\",\"duration_seconds\":5}],\"max_output_count\":4,\"enabled\":true}")"
   [[ "$(assert_json_field "$route_config_body" "data.enabled")" == "True" || "$(assert_json_field "$route_config_body" "data.enabled")" == "true" ]]
   simulation_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/video-routes/${route_id}/quote-simulation" \
     -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
@@ -2184,6 +2191,8 @@ PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
   go test ./internal/repository/db -run '^TestSchemaV2MigratesLegacyRefreshSessions$' -count=1
 PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
   go test ./internal/repository/db -run '^TestListLegacyStorageDriversIgnoresPostgresJSONNullArtifactKeys$' -count=1
+PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
+  go test ./internal/repository/db ./internal/app -run '^TestReferenceMedia' -count=1 -v
 PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
   go test ./internal/repository/db -run '^TestPrepareLegacyDataBackfillsLifecycleColumnsForExistingRows$' -count=1
 PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
@@ -3492,6 +3501,45 @@ assert_public_gallery_viewer_list_state "$liked_public_gallery_body" "$PUBLIC_GA
 
 favorited_public_gallery_body="$(request "$BASE_URL/api/open/image/v1/gallery/images?page=1&page_size=10&favorited=true&access_token=${ACCESS_TOKEN}")"
 assert_public_gallery_viewer_list_state "$favorited_public_gallery_body" "$PUBLIC_GALLERY_IMAGE_ID" "favorited_by_viewer" >/dev/null
+
+# Reuse the original upload ID directly after the billing assertions and before
+# intentionally breaking storage. No reference import/alias conversion is used.
+edit_model_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/model-accounts/${MODEL_ACCOUNT_ID}/models" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  --data '{"model_code":"smoke-edit","display_name":"Smoke Image Edit","task_types":["image_edit"],"base_resolution":["1k"],"quality":["auto"],"size_modes":["pixel"],"supported_pixel_sizes":["1024x1024"],"min_width":512,"max_width":2048,"min_height":512,"max_height":2048,"max_image_count":1,"max_reference_image_count":1,"cost_per_image":"0.12345","currency":"USD","enabled":true}')"
+EDIT_ACCOUNT_MODEL_ID="$(assert_json_field "$edit_model_body" data.id)"
+edit_route_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/route-models" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  --data '{"code":"smoke-edit","name":"Smoke Image Edit","visibility":"public","media_type":"image","enabled":true}')"
+EDIT_ROUTE_ID="$(assert_json_field "$edit_route_body" data.id)"
+request -X POST "$BASE_URL/api/ops/admin/v1/route-models/${EDIT_ROUTE_ID}/candidates" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  --data "{\"account_model_id\":${EDIT_ACCOUNT_MODEL_ID},\"priority\":1,\"weight\":100,\"fallback_order\":0,\"enabled\":true}" >/dev/null
+request -X POST "$BASE_URL/api/ops/admin/v1/route-model-prices" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  --data "{\"route_model_id\":${EDIT_ROUTE_ID},\"task_type\":\"image_edit\",\"base_resolution\":\"1k\",\"base_points\":\"2.00000\",\"reference_multiplier\":\"1.00000\",\"enabled\":true}" >/dev/null
+unified_edit_body="$(request -X POST "$BASE_URL/api/agent/image/v1/tasks" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" -H 'Content-Type: application/json' \
+  --data "{\"project_id\":\"${DEFAULT_PROJECT_ID}\",\"task_type\":\"image_edit\",\"prompt\":\"Edit the uploaded image\",\"route_model_code\":\"smoke-edit\",\"size_mode\":\"pixel\",\"requested_size\":\"1024x1024\",\"requested_output_image_count\":1,\"reference_asset_ids\":[\"${UNIFIED_UPLOAD_ASSET_ID}\"],\"response_mode\":\"async\"}")"
+UNIFIED_EDIT_TASK_ID="$(assert_json_field "$unified_edit_body" data.id)"
+unified_edit_detail="$(wait_for_task_status "$UNIFIED_EDIT_TASK_ID" succeeded)"
+assert_task_detail_status "$unified_edit_detail" "$UNIFIED_EDIT_TASK_ID" succeeded >/dev/null
+
+unified_video_request="{\"project_id\":\"${DEFAULT_PROJECT_ID}\",\"route_model_code\":\"smoke-video\",\"task_type\":\"image_to_video\",\"prompt_template\":\"Animate the uploaded image\",\"inputs\":[{\"asset_id\":\"${UNIFIED_UPLOAD_ASSET_ID}\",\"role\":\"first_frame\",\"ordinal\":0}],\"duration_seconds\":5,\"resolution\":\"720p\",\"aspect_ratio\":\"16:9\",\"audio_mode\":\"silent\",\"output_count\":1}"
+unified_video_estimate="$(request -X POST "$BASE_URL/api/agent/video/v1/estimates" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$unified_video_request")"
+unified_video_quote="$(assert_json_field "$unified_video_estimate" data.quote_token)"
+unified_video_request="${unified_video_request%?},\"quote_token\":\"${unified_video_quote}\"}"
+unified_video_body="$(request -X POST "$BASE_URL/api/agent/video/v1/tasks" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" -H "Idempotency-Key: unified-video-${SMOKE_ID}" \
+  -H 'Content-Type: application/json' --data "$unified_video_request")"
+UNIFIED_VIDEO_TASK_ID="$(assert_json_field "$unified_video_body" data.id)"
+unified_video_detail="$(wait_for_video_task_status "$UNIFIED_VIDEO_TASK_ID" succeeded)"
+[[ "$(assert_json_field "$unified_video_detail" data.success_output_count)" == "1" ]]
+[[ "$(assert_json_field "$unified_video_detail" data.settlement_status)" == "finalized" ]]
+grep -q '^image-edit-reference-input$' "$FAKE_PROVIDER_LOG"
+grep -q '^minimax-first-frame-input$' "$FAKE_PROVIDER_LOG"
+printf '%s\n' 'Unified upload ID succeeded as image edit reference and video first frame'
 
 provider_calls_before_loss="$(awk '$0 == "provider-call" { count++ } END { print count + 0 }' "$FAKE_PROVIDER_LOG")"
 rm -rf "$RUNTIME_STORAGE_ROOT"

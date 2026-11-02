@@ -15,16 +15,31 @@ import (
 	"io"
 )
 
+// Upstream provider caps on reference image bytes. The platform attachment
+// policy (admin-configurable image_max_mb, default 20MB) may lower these caps
+// at the upload endpoints but must never raise them: the effective per-model
+// limit is min(platform policy, upstream cap). ValidateReference keeps
+// enforcing the upstream cap as the final gate before provider calls.
+const (
+	QwenReferenceMaxBytes     int64 = 10 << 20
+	SeedreamReferenceMaxBytes int64 = 30 << 20
+)
+
+// ReferenceMaxBytes reports the upstream byte cap for an adapter. Unknown
+// adapters keep the strictest (Qwen) cap.
+func ReferenceMaxBytes(adapter string) int64 {
+	if adapter == AdapterSeedream {
+		return SeedreamReferenceMaxBytes
+	}
+	return QwenReferenceMaxBytes
+}
+
 // ValidateReference checks actual encoded headers before base64 allocation.
 func ValidateReference(ctx context.Context, adapter string, op Operation, mime string, data []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	maxBytes := 10 << 20
-	if adapter == AdapterSeedream {
-		maxBytes = 30 << 20
-	}
-	if len(data) == 0 || len(data) > maxBytes {
+	if len(data) == 0 || int64(len(data)) > ReferenceMaxBytes(adapter) {
 		return fmt.Errorf("reference image exceeds byte limit or is empty")
 	}
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))

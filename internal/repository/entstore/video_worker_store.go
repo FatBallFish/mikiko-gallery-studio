@@ -687,6 +687,7 @@ func loadVideoWorkItem(ctx context.Context, client *repoent.Client, itemID uuid.
 		providerInput := providervideo.Input{
 			AssetID: asset.ID.String(), Role: input.Role, Ordinal: input.Ordinal, StorageDriver: asset.StorageDriver,
 			ObjectKey: asset.ObjectKey, MIMEType: asset.MimeType, MediaType: asset.MediaType,
+			SizeBytes: asset.FileSizeBytes, SHA256: asset.Sha256,
 		}
 		if asset.StorageConfigID != nil {
 			providerInput.StorageConfigID = asset.StorageConfigID.String()

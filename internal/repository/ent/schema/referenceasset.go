@@ -55,9 +55,5 @@ func (ReferenceAsset) Indexes() []ent.Index {
 			StorageKey("reference_asset_active_name").
 			Unique().
 			Annotations(entsql.IndexWhere("name_normalized IS NOT NULL AND deleted_at IS NULL AND status <> 'deleted'")),
-		index.Fields("user_id", "media_asset_id").
-			StorageKey("reference_asset_active_media_asset").
-			Unique().
-			Annotations(entsql.IndexWhere("media_asset_id IS NOT NULL AND deleted_at IS NULL AND status <> 'deleted'")),
 	}
 }

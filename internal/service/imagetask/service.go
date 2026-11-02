@@ -334,6 +334,17 @@ func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequ
 }
 
 func (s *Service) resolvePromptTemplate(ctx context.Context, req *domainimagetask.CreateRequest) error {
+	if validator, ok := s.assets.(interface {
+		ValidateReferencesWithContext(context.Context, int64, []string) error
+	}); ok {
+		ids := append([]string(nil), req.ReferenceAssetIDs...)
+		if strings.TrimSpace(req.MaskAssetID) != "" {
+			ids = append(ids, req.MaskAssetID)
+		}
+		if err := validator.ValidateReferencesWithContext(ctx, req.UserID, ids); err != nil {
+			return err
+		}
+	}
 	maxRunes := s.cfg.GenerationLimits.PromptMaxChars
 	if maxRunes <= 0 {
 		maxRunes = 4000

@@ -14,6 +14,7 @@ import (
 	mediaassetservice "github.com/fatballfish/pic-gallery/internal/service/mediaasset"
 	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	videotask "github.com/fatballfish/pic-gallery/internal/service/videotask"
+	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
 func TestServiceCreateVerifiesQuoteOwnershipTemplateAndIdempotency(t *testing.T) {
@@ -151,13 +152,19 @@ func TestServiceListGetAndCancelAreOwnerScopedAndMonotonic(t *testing.T) {
 	}
 }
 
-type fakeQuoteVerifier struct{ estimate videotask.Estimate }
+type fakeQuoteVerifier struct {
+	estimate      videotask.Estimate
+	verifyCalls   int
+	estimateCalls int
+}
 
 func (f *fakeQuoteVerifier) Verify(context.Context, int64, videotask.EstimateRequest, string) (videotask.Estimate, error) {
+	f.verifyCalls++
 	return f.estimate, nil
 }
 
 func (f *fakeQuoteVerifier) Estimate(context.Context, int64, videotask.EstimateRequest) (videotask.Estimate, error) {
+	f.estimateCalls++
 	return f.estimate, nil
 }
 
@@ -277,6 +284,59 @@ func TestServicePrepareAcceptsReferenceMediaRolesByKind(t *testing.T) {
 	wrongKind.Inputs = []videotask.InputRequest{{AssetID: audioID, Role: domainvideo.InputRoleReferenceVideo, Ordinal: 0}}
 	if _, err := service.Estimate(t.Context(), wrongKind); err == nil {
 		t.Fatal("audio asset with reference_video role must be rejected")
+	}
+}
+
+func TestServiceRejectsInvalidMediaBeforeQuoteOrCreate(t *testing.T) {
+	deletedAt := time.Now()
+	for _, tc := range []struct {
+		name, status, code, message string
+		kind                        domainmedia.MediaType
+		deletedAt                   *time.Time
+		foreign                     bool
+		httpStatus                  int
+	}{
+		{name: "pending", status: "pending", kind: domainmedia.MediaTypeImage, code: "MEDIA_ASSET_NOT_READY", message: "引用素材正在处理中，请稍后重试", httpStatus: 409},
+		{name: "processing", status: "processing", kind: domainmedia.MediaTypeImage, code: "MEDIA_ASSET_NOT_READY", message: "引用素材正在处理中，请稍后重试", httpStatus: 409},
+		{name: "processing_failed", status: "processing_failed", kind: domainmedia.MediaTypeImage, code: "MEDIA_ASSET_PROCESSING_FAILED", message: "引用素材处理失败，请重新上传", httpStatus: 409},
+		{name: "deleting", status: "deleting", kind: domainmedia.MediaTypeImage, code: "MEDIA_ASSET_DELETED", message: "引用素材已删除，请重新选择", httpStatus: 409},
+		{name: "failed", status: "failed", kind: domainmedia.MediaTypeImage, code: "MEDIA_ASSET_PROCESSING_FAILED", message: "引用素材处理失败，请重新上传", httpStatus: 409},
+		{name: "deleted", status: "deleted", kind: domainmedia.MediaTypeImage, code: "MEDIA_ASSET_DELETED", message: "引用素材已删除，请重新选择", httpStatus: 409},
+		{name: "soft deleted ready", status: "ready", kind: domainmedia.MediaTypeImage, deletedAt: &deletedAt, code: "MEDIA_ASSET_DELETED", message: "引用素材已删除，请重新选择", httpStatus: 409},
+		{name: "wrong type", status: "ready", kind: domainmedia.MediaTypeAudio, code: "MEDIA_ASSET_TYPE_MISMATCH", message: "引用素材类型不匹配，请选择正确类型的素材", httpStatus: 400},
+		{name: "foreign failed", status: "failed", kind: domainmedia.MediaTypeImage, foreign: true, code: errs.CodeNotFound, message: "input asset not found", httpStatus: 404},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			projectID, assetID := uuid.New(), uuid.New()
+			owner := int64(44)
+			if tc.foreign {
+				owner = 99
+			}
+			store := &memoryTaskStore{assets: map[uuid.UUID]mediaassetservice.Asset{assetID: {ID: assetID, UserID: owner, MediaType: tc.kind, Status: tc.status, DeletedAt: tc.deletedAt}}}
+			quotes := &fakeQuoteVerifier{}
+			service := videotask.NewService(store, quotes, &fakeProjectResolver{project: domainproject.Project{ID: projectID.String(), UserID: 44, Status: "active"}}, store, time.Now)
+			req := videotask.CreateRequest{UserID: 44, ProjectID: projectID, IdempotencyKey: "invalid", QuoteToken: "quote", Inputs: []videotask.InputRequest{{AssetID: assetID, Role: domainvideo.InputRoleFirstFrame}}}
+			_, estimateErr := service.Estimate(t.Context(), req)
+			_, _, createErr := service.Create(t.Context(), req)
+			for _, err := range []error{estimateErr, createErr} {
+				var appErr *errs.Error
+				if !errors.As(err, &appErr) || appErr.Code != tc.code || appErr.StatusCode != tc.httpStatus || appErr.Message != tc.message {
+					t.Fatalf("error = %#v, want %s (%d) %q", err, tc.code, tc.httpStatus, tc.message)
+				}
+				if !tc.foreign && (appErr.Details["asset_id"] != assetID.String() || appErr.Details["status"] != tc.status) {
+					t.Fatalf("details = %#v", appErr.Details)
+				}
+				if tc.foreign && len(appErr.Details) != 0 {
+					t.Fatalf("foreign state leaked: %#v", appErr.Details)
+				}
+				if tc.code == "MEDIA_ASSET_TYPE_MISMATCH" && (appErr.Details["media_type"] != "audio" || appErr.Details["expected_media_type"] != "image") {
+					t.Fatalf("type details = %#v", appErr.Details)
+				}
+			}
+			if quotes.verifyCalls != 0 || quotes.estimateCalls != 0 || store.createCalls != 0 {
+				t.Fatalf("invalid asset reached quote/create: verify=%d estimate=%d create=%d", quotes.verifyCalls, quotes.estimateCalls, store.createCalls)
+			}
+		})
 	}
 }
 

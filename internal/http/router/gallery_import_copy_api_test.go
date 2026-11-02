@@ -98,8 +98,18 @@ func TestGalleryAliasCreationDoesNotRequireRolloutConfiguration(t *testing.T) {
 	if rec := importResult(results[1].ID.String()); rec.Code != http.StatusCreated {
 		t.Fatalf("import from soft-deleted source task status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if count, err := client.ReferenceAsset.Query().Count(ctx); err != nil || count != 2 {
-		t.Fatalf("imports without rollout aliases: count=%d err=%v", count, err)
+	if count, err := client.ReferenceAsset.Query().Count(ctx); err != nil || count != 0 {
+		t.Fatalf("unified imports created aliases: count=%d err=%v", count, err)
+	}
+	for _, result := range results {
+		media, err := client.MediaAsset.Get(ctx, result.ID)
+		if err != nil || media.UserID != result.UserID || media.ObjectKey != result.ObjectKey || media.Status != "ready" {
+			t.Fatalf("unified gallery media = %#v err=%v", media, err)
+		}
+		ref, err := assetSvc.GetWithContext(ctx, result.UserID, result.ID.String())
+		if err != nil || ref.ID != result.ID.String() || ref.MediaAssetID != result.ID.String() {
+			t.Fatalf("unified reference = %#v err=%v", ref, err)
+		}
 	}
 	if backend.copyCalls.Load() != 0 || backend.getCalls.Load() != 0 || backend.putCalls.Load() != 0 {
 		t.Fatalf("imports performed storage IO: copy=%d get=%d put=%d", backend.copyCalls.Load(), backend.getCalls.Load(), backend.putCalls.Load())

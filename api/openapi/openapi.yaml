@@ -1379,7 +1379,9 @@ paths:
   /api/agent/image/v1/reference-assets:import-from-media:
     post:
       tags: [ Agent Image ]
-      summary: Create reference aliases for unified image media assets
+      summary: Project unified image media as reference metadata
+      description: Compatibility endpoint. Returns the same unified media IDs without creating reference aliases. New clients can use media IDs directly in image tasks and do not need to call this endpoint.
+      deprecated: true
       operationId: importAgentReferenceAssetsFromMedia
       security:
         - bearerAuth: []
@@ -1391,7 +1393,7 @@ paths:
               $ref: ./components/schemas/agent.yaml#/components/schemas/ReferenceAssetsImportFromMediaRequest
       responses:
         '201':
-          description: Reference aliases created without copying objects
+          description: Unified image reference metadata returned without copying objects or creating aliases
           content:
             application/json:
               schema:
@@ -2028,6 +2030,7 @@ paths:
     post:
       tags: [ Agent Media ]
       summary: Initialize a resumable local or object-storage upload
+      description: Shared upload protocol for the workbench, canvas and MCP integrations. Complete the upload, poll the returned unified media asset until ready or ready_original, then use its ID directly for image reference_asset_ids or video inputs. Upload completion alone does not mean processing has finished.
       operationId: postAgentMediaUpload
       security:
         - bearerAuth: []
@@ -7544,6 +7547,7 @@ paths:
                   minLength: 1
                   type: string
                 mask_asset_id:
+                  description: Unified image asset ID for the mask; must belong to you and be ready or ready_original. No alias conversion is required.
                   type: string
                 moderation:
                   type: string
@@ -7674,13 +7678,15 @@ paths:
                   type: string
                 reference_asset_ids:
                   anyOf:
-                    - items:
+                    - description: Unified image asset IDs from complete_upload/list_assets, used directly. Poll get_asset until ready or ready_original before preflight; processing, failed, deleted and foreign assets are rejected.
+                      items:
                         type: string
                       type: array
                     - type: "null"
                 reference_bindings:
                   anyOf:
-                    - items:
+                    - description: Named bindings use the same unified asset IDs returned by complete_upload/list_assets. Poll get_asset until ready or ready_original; no alias conversion is required.
+                      items:
                         additionalProperties: false
                         properties:
                           asset_id:
@@ -7839,6 +7845,7 @@ paths:
                   minLength: 1
                   type: string
                 mask_asset_id:
+                  description: Unified image asset ID for the mask; must belong to you and be ready or ready_original. No alias conversion is required.
                   type: string
                 moderation:
                   type: string
@@ -7969,13 +7976,15 @@ paths:
                   type: string
                 reference_asset_ids:
                   anyOf:
-                    - items:
+                    - description: Unified image asset IDs from complete_upload/list_assets, used directly. Poll get_asset until ready or ready_original before preflight; processing, failed, deleted and foreign assets are rejected.
+                      items:
                         type: string
                       type: array
                     - type: "null"
                 reference_bindings:
                   anyOf:
-                    - items:
+                    - description: Named bindings use the same unified asset IDs returned by complete_upload/list_assets. Poll get_asset until ready or ready_original; no alias conversion is required.
+                      items:
                         additionalProperties: false
                         properties:
                           asset_id:
@@ -8545,7 +8554,8 @@ paths:
                   type: string
                 inputs:
                   anyOf:
-                    - items:
+                    - description: Use unified asset IDs directly, including the same uploaded image ID used for image editing. Poll get_asset until ready or ready_original and follow model input roles and media types.
+                      items:
                         additionalProperties: false
                         properties:
                           asset_id:
@@ -8587,7 +8597,8 @@ paths:
                   type: string
                 reference_bindings:
                   anyOf:
-                    - items:
+                    - description: Named bindings use the same unified asset IDs returned by complete_upload/list_assets. Poll get_asset until ready or ready_original; no alias conversion is required.
+                      items:
                         additionalProperties: false
                         properties:
                           asset_id:
@@ -8733,7 +8744,8 @@ paths:
                   type: string
                 inputs:
                   anyOf:
-                    - items:
+                    - description: Use unified asset IDs directly, including the same uploaded image ID used for image editing. Poll get_asset until ready or ready_original and follow model input roles and media types.
+                      items:
                         additionalProperties: false
                         properties:
                           asset_id:
@@ -8775,7 +8787,8 @@ paths:
                   type: string
                 reference_bindings:
                   anyOf:
-                    - items:
+                    - description: Named bindings use the same unified asset IDs returned by complete_upload/list_assets. Poll get_asset until ready or ready_original; no alias conversion is required.
+                      items:
                         additionalProperties: false
                         properties:
                           asset_id:
@@ -14394,6 +14407,7 @@ components:
           minLength: 1
           type: string
         mask_asset_id:
+          description: Unified image asset ID for the mask; must belong to you and be ready or ready_original. No alias conversion is required.
           type: string
         moderation:
           type: string
@@ -14524,13 +14538,15 @@ components:
           type: string
         reference_asset_ids:
           anyOf:
-            - items:
+            - description: Unified image asset IDs from complete_upload/list_assets, used directly. Poll get_asset until ready or ready_original before preflight; processing, failed, deleted and foreign assets are rejected.
+              items:
                 type: string
               type: array
             - type: "null"
         reference_bindings:
           anyOf:
-            - items:
+            - description: Named bindings use the same unified asset IDs returned by complete_upload/list_assets. Poll get_asset until ready or ready_original; no alias conversion is required.
+              items:
                 additionalProperties: false
                 properties:
                   asset_id:
@@ -14581,6 +14597,7 @@ components:
           minLength: 1
           type: string
         mask_asset_id:
+          description: Unified image asset ID for the mask; must belong to you and be ready or ready_original. No alias conversion is required.
           type: string
         moderation:
           type: string
@@ -14711,13 +14728,15 @@ components:
           type: string
         reference_asset_ids:
           anyOf:
-            - items:
+            - description: Unified image asset IDs from complete_upload/list_assets, used directly. Poll get_asset until ready or ready_original before preflight; processing, failed, deleted and foreign assets are rejected.
+              items:
                 type: string
               type: array
             - type: "null"
         reference_bindings:
           anyOf:
-            - items:
+            - description: Named bindings use the same unified asset IDs returned by complete_upload/list_assets. Poll get_asset until ready or ready_original; no alias conversion is required.
+              items:
                 additionalProperties: false
                 properties:
                   asset_id:
@@ -14766,7 +14785,8 @@ components:
           type: string
         inputs:
           anyOf:
-            - items:
+            - description: Use unified asset IDs directly, including the same uploaded image ID used for image editing. Poll get_asset until ready or ready_original and follow model input roles and media types.
+              items:
                 additionalProperties: false
                 properties:
                   asset_id:
@@ -14808,7 +14828,8 @@ components:
           type: string
         reference_bindings:
           anyOf:
-            - items:
+            - description: Named bindings use the same unified asset IDs returned by complete_upload/list_assets. Poll get_asset until ready or ready_original; no alias conversion is required.
+              items:
                 additionalProperties: false
                 properties:
                   asset_id:
@@ -14846,7 +14867,8 @@ components:
           type: string
         inputs:
           anyOf:
-            - items:
+            - description: Use unified asset IDs directly, including the same uploaded image ID used for image editing. Poll get_asset until ready or ready_original and follow model input roles and media types.
+              items:
                 additionalProperties: false
                 properties:
                   asset_id:
@@ -14888,7 +14910,8 @@ components:
           type: string
         reference_bindings:
           anyOf:
-            - items:
+            - description: Named bindings use the same unified asset IDs returned by complete_upload/list_assets. Poll get_asset until ready or ready_original; no alias conversion is required.
+              items:
                 additionalProperties: false
                 properties:
                   asset_id:

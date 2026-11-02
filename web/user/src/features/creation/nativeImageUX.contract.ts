@@ -25,7 +25,7 @@ console.log('native image UX contracts passed')
 for (const required of ['persistedMarks', 'onPersistMarks?.(metadata)', 'saved: savedMarks.current', 'originals: [...originals.current]', 'sessionStorage.setItem']) assert.ok(controls.includes(required), required)
 
 const editor = readFileSync(new URL('../canvas/CanvasEditorPage.tsx', import.meta.url), 'utf8')
-for (const required of ['remoteSessionRef.current !== uploadSession', 'uploadSignature', 'document.querySelector']) assert.ok(editor.includes(required), required)
+for (const required of ['remoteSessionRef.current === uploadSession', 'resolveCanvasMarkedReference(detail.asset', 'uploadSignature', 'document.querySelector']) assert.ok(editor.includes(required), required)
 for (const required of ['persist({ drafts: nextDrafts, pending: nextPending, painted: nextPainted })', '!live.current.active', 'changedModel && originals.current.size']) assert.ok(controls.includes(required), required)
 
 const { compareCanvasReferenceEdges, nextCanvasReferenceOrdinal } = await import('../canvas/core/canvasState')

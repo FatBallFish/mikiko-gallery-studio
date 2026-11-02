@@ -147,6 +147,12 @@ client_id, resource, code, redirect_uri, code_verifier
 
 写入已经成功时，即使结果过大或快照分配失败，也返回 `operation_completed:true`、可用的持久 ID 与后续查询工具。保留该 ID，查询已创建的资源；**不要重提 create、自动更换幂等键或因快照失效重复付费任务**。
 
+### 上传与统一引用
+
+MCP 的 `create_upload` 与画布、工作台使用同一套媒体上传服务。调用 `get_upload_part_url` 上传文件并 `complete_upload` 后，保存返回的资产 ID；上传完成时仍可能处于 `processing`，须轮询 `get_asset`，直到 `status` 为 `ready` 或 `ready_original`。资产通过 `list_assets` 可见。
+
+使用同一个 ID 直接提交图片的 `reference_asset_ids`、`reference_bindings[].asset_id`、模型支持的 `mask_asset_id` 或视频的 `inputs[].asset_id`，无需导入或转换 alias。历史参考 ID 保持兼容。处理中素材须等待，处理失败须重新上传；类型不匹配、已删除及其他用户的素材会被拒绝。完整业务输入通过 preflight 后保留相同 ID 和参数创建任务；修改引用后重新 preflight。
+
 ### 图片原生缩略图预览
 
 查询成功任务后，以 `get_image_result_access` 传入 `task_id`、`image_id`、`purpose:"preview"`。除原有访问 URL、有效期及 range 元数据外，服务尝试在 MCP `content` 中附加 `type:"image"`、`mimeType:"image/jpeg"` 的原生缩略图。它是最长边不超过 256 像素的有损预览，透明区域合成白底，不代表原图的尺寸、透明度或完整细节；需要原图时使用 `purpose:"download"` 保存并打开。

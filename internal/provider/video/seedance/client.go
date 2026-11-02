@@ -240,6 +240,9 @@ func mapState(value string) (videoprovider.State, error) {
 // that only resolves inside the deployment network (e.g. MinIO on 127.0.0.1 or
 // a docker bridge) is rejected upstream as an invalid asset.
 func (c *Client) inlinePrivateMedia(ctx context.Context, input videoprovider.Input) (string, error) {
+	if len(input.Data) > 0 {
+		return videoprovider.InlineImageDataURL(input)
+	}
 	if input.URL == "" || publiclyRoutableImageURL(input.URL) {
 		return "", nil
 	}

@@ -3,7 +3,9 @@ package mcpserver
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -15,6 +17,15 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"entgo.io/ent/dialect"
+	domainmedia "github.com/fatballfish/pic-gallery/internal/domain/media"
+	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
+	"github.com/fatballfish/pic-gallery/internal/service/mediaasset"
+	"github.com/fatballfish/pic-gallery/internal/service/project"
+	"github.com/fatballfish/pic-gallery/internal/service/videotask"
+	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	auth "github.com/fatballfish/pic-gallery/internal/domain/auth"
@@ -277,10 +288,25 @@ func TestNativeImageRESTAndMCPFakeProviderLifecycle(t *testing.T) {
 					t.Fatal(err)
 				}
 				backend := storage.NewLocalBackend(t.TempDir())
-				refs := assets.NewServiceWithStoreAndBackend(config.StorageConfig{}, cfg.GenerationLimits, nil, backend)
+				clientDB, err := repoent.Open(dialect.SQLite, "file:"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = clientDB.Close() })
+				if err := clientDB.Schema.Create(ctx); err != nil {
+					t.Fatal(err)
+				}
+				ownedProject, err := clientDB.Project.Create().SetUserID(7).SetName("Fixture").SetNameKey("fixture").Save(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				media := mediaasset.NewService(entstore.NewMediaStore(clientDB), storage.NewStaticRouter(backend), mediaasset.Options{Policy: domainmedia.DefaultPolicy(), PartSize: 8 << 20, UploadTTL: time.Hour})
+				refs := assets.NewServiceWithStoreAndBackend(config.StorageConfig{}, cfg.GenerationLimits, entstore.NewAssetsStore(clientDB), backend)
+				videoStore := &unifiedVideoStore{}
+				videos := videotask.NewService(videoStore, unifiedVideoQuotes{}, project.NewService(entstore.NewProjectStore(clientDB)), media, time.Now)
 				images := imagetask.NewServiceWithProvidersStoreAssetsBillingAndBackend(cfg, map[string]provider.ImageProvider{}, imagetask.NewMemoryStore(), refs, billing, backend)
 				images.SetModelRoutingSource(routing)
-				principal := openplatform.Principal{UserID: 7, Scopes: []string{"images:read", "images:write"}}
+				principal := openplatform.Principal{UserID: 7, Scopes: []string{"images:read", "images:write", "uploads:write", "assets:read", "videos:write"}}
 				if transport == "api_key_rest" {
 					principal.APIKeyID = "42"
 				} else {
@@ -309,7 +335,7 @@ func TestNativeImageRESTAndMCPFakeProviderLifecycle(t *testing.T) {
 					http.NotFound(w, r)
 				}))
 				defer download.Close()
-				shared := openplatform.New(openplatform.Dependencies{Auth: nativeE2EUsers{}, Billing: billing, Images: images, References: refs, QuoteKey: []byte("fixture-quote-secret-at-least-32-bytes"), AssetAccess: func(_ context.Context, p openplatform.Principal, id uuid.UUID, purpose string) (any, error) {
+				shared := openplatform.New(openplatform.Dependencies{Auth: nativeE2EUsers{}, Billing: billing, Images: images, References: refs, Assets: media, Videos: videos, Projects: project.NewService(entstore.NewProjectStore(clientDB)), QuoteKey: []byte("fixture-quote-secret-at-least-32-bytes"), AssetAccess: func(_ context.Context, p openplatform.Principal, id uuid.UUID, purpose string) (any, error) {
 					if p.UserID != 7 || purpose != "download" {
 						t.Errorf("wrong access principal/purpose: %#v %s", p, purpose)
 					}
@@ -419,12 +445,47 @@ func TestNativeImageRESTAndMCPFakeProviderLifecycle(t *testing.T) {
 					request["size_mode"] = "auto"
 				}
 				if tc.op != nativeimage.OperationGenerate {
-					ref, err := refs.Upload(7, "fixture.png", "image/png", pngBytes.Bytes())
-					if err != nil {
-						t.Fatal(err)
+					var referenceID string
+					if transport == "oauth_mcp" {
+						request["project_id"] = ownedProject.ID.String()
+						upload := call("create_upload", map[string]any{"project_id": ownedProject.ID.String(), "filename": "fixture.png", "media_type": "image", "mime_type": "image/png", "size_bytes": pngBytes.Len(), "idempotency_key": "unified-upload"})
+						uploadID := uuid.MustParse(upload["id"].(string))
+						checksum := sha256.Sum256(pngBytes.Bytes())
+						part, err := media.UploadPart(ctx, 7, uploadID, 1, bytes.NewReader(pngBytes.Bytes()), int64(pngBytes.Len()), hex.EncodeToString(checksum[:]))
+						if err != nil {
+							t.Fatal(err)
+						}
+						completed := call("complete_upload", map[string]any{"id": uploadID.String(), "parts": []storage.CompletedPart{part}})
+						referenceID = completed["id"].(string)
+						listed := call("list_assets", map[string]any{"project_id": ownedProject.ID.String()})
+						items := listed["items"].([]any)
+						if len(items) != 1 || items[0].(map[string]any)["id"] != referenceID {
+							t.Fatalf("upload missing from list: %#v", listed)
+						}
+						// The media worker has separate coverage; model its completed transition.
+						if err := clientDB.MediaAsset.UpdateOneID(uuid.MustParse(referenceID)).SetStatus("ready_original").SetWidth(1024).SetHeight(1024).Exec(ctx); err != nil {
+							t.Fatal(err)
+						}
+						if got := call("get_asset", map[string]any{"id": referenceID}); got["status"] != "ready_original" {
+							t.Fatalf("asset status: %#v", got)
+						}
+						videoRequest := map[string]any{"project_id": ownedProject.ID.String(), "route_model_code": "fixture-video", "task_type": "image_to_video", "prompt_template": "move {{@fixture}}", "reference_bindings": []map[string]any{{"name": "fixture", "asset_id": referenceID}}, "inputs": []map[string]any{{"asset_id": referenceID, "role": "first_frame", "ordinal": 0}}, "duration_seconds": 5, "resolution": "720p", "aspect_ratio": "16:9", "audio_mode": "silent", "output_count": 1}
+						videoQuote := call("preflight_video_task", videoRequest)
+						videoRequest["quote_token"] = videoQuote["quote_token"]
+						videoRequest["idempotency_key"] = "unified-video"
+						call("create_video_task", videoRequest)
+						if len(videoStore.record.Inputs) != 1 || videoStore.record.Inputs[0].AssetID.String() != referenceID {
+							t.Fatal("video changed unified ID")
+						}
+					} else {
+						ref, err := refs.Upload(7, "fixture.png", "image/png", pngBytes.Bytes())
+						if err != nil {
+							t.Fatal(err)
+						}
+						referenceID = ref.ID
 					}
 					request["task_type"] = "image_edit"
-					request["reference_asset_ids"] = []string{ref.ID}
+					request["reference_asset_ids"] = []string{referenceID}
 				}
 				quote := call("preflight_image_task", request)
 				if providerCalls.Load() != 0 {
@@ -433,6 +494,16 @@ func TestNativeImageRESTAndMCPFakeProviderLifecycle(t *testing.T) {
 				request["quote_token"] = quote["quote_token"]
 				request["idempotency_key"] = "native-fixture"
 				created := call("create_image_task", request)
+				if transport == "oauth_mcp" && tc.op != nativeimage.OperationGenerate {
+					count, err := clientDB.ReferenceAsset.Query().Count(ctx)
+					if err != nil || count != 0 {
+						t.Fatalf("unified MCP references created %d aliases: %v", count, err)
+					}
+					ids := created["reference_asset_ids"].([]any)
+					if len(ids) != 1 || ids[0] != request["reference_asset_ids"].([]string)[0] {
+						t.Fatal("image changed unified ID")
+					}
+				}
 				currentTaskID, _ = created["id"].(string)
 				if currentTaskID == "" {
 					t.Fatalf("missing persisted ID: %#v", created)

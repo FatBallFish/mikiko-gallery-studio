@@ -29,6 +29,7 @@ import {
 } from './core/canvasState'
 import type { CanvasDocument, CanvasEdge, CanvasNode, CanvasNodeType, CanvasViewport } from './core/types'
 import { CanvasAssetDrawer } from './CanvasAssetDrawer'
+import { canvasAssetUnavailableReason, resolveCanvasMarkedReference, validateCanvasGenerationAssets } from './canvasAssets'
 import { CanvasNodeSearch } from './CanvasNodeSearch'
 import { createCanvasDraftWriter, decideCanvasDraftRecovery, readCanvasDraft, removeCanvasDraft } from './persistence/canvasDraftPersistence'
 import { createCanvasRemoteSaveScheduler } from './persistence/canvasRemoteSave'
@@ -181,16 +182,53 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
   }, [])
 
   useEffect(() => {
+    if (canvas && projects.selectedProjectID !== canvas.project_id && projects.projects.some((project) => project.id === canvas.project_id)) {
+      projects.selectProject(canvas.project_id)
+    }
+  }, [canvas, projects.selectedProjectID, projects.projects, projects.selectProject])
+
+  useEffect(() => {
     if (!store) return undefined
+    let alive = true
+    const uploadUser = activeUserRef.current
+    const uploadSession = remoteSessionRef.current
+    const isCurrentUpload = () => alive && activeUserRef.current === uploadUser && activeCanvasIDRef.current === canvasID && remoteSessionRef.current === uploadSession && uploadSession?.store === store
+    const timers = new Set<ReturnType<typeof setTimeout>>()
+    const applyUpload = async (token: string, asset: MediaAsset) => {
+      if (!isCurrentUpload()) return
+      const target = uploadTargetsRef.current.get(token)
+      if (!target) return
+      const reason = canvasAssetUnavailableReason(asset)
+      if (asset.status === 'processing' || asset.status === 'uploading') {
+        const timer = setTimeout(() => {
+          timers.delete(timer)
+          void userApi.getMediaAsset(asset.id).then((next) => {
+            if (uploadTargetsRef.current.get(token) === target) return applyUpload(token, next)
+          }).catch((caught) => {
+            if (isCurrentUpload()) { app.notify('error', errorMessage(caught)); releaseUpload(token) }
+          })
+        }, 3000)
+        timers.add(timer)
+        return
+      }
+      try {
+        if (reason) throw new Error(reason)
+        insertCanvasReference(store, asset, target.nodeID, target.role, admissionContext(target.nodeID, target.reservation))
+      } catch (caught) { app.notify('error', errorMessage(caught)) }
+      finally { releaseUpload(token) }
+    }
+    const releaseUpload = (token: string) => {
+      const target = uploadTargetsRef.current.get(token)
+      uploadTargetsRef.current.delete(token)
+      if (target?.reservation !== undefined) reservationsFor(target.nodeID).release(target.reservation)
+      setReservationVersion((value) => value + 1)
+    }
     const complete = (event: Event) => {
       const detail = (event as CustomEvent<MediaUploadCompletedDetail>).detail
       if (!detail?.target || detail.target.canvasID !== canvasID) return
       const target = uploadTargetsRef.current.get(detail.target.nodeID)
       if (!target) return
-      uploadTargetsRef.current.delete(detail.target.nodeID)
-      try { insertCanvasReference(store, detail.asset, target.nodeID, target.role, admissionContext(target.nodeID, target.reservation)) }
-      catch (caught) { app.notify('error', errorMessage(caught)) }
-      finally { if (target.reservation !== undefined) reservationsFor(target.nodeID).release(target.reservation); setReservationVersion((value) => value + 1) }
+      void applyUpload(detail.target.nodeID, detail.asset)
     }
     const terminated = (event: Event) => {
       const detail = (event as CustomEvent<MediaUploadTerminatedDetail>).detail
@@ -204,8 +242,18 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
     }
     window.addEventListener(MEDIA_UPLOAD_COMPLETED_EVENT, complete)
     window.addEventListener(MEDIA_UPLOAD_TERMINATED_EVENT, terminated)
-    return () => { window.removeEventListener(MEDIA_UPLOAD_COMPLETED_EVENT, complete); window.removeEventListener(MEDIA_UPLOAD_TERMINATED_EVENT, terminated) }
-  }, [canvasID, store, imageCapability, videoCapability])
+    return () => {
+      alive = false
+      timers.forEach(clearTimeout)
+      uploadTargetsRef.current.forEach((target) => {
+        if (target.reservation !== undefined) reservationsFor(target.nodeID).release(target.reservation)
+      })
+      uploadTargetsRef.current.clear()
+      window.removeEventListener(MEDIA_UPLOAD_COMPLETED_EVENT, complete)
+      window.removeEventListener(MEDIA_UPLOAD_TERMINATED_EVENT, terminated)
+    }
+  }, [canvasID, store])
+
 
   const loadCanvas = useCallback(async () => {
     const sequence = ++loadSequenceRef.current
@@ -687,12 +735,20 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
     store!.getState().addNode({ id, type, position, size, payload })
     return id
   }
+  function canUseAsset(asset: MediaAsset) {
+    const reason = canvasAssetUnavailableReason(asset)
+    if (reason) { app.notify('error', reason); return false }
+    if (!['image', 'video', 'audio'].includes(asset.media_type)) { app.notify('error', '不支持的资产类型'); return false }
+    return true
+  }
   function addAsset(asset: MediaAsset) {
+    if (!canUseAsset(asset)) return
     try {
       if (assetTargetNodeID) insertCanvasReference(store!, asset, assetTargetNodeID, assetRole, admissionContext(assetTargetNodeID))
       else addAssetNode(store!, asset, worldPoint(viewportSize.width / 2 + (viewportRef.current?.getBoundingClientRect().left ?? 0), viewportSize.height / 2 + (viewportRef.current?.getBoundingClientRect().top ?? 0)))
       setAssetTargetNodeID(''); setShowAssets(false)
     } catch (caught) { app.notify('error', errorMessage(caught)) }
+
   }
   function chooseImageForFrame(nodeID: string, role: CanvasEdge['input_role'] = 'reference') {
     setAssetTargetNodeID(nodeID); setAssetRole(role); setShowAssets(true)
@@ -770,11 +826,17 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
         app.notify('error', '画布内容已变化，正在重新估价')
         return
       }
-      const latestErrors = generationErrors(latest.nodes.find((item) => item.id === node.id)!, latest)
+      await validateCanvasGenerationAssets(latest, node.id, userApi.getMediaAsset)
+      const validated = store!.getState().command.present
+      if (canvasGenerationEstimateSignature(validated, node.id) !== estimate.signature || nodeEstimatesRef.current[node.id] !== estimate || canvasQuoteRemainingMS(estimate.detail) <= 0) {
+        estimateNode(node); app.notify('error', '画布内容已变化，正在重新估价'); return
+      }
+      const latestErrors = generationErrors(validated.nodes.find((item) => item.id === node.id)!, validated)
       if (latestErrors.length) { app.notify('error', latestErrors[0]); return }
       if (node.type === 'video_v2' && !String(asObject(latest.nodes.find((item) => item.id === node.id)?.payload?.draft).quote_token ?? '')) { estimateNode(node); app.notify('error', '视频报价已失效，正在重新估价'); return }
       if (!canvasEstimateSufficient(app.balance?.available_points, estimate)) { app.notify('error', '积分不足，请充值后重试'); return }
       const run = await userApi.generateCanvasNode(canvas!.id, node.id, crypto.randomUUID())
+
       setRuns((items) => [run, ...items.filter((item) => item.id !== run.id)])
       updateNodeEstimate(node.id, () => undefined)
       app.notify('success', `已提交${node.type === 'video_v2' ? '视频' : '图片'}生成任务`)
@@ -815,7 +877,9 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
   }
   function referenceCandidateError(node: CanvasNode, pick: { nodeID: string; role: CanvasEdge['input_role'] }) {
     const media = node.asset_id ? hydratedMedia[node.asset_id] : undefined
-    if (!media || !['ready', 'ready_original'].includes(media.asset.status)) return '素材尚未准备就绪，请稍后重试'
+    if (!media) return '正在加载素材状态，请稍后重试'
+    const reason = canvasAssetUnavailableReason(media.asset)
+    if (reason) return reason
     return validateCanvasReference(store!.getState().command.present, node, pick.nodeID, pick.role, admissionContext(pick.nodeID))
   }
   function connectionCandidate(sourceID: string, targetID: string, sourceHandle?: 'left' | 'right', targetHandle?: 'left' | 'right') {
@@ -959,7 +1023,7 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
         const raw = event.dataTransfer.getData('application/x-canvas-asset')
         if (!raw || readOnly) return
         event.preventDefault()
-        try { addAssetNode(store, JSON.parse(raw) as MediaAsset, worldPoint(event.clientX, event.clientY)); setShowAssets(false) } catch { app.notify('error', '资产数据无效，请重新拖入') }
+        try { const asset = JSON.parse(raw) as MediaAsset; if (!canUseAsset(asset)) return; addAssetNode(store, asset, worldPoint(event.clientX, event.clientY)); setShowAssets(false) } catch { app.notify('error', '资产数据无效，请重新拖入') }
       }}
       onWheel={(event) => {
         if ((event.target as Element).closest('[data-canvas-no-zoom]')) return
@@ -1240,16 +1304,23 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
                 const detail = (event as CustomEvent<MediaUploadCompletedDetail>).detail
                 if (detail.target?.nodeID !== token || detail.target.canvasID !== canvasID) return
                 window.clearTimeout(timer); window.removeEventListener(MEDIA_UPLOAD_COMPLETED_EVENT, complete)
-                const latest = store.getState().command.present.nodes.find((item) => item.id === source.id)
-                const currentDocument = store.getState().command.present
-                const target = currentDocument.nodes.find((item) => item.id === node.id)
-                if (activeUserRef.current !== uploadUser || activeCanvasIDRef.current !== canvasID || remoteSessionRef.current !== uploadSession || !target || asObject(target.payload?.draft).route_model_code !== uploadModel || JSON.stringify(currentDocument.edges.filter((edge) => edge.target === node.id && edge.input_role !== 'prompt').sort(compareCanvasReferenceEdges)) !== uploadSignature || latest?.asset_id !== assetID) { reject(new Error('引用已变化，已上传资产可从资产库恢复')); return }
-                const admission = canvasReferenceAdmission(currentDocument, node.id, [], admissionContext(node.id))
-                if (!admission.ok) { reject(new Error(admission.reason)); return }
-                nativeReferenceIDs.current.set(node.id, (nativeReferenceIDs.current.get(node.id) ?? []).map((id) => id === assetID ? detail.asset.id : id))
-                markedSources.current.set(detail.asset.id, source.id)
-                store.getState().updateNode(source.id, (current) => ({ ...current, asset_id: detail.asset.id }))
-                resolve(detail.asset.id)
+                const isCurrent = () => {
+                  const currentDocument = store.getState().command.present
+                  const latest = currentDocument.nodes.find((item) => item.id === source.id)
+                  const target = currentDocument.nodes.find((item) => item.id === node.id)
+                  return activeUserRef.current === uploadUser && activeCanvasIDRef.current === canvasID && remoteSessionRef.current === uploadSession && uploadSession?.store === store && Boolean(target) && asObject(target?.payload?.draft).route_model_code === uploadModel && JSON.stringify(currentDocument.edges.filter((edge) => edge.target === node.id && edge.input_role !== 'prompt').sort(compareCanvasReferenceEdges)) === uploadSignature && latest?.asset_id === assetID
+                }
+                void resolveCanvasMarkedReference(detail.asset, {
+                  getAsset: userApi.getMediaAsset,
+                  isCurrent,
+                  replace: (asset) => {
+                    const admission = canvasReferenceAdmission(store.getState().command.present, node.id, [], admissionContext(node.id))
+                    if (!admission.ok) throw new Error(admission.reason)
+                    nativeReferenceIDs.current.set(node.id, (nativeReferenceIDs.current.get(node.id) ?? []).map((id) => id === assetID ? asset.id : id))
+                    markedSources.current.set(asset.id, source.id)
+                    store.getState().updateNode(source.id, (current) => ({ ...current, asset_id: asset.id }))
+                  },
+                }).then(resolve, reject)
               }
               window.addEventListener(MEDIA_UPLOAD_COMPLETED_EVENT, complete)
               const detail: QueueMediaUploadDetail = { files: [file], projectID: canvas!.project_id, target: { canvasID, nodeID: token } }

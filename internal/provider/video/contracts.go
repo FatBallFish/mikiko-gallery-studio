@@ -2,6 +2,7 @@ package video
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -28,10 +29,25 @@ type Input struct {
 	StorageDriver   string `json:"-"`
 	ObjectKey       string `json:"-"`
 	MIMEType        string `json:"-"`
+	// Data is bounded, storage-owned image content for adapters supporting inline inputs.
+	Data      []byte `json:"-"`
+	SizeBytes int64  `json:"-"`
+	SHA256    string `json:"-"`
 	// MediaType discriminates image/video/audio inputs so adapters can pick
 	// the provider's matching content entry (image_url vs video_url vs
 	// audio_url). Empty means image for legacy tasks.
 	MediaType string `json:"-"`
+}
+
+// InlineImageDataURL encodes worker-validated image bytes without persisting them in URLs or logs.
+func InlineImageDataURL(input Input) (string, error) {
+	if len(input.Data) == 0 {
+		return "", nil
+	}
+	if len(input.Data) > 10<<20 || (input.MediaType != "" && input.MediaType != "image") || !strings.HasPrefix(input.MIMEType, "image/") {
+		return "", fmt.Errorf("invalid bounded inline image input")
+	}
+	return "data:" + input.MIMEType + ";base64," + base64.StdEncoding.EncodeToString(input.Data), nil
 }
 
 type Request struct {

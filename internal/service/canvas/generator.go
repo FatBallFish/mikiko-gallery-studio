@@ -95,7 +95,7 @@ func NewTaskGenerator(images ImageTaskPort, imageEstimator ImageEstimator, video
 	return &TaskGenerator{images: images, imageEstimator: imageEstimator, videos: videos}
 }
 
-// SetReferenceAssets configures canonical media conversion before serving requests.
+// SetReferenceAssets configures canonical media validation before serving requests.
 func (g *TaskGenerator) SetReferenceAssets(refs *assetservice.Service, media ...CanvasMediaAssets) {
 	g.references = refs
 	if len(media) > 0 {
@@ -103,42 +103,19 @@ func (g *TaskGenerator) SetReferenceAssets(refs *assetservice.Service, media ...
 	}
 }
 
-// PrepareCanvasImageRequest maps canonical resources and named bindings to durable
-// reference aliases. Ownership and readiness are checked for both quote and create.
+// PrepareCanvasImageRequest validates references without changing IDs or bindings.
 func (g *TaskGenerator) PrepareCanvasImageRequest(ctx context.Context, submission GenerationSubmission) (domainimagetask.CreateRequest, error) {
 	request, err := imageRequest(submission)
 	if err != nil {
 		return request, err
 	}
-	aliases := make(map[string]string, len(request.ReferenceAssetIDs))
 	for i, id := range request.ReferenceAssetIDs {
 		if g.references == nil {
 			return request, errs.WithDetails(errs.New(503, "IMAGE_REFERENCE_UNAVAILABLE", "canvas reference assets are unavailable"), map[string]any{"field": "reference_asset_ids", "index": i})
 		}
-		alias, loadErr := g.references.GetMetadata(ctx, submission.UserID, id)
-		if loadErr != nil {
-			var serviceErr *errs.Error
-			if !errors.As(loadErr, &serviceErr) || serviceErr.StatusCode != 404 {
-				return request, canvasReferenceError(loadErr, i)
-			}
-			mediaID, parseErr := uuid.Parse(id)
-			if parseErr != nil || g.media == nil {
-				return request, canvasReferenceError(loadErr, i)
-			}
-			asset, mediaErr := g.media.GetAsset(ctx, submission.UserID, mediaID)
-			if mediaErr != nil {
-				return request, errs.WithDetails(errs.New(404, errs.CodeNotFound, "canvas reference media asset not found"), map[string]any{"field": "reference_asset_ids", "index": i})
-			}
-			alias, loadErr = g.references.ImportCanvasMediaAlias(ctx, submission.UserID, asset)
-			if loadErr != nil {
-				return request, canvasReferenceError(loadErr, i)
-			}
+		if _, err := g.references.GetMetadata(ctx, submission.UserID, id); err != nil {
+			return request, canvasReferenceError(err, i)
 		}
-		aliases[id] = alias.ID
-		request.ReferenceAssetIDs[i] = alias.ID
-	}
-	for i := range request.ReferenceBindings {
-		request.ReferenceBindings[i].AssetID = aliases[request.ReferenceBindings[i].AssetID]
 	}
 	return request, nil
 }
@@ -603,7 +580,13 @@ func canvasReferenceError(err error, index int) error {
 	var typed *errs.Error
 	if errors.As(err, &typed) {
 		copy := *typed
-		return errs.WithDetails(&copy, map[string]any{"field": "reference_asset_ids", "index": index})
+		copy.Details = make(map[string]any, len(typed.Details)+2)
+		for key, value := range typed.Details {
+			copy.Details[key] = value
+		}
+		copy.Details["field"] = "reference_asset_ids"
+		copy.Details["index"] = index
+		return &copy
 	}
 	return fmt.Errorf("canvas reference_asset_ids[%d]: %w", index, err)
 }

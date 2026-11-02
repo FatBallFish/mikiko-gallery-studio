@@ -2,7 +2,9 @@ package entstore
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"github.com/fatballfish/pic-gallery/pkg/errs"
 	"strings"
 	"time"
 
@@ -14,7 +16,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/provider"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
-	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaasset"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/referenceasset"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
@@ -30,16 +32,34 @@ func NewAssetsStore(client *repoent.Client) *AssetsStore {
 }
 
 func (s *AssetsStore) GetByUserAndHash(ctx context.Context, userID int64, sha string) (domainassets.ReferenceAsset, error) {
-	entity, err := s.client.ReferenceAsset.Query().
-		Where(referenceasset.UserIDEQ(userID), referenceasset.Sha256EQ(sha), referenceasset.OwnsObjectEQ(true), referenceasset.StatusNEQ("deleted")).
-		Only(ctx)
+	rows, err := s.client.MediaAsset.Query().Where(mediaasset.UserIDEQ(userID), mediaasset.Sha256EQ(sha), mediaasset.MediaTypeEQ("image"), mediaasset.DeletedAtIsNil(), mediaasset.StatusIn("ready", "ready_original")).Order(repoent.Asc(mediaasset.FieldCreatedAt)).All(ctx)
 	if err != nil {
-		if repoent.IsNotFound(err) {
-			return domainassets.ReferenceAsset{}, repoerr.ErrNotFound
-		}
 		return domainassets.ReferenceAsset{}, err
 	}
-	return s.ensureReferenceAssetName(ctx, userID, entity)
+	for _, row := range rows {
+		return s.GetByUserAndID(ctx, userID, row.ID.String())
+	}
+	legacy, err := s.client.ReferenceAsset.Query().Where(referenceasset.UserIDEQ(userID), referenceasset.Sha256EQ(sha), referenceasset.DeletedAtIsNil(), referenceasset.StatusIn("ready", "ready_original"), referenceasset.MediaAssetIDIsNil()).All(ctx)
+	if err != nil {
+		return domainassets.ReferenceAsset{}, err
+	}
+	for _, row := range legacy {
+		asset, err := s.GetByUserAndID(ctx, userID, row.ID.String())
+		if err != nil {
+			if errors.Is(err, repoerr.ErrNotFound) {
+				continue
+			}
+			var apiErr *errs.Error
+			if errors.As(err, &apiErr) && strings.HasPrefix(apiErr.Code, "MEDIA_ASSET_") {
+				continue
+			}
+			return domainassets.ReferenceAsset{}, err
+		}
+		if asset.Status == "ready" || asset.Status == "ready_original" {
+			return asset, nil
+		}
+	}
+	return domainassets.ReferenceAsset{}, repoerr.ErrNotFound
 }
 
 func (s *AssetsStore) Save(ctx context.Context, userID int64, asset domainassets.ReferenceAsset) error {
@@ -56,10 +76,15 @@ func (s *AssetsStore) saveWithMetadata(ctx context.Context, userID int64, asset 
 	if err != nil {
 		return domainassets.ReferenceAsset{}, err
 	}
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return domainassets.ReferenceAsset{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
 	// Media-asset aliases and generated-result aliases borrow an object owned by
 	// another aggregate; only direct uploads own their storage object.
 	ownsObject := asset.OwnsObject || (strings.TrimSpace(asset.SourceImageResultID) == "" && strings.TrimSpace(asset.MediaAssetID) == "")
-	create := s.client.ReferenceAsset.Create().
+	create := tx.ReferenceAsset.Create().
 		SetID(id).
 		SetUserID(userID).
 		SetUploadSource(defaultString(metadata.UploadSource, "web")).
@@ -111,39 +136,24 @@ func (s *AssetsStore) saveWithMetadata(ctx context.Context, userID int64, asset 
 		}
 		create.SetStorageConfigID(storageConfigID)
 	}
+	if ownsObject {
+		if err := persistUploadedReferenceMedia(ctx, tx, userID, asset); err != nil {
+			return domainassets.ReferenceAsset{}, err
+		}
+		create.SetMediaAssetID(id).SetOwnsObject(false)
+	}
 	entity, err := create.Save(ctx)
 	if err != nil {
+		return domainassets.ReferenceAsset{}, err
+	}
+	if err := tx.Commit(); err != nil {
 		return domainassets.ReferenceAsset{}, err
 	}
 	return mapReferenceAssetEntity(entity), nil
 }
 
 func (s *AssetsStore) ImportMediaAssetAlias(ctx context.Context, userID int64, asset mediaassetservice.Asset) (domainassets.ReferenceAsset, error) {
-	if existing, err := s.client.ReferenceAsset.Query().Where(
-		referenceasset.UserIDEQ(userID), referenceasset.MediaAssetIDEQ(asset.ID),
-		referenceasset.DeletedAtIsNil(), referenceasset.StatusNEQ("deleted"),
-	).Only(ctx); err == nil {
-		return s.ensureReferenceAssetName(ctx, userID, existing)
-	} else if !repoent.IsNotFound(err) {
-		return domainassets.ReferenceAsset{}, err
-	}
-	alias := domainassets.ReferenceAsset{
-		ID: uuid.NewString(), Name: asset.Name, UploadSource: "media_asset", Status: "ready",
-		MimeType: asset.MIMEType, FileSizeBytes: asset.FileSizeBytes, SHA256: asset.SHA256,
-		StorageDriver: asset.StorageDriver, StorageConfigID: asset.StorageConfigID, ObjectKey: asset.ObjectKey,
-		OwnsObject: false, MediaAssetID: asset.ID.String(), CreatedAt: asset.CreatedAt,
-	}
-	if asset.Width != nil {
-		alias.Width = *asset.Width
-	}
-	if asset.Height != nil {
-		alias.Height = *asset.Height
-	}
-	preferred := alias.Name
-	if preferred == "" {
-		preferred = "图片"
-	}
-	return s.SaveWithGeneratedName(ctx, userID, alias, domainassets.UploadMetadata{UploadSource: "media_asset"}, preferred)
+	return s.GetByUserAndID(ctx, userID, asset.ID.String())
 }
 
 func (s *AssetsStore) SaveWithGeneratedName(ctx context.Context, userID int64, asset domainassets.ReferenceAsset, metadata domainassets.UploadMetadata, preferredName string) (domainassets.ReferenceAsset, error) {
@@ -182,11 +192,11 @@ func (s *AssetsStore) GetByUserAndSourceImageResultID(ctx context.Context, userI
 		}
 		return domainassets.ReferenceAsset{}, err
 	}
-	return s.ensureReferenceAssetName(ctx, userID, entity)
+	return s.GetByUserAndID(ctx, userID, entity.ID.String())
 }
 
 func (s *AssetsStore) ImportGalleryAlias(ctx context.Context, userID int64, result provider.ImageResult) (domainassets.ReferenceAsset, error) {
-	sourceID, err := uuid.Parse(strings.TrimSpace(result.ID))
+	id, err := uuid.Parse(strings.TrimSpace(result.ID))
 	if err != nil {
 		return domainassets.ReferenceAsset{}, repoerr.ErrNotFound
 	}
@@ -195,98 +205,26 @@ func (s *AssetsStore) ImportGalleryAlias(ctx context.Context, userID int64, resu
 		return domainassets.ReferenceAsset{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	source, err := tx.ImageResult.Query().Where(
-		imageresult.IDEQ(sourceID),
-		imageresult.UserIDEQ(userID),
-		imageresult.DeletedAtIsNil(),
-		lockImageResultForAlias(),
-	).Only(ctx)
-	if err != nil {
-		if repoent.IsNotFound(err) {
-			return domainassets.ReferenceAsset{}, repoerr.ErrNotFound
-		}
-		return domainassets.ReferenceAsset{}, err
+	_, err = tx.ImageResult.Query().Where(imageresult.IDEQ(id), imageresult.UserIDEQ(userID), imageresult.DeletedAtIsNil(), lockImageResultForAlias()).Only(ctx)
+	if repoent.IsNotFound(err) {
+		return domainassets.ReferenceAsset{}, repoerr.ErrNotFound
 	}
-	task, err := tx.ImageTask.Query().Where(
-		imagetask.IDEQ(source.TaskID),
-		imagetask.UserIDEQ(userID),
-	).Only(ctx)
-	if err != nil && !repoent.IsNotFound(err) {
-		return domainassets.ReferenceAsset{}, err
-	}
-	var snapshot *domainassets.GenerationSnapshot
-	if task != nil {
-		snapshot, err = referenceGenerationSnapshot(task)
-		if err != nil {
-			return domainassets.ReferenceAsset{}, err
-		}
-	}
-	if existing, err := tx.ReferenceAsset.Query().Where(
-		referenceasset.UserIDEQ(userID),
-		referenceasset.SourceImageResultIDEQ(source.ID),
-		referenceasset.DeletedAtIsNil(),
-		referenceasset.StatusNEQ("deleted"),
-	).First(ctx); err == nil {
-		if existing.Name == nil {
-			name, nameErr := nextReferenceAssetName(ctx, tx.Client(), userID, "")
-			if nameErr != nil {
-				return domainassets.ReferenceAsset{}, nameErr
-			}
-			existing, nameErr = tx.ReferenceAsset.UpdateOneID(existing.ID).SetName(name).SetNameNormalized(name).Save(ctx)
-			if nameErr != nil {
-				if repoent.IsConstraintError(nameErr) {
-					return domainassets.ReferenceAsset{}, repoerr.ErrConflict
-				}
-				return domainassets.ReferenceAsset{}, nameErr
-			}
-		}
-		asset := mapReferenceAssetEntity(existing)
-		asset.GenerationSnapshot = snapshot
-		if err := tx.Commit(); err != nil {
-			return domainassets.ReferenceAsset{}, err
-		}
-		return s.projectReferenceDisplayName(ctx, asset), nil
-	} else if !repoent.IsNotFound(err) {
-		return domainassets.ReferenceAsset{}, err
-	}
-	assetID := uuid.New()
-	name, err := nextReferenceAssetName(ctx, tx.Client(), userID, "")
+
 	if err != nil {
 		return domainassets.ReferenceAsset{}, err
 	}
-	create := tx.ReferenceAsset.Create().
-		SetID(assetID).
-		SetUserID(userID).
-		SetUploadSource("gallery_import").
-		SetStatus("ready").
-		SetStorageDriver(source.StorageDriver).
-		SetObjectKey(source.ObjectKey).
-		SetMimeType(source.MimeType).
-		SetFileSizeBytes(source.FileSizeBytes).
-		SetWidth(source.Width).
-		SetHeight(source.Height).
-		SetSha256(source.Sha256).
-		SetSourceImageResultID(source.ID).
-		SetOwnsObject(false).
-		SetName(name).
-		SetNameNormalized(name).
-		SetExpiresAt(time.Now().Add(24 * time.Hour))
-	if source.StorageConfigID != nil {
-		create.SetStorageConfigID(*source.StorageConfigID)
+	media, err := tx.MediaAsset.Query().Where(mediaasset.UserIDEQ(userID), mediaasset.Or(mediaasset.IDEQ(id), mediaasset.LegacyImageResultIDEQ(id))).Only(ctx)
+	if repoent.IsNotFound(err) {
+		media, err = ensureMediaAsset(ctx, tx, userID, id)
 	}
-	entity, err := create.Save(ctx)
 	if err != nil {
-		if repoent.IsConstraintError(err) {
-			return domainassets.ReferenceAsset{}, repoerr.ErrConflict
-		}
 		return domainassets.ReferenceAsset{}, err
 	}
-	asset := mapReferenceAssetEntity(entity)
-	asset.GenerationSnapshot = snapshot
+	canonicalID := media.ID
 	if err := tx.Commit(); err != nil {
 		return domainassets.ReferenceAsset{}, err
 	}
-	return s.projectReferenceDisplayName(ctx, asset), nil
+	return s.GetByUserAndID(ctx, userID, canonicalID.String())
 }
 
 func referenceGenerationSnapshot(task *repoent.ImageTask) (*domainassets.GenerationSnapshot, error) {
@@ -321,50 +259,19 @@ func lockImageResultForAlias() predicate.ImageResult {
 }
 
 func (s *AssetsStore) GetByUserAndID(ctx context.Context, userID int64, assetID string) (domainassets.ReferenceAsset, error) {
-	id, err := uuid.Parse(assetID)
+	id, err := uuid.Parse(strings.TrimSpace(assetID))
 	if err != nil {
-		return domainassets.ReferenceAsset{}, err
+		return domainassets.ReferenceAsset{}, repoerr.ErrNotFound
 	}
-	entity, err := s.client.ReferenceAsset.Query().
-		Where(referenceasset.IDEQ(id), referenceasset.UserIDEQ(userID)).
-		Only(ctx)
-	if err != nil {
-		if repoent.IsNotFound(err) {
-			return domainassets.ReferenceAsset{}, repoerr.ErrNotFound
-		}
-		return domainassets.ReferenceAsset{}, err
-	}
-	return s.ensureReferenceAssetName(ctx, userID, entity)
+	return s.resolveReference(ctx, userID, id)
 }
 
 func (s *AssetsStore) GetManyByUserAndIDs(ctx context.Context, userID int64, assetIDs []string) ([]domainassets.ReferenceAsset, error) {
-	ids := make([]uuid.UUID, 0, len(assetIDs))
-	for _, raw := range assetIDs {
-		id, err := uuid.Parse(strings.TrimSpace(raw))
-		if err != nil {
-			return nil, repoerr.ErrNotFound
-		}
-		ids = append(ids, id)
-	}
-	entities, err := s.client.ReferenceAsset.Query().Where(
-		referenceasset.IDIn(ids...), referenceasset.UserIDEQ(userID), referenceasset.DeletedAtIsNil(), referenceasset.StatusNEQ("deleted"),
-	).All(ctx)
-	if err != nil {
-		return nil, err
-	}
-	byID := make(map[string]*repoent.ReferenceAsset, len(entities))
-	for _, entity := range entities {
-		byID[entity.ID.String()] = entity
-	}
 	result := make([]domainassets.ReferenceAsset, 0, len(assetIDs))
 	for _, id := range assetIDs {
-		entity, exists := byID[strings.TrimSpace(id)]
-		if !exists {
-			return nil, repoerr.ErrNotFound
-		}
-		asset, nameErr := s.ensureReferenceAssetName(ctx, userID, entity)
-		if nameErr != nil {
-			return nil, nameErr
+		asset, err := s.GetByUserAndID(ctx, userID, id)
+		if err != nil {
+			return nil, err
 		}
 		result = append(result, asset)
 	}
@@ -372,6 +279,32 @@ func (s *AssetsStore) GetManyByUserAndIDs(ctx context.Context, userID int64, ass
 }
 
 func (s *AssetsStore) RenameByUserAndID(ctx context.Context, userID int64, assetID, name, normalizedName string) (domainassets.ReferenceAsset, error) {
+	resolved, resolveErr := s.GetByUserAndID(ctx, userID, assetID)
+	if resolveErr != nil {
+		return domainassets.ReferenceAsset{}, resolveErr
+	}
+	if resolved.MediaAssetID != "" {
+		tx, err := s.client.Tx(ctx)
+		if err != nil {
+			return domainassets.ReferenceAsset{}, err
+		}
+		defer func() { _ = tx.Rollback() }()
+		canonical := uuid.MustParse(resolved.MediaAssetID)
+		// Historical consumers still use the unique reference-name namespace.
+		if _, err := tx.ReferenceAsset.Update().Where(referenceasset.UserIDEQ(userID), referenceasset.IDEQ(uuid.MustParse(resolved.ID)), referenceasset.DeletedAtIsNil(), referenceasset.StatusNEQ("deleted")).SetName(name).SetNameNormalized(normalizedName).Save(ctx); err != nil {
+			if repoent.IsConstraintError(err) {
+				return domainassets.ReferenceAsset{}, repoerr.ErrConflict
+			}
+			return domainassets.ReferenceAsset{}, err
+		}
+		if err := tx.MediaAsset.UpdateOneID(canonical).Where(mediaasset.UserIDEQ(userID), mediaasset.DeletedAtIsNil(), mediaasset.StatusNEQ("deleted")).SetName(name).SetNameKey(strings.ToLower(name)).AddVersion(1).Exec(ctx); err != nil {
+			return domainassets.ReferenceAsset{}, err
+		}
+		if err := tx.Commit(); err != nil {
+			return domainassets.ReferenceAsset{}, err
+		}
+		return s.GetByUserAndID(ctx, userID, assetID)
+	}
 	id, err := uuid.Parse(assetID)
 	if err != nil {
 		return domainassets.ReferenceAsset{}, repoerr.ErrNotFound
@@ -443,8 +376,46 @@ func (s *AssetsStore) ensureReferenceAssetName(ctx context.Context, userID int64
 }
 
 func (s *AssetsStore) DeleteByUserAndID(ctx context.Context, userID int64, assetID string) error {
-	id, err := uuid.Parse(assetID)
-	if err != nil {
+	id, parseErr := uuid.Parse(strings.TrimSpace(assetID))
+	if parseErr != nil {
+		return repoerr.ErrNotFound
+	}
+	// A historical borrowed handle is independently removable, even if its
+	// canonical source no longer exists. Never delete that source's object.
+	alias, queryErr := s.client.ReferenceAsset.Query().Where(referenceasset.IDEQ(id), referenceasset.UserIDEQ(userID), referenceasset.DeletedAtIsNil(), referenceasset.StatusNEQ("deleted")).Only(ctx)
+	if queryErr != nil && !repoent.IsNotFound(queryErr) {
+		return queryErr
+	}
+	if alias != nil && ((alias.MediaAssetID != nil && *alias.MediaAssetID != id) || (alias.MediaAssetID == nil && alias.SourceImageResultID != nil)) {
+		return s.client.ReferenceAsset.UpdateOneID(id).SetStatus("deleted").SetDeletedAt(time.Now().UTC()).Exec(ctx)
+	}
+	resolved, resolveErr := s.GetByUserAndID(ctx, userID, assetID)
+	if resolveErr != nil {
+		var typed *errs.Error
+		if errors.As(resolveErr, &typed) && typed.Code == "MEDIA_ASSET_DELETED" {
+			return repoerr.ErrNotFound
+		}
+		return resolveErr
+	}
+	if resolved.MediaAssetID != "" {
+		if resolved.ID != resolved.MediaAssetID {
+			// Deleting an old borrowed reference only unlinks that compatibility handle.
+			return s.client.ReferenceAsset.UpdateOneID(uuid.MustParse(resolved.ID)).Where(referenceasset.UserIDEQ(userID), referenceasset.DeletedAtIsNil()).SetStatus("deleted").SetDeletedAt(time.Now().UTC()).Exec(ctx)
+		}
+		id := uuid.MustParse(resolved.MediaAssetID)
+		entity, err := s.client.MediaAsset.Get(ctx, id)
+		if err != nil {
+			return err
+		}
+		if entity.SourceType == "generated" || entity.LegacyImageResultID != nil {
+			// The compatibility reference endpoint only releases a borrowed handle.
+			// Canonical generated media is removed exclusively by media DELETE.
+			if alias != nil {
+				return s.client.ReferenceAsset.UpdateOneID(alias.ID).SetStatus("deleted").SetDeletedAt(time.Now().UTC()).Exec(ctx)
+			}
+			return nil
+		}
+		_, err = NewMediaStore(s.client).DeleteAsset(ctx, mediaassetservice.DeleteAssetRequest{UserID: userID, AssetID: id, ExpectedVersion: entity.Version})
 		return err
 	}
 	tx, err := s.client.Tx(ctx)
@@ -472,7 +443,7 @@ func (s *AssetsStore) DeleteByUserAndID(ctx context.Context, userID int64, asset
 	if entity.StorageConfigID != nil {
 		configID = entity.StorageConfigID.String()
 	}
-	if entity.OwnsObject || entity.MediaAssetID == nil {
+	if entity.OwnsObject && entity.MediaAssetID == nil && entity.SourceImageResultID == nil {
 		if _, err := enqueueObjectDeletionJob(ctx, tx.Client(), cleanupIdentity(configID, entity.StorageDriver, entity.ObjectKey)); err != nil {
 			return err
 		}
