@@ -222,7 +222,11 @@ func TestOAuthRedirectPortExceptionBoundaries(t *testing.T) {
 		{"http://127.0.0.1:1234/cb", "http://127.0.0.1:49152/cb", true},
 		{"https://client.example/cb?x=1", "https://client.example/cb?x=1", true},
 		{"http://localhost:1234/cb", "http://localhost:1234/cb", true},
-		{"http://localhost/cb", "http://localhost:49152/cb", false},
+		{"http://localhost/cb", "http://localhost:49152/cb", true},
+		{"http://localhost:1234/cb", "http://localhost:49152/cb", true},
+		{"http://localhost/cb", "http://127.0.0.1:49152/cb", false},
+		{"https://localhost/cb", "https://localhost:49152/cb", false},
+		{"http://localhost/cb", "http://localhostx.example:49152/cb", false},
 		{"http://127.0.0.1/cb", "http://127.0.0.2:49152/cb", false},
 		{"http://127.0.0.1/cb", "http://[::1]:49152/cb", false},
 		{"https://127.0.0.1/cb", "https://127.0.0.1:49152/cb", false},
@@ -245,6 +249,52 @@ func TestOAuthRedirectPortExceptionBoundaries(t *testing.T) {
 		if validateClient(Client{Name: "test", RedirectURIs: []string{bad}}) == nil || redirectURIMatches(bad, bad) {
 			t.Errorf("accepted invalid callback %q", bad)
 		}
+	}
+}
+
+func TestOAuthClaudeLocalhostMetadataAuthorization(t *testing.T) {
+	ctx := context.Background()
+	store := &rateStore{rows: map[string]Record{}}
+	s, err := New(store, Config{PublicAPIURL: "https://studio.example", User: func(context.Context, int64) (User, error) { return User{ID: 7, Active: true}, nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Claude Code's published metadata registers port-less localhost hostnames
+	// while the authorize request carries an ephemeral loopback port.
+	const clientID = "https://claude.example/oauth/claude-code-client-metadata"
+	c := Client{ID: clientID, Name: "Claude Code", RedirectURIs: []string{"http://localhost/callback", "http://127.0.0.1/callback"}, TokenEndpointAuthMethod: "none"}
+	if validateClient(c) != nil {
+		t.Fatal("rejected Claude-shaped metadata client")
+	}
+	if err := store.Create(ctx, document("client:"+clientID, "client", 0, cachedClient{Client: c, Expires: time.Now().Add(time.Minute).Unix()})); err != nil {
+		t.Fatal(err)
+	}
+	verifier := strings.Repeat("t", 43)
+	sum := sha256.Sum256([]byte(verifier))
+	q := url.Values{"client_id": {clientID}, "redirect_uri": {"http://localhost:61228/callback"}, "response_type": {"code"}, "resource": {s.Resource()}, "scope": {"account:read"}, "code_challenge_method": {"S256"}, "code_challenge": {base64.RawURLEncoding.EncodeToString(sum[:])}, "state": {"synthetic-state"}}
+	for _, bad := range []string{
+		"http://localhost:61228/other",
+		"http://localhost:61228/callback?extra=1",
+		"http://localhost.example:61228/callback",
+	} {
+		q.Set("redirect_uri", bad)
+		if _, err := s.Begin(ctx, q); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("accepted callback %s: %v", bad, err)
+		}
+	}
+	q.Set("redirect_uri", "http://localhost:61228/callback")
+	id, err := s.Begin(ctx, q)
+	if err != nil {
+		t.Fatalf("localhost ephemeral-port callback rejected: %v", err)
+	}
+	a, _, err := s.Consent(ctx, id, 7)
+	if err != nil || a.RedirectURI != "http://localhost:61228/callback" {
+		t.Fatalf("consent: %v redirect=%s", err, a.RedirectURI)
+	}
+	// The IP-literal registration stays usable through its own host name.
+	q.Set("redirect_uri", "http://127.0.0.1:61228/callback")
+	if _, err := s.Begin(ctx, q); err != nil {
+		t.Fatalf("IP-literal callback rejected: %v", err)
 	}
 }
 
