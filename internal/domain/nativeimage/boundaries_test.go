@@ -36,6 +36,12 @@ func TestReferenceBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestReferenceMaxBytesMatchesUpstreamCaps(t *testing.T) {
+	if ReferenceMaxBytes(AdapterQwen) != 10<<20 || ReferenceMaxBytes(AdapterSeedream) != 30<<20 || ReferenceMaxBytes("unknown_adapter") != 10<<20 {
+		t.Fatalf("upstream caps must stay at 10MB (qwen/unknown) and 30MB (seedream)")
+	}
+}
 func TestResponseOverflowAndCancellation(t *testing.T) {
 	for _, n := range []int{7, 8, 9} {
 		_, err := ReadResponse(context.Background(), strings.NewReader(strings.Repeat(" ", n)), 8)

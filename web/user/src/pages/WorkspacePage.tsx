@@ -10,7 +10,7 @@ import { useHistoryRecordActions } from './HistoryRecordControls'
 import { creationReuseEvent } from '../features/media/mediaCreationNavigation'
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronUp, Copy, Download, Info, Pencil, RotateCcw } from 'lucide-react'
-import type { Capability, CapabilityModelGroup, EstimateRequest, GalleryImage, ImageResult, ImageTask, ImageTaskStatus, ImageTaskType, ReferenceAsset, UserProfile } from '../../../shared/api-types'
+import type { Capability, CapabilityModelGroup, EstimateRequest, GalleryImage, ImageResult, ImageTask, ImageTaskStatus, ImageTaskType, MediaAsset, ReferenceAsset, UserProfile } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { ApiError } from '../../../shared/http-client'
 import { toTask, userApi } from '../../../shared/user-api'
@@ -25,7 +25,7 @@ import { mediaAccess, type MediaResource } from '../mediaAccess'
 import { mergeWorkspaceReferenceRefresh, createWorkspaceRestoreGeneration, consumeWorkspaceCreationDraft, normalizeWorkspaceCreationDraft, stageWorkspaceCreationDraft, workspaceCreationDraftFromSnapshot, type WorkspaceCreationDraft } from './workspaceCreationDraft'
 import { displayPoints, publicUnavailableReason, WORKSPACE_REFERENCE_REQUIRED_MESSAGE } from './workspaceGenerateReadiness'
 import { currentWorkspaceEstimate, workspaceDisplayedResolvedSize, workspaceEstimateKey, type WorkspaceEstimateSnapshot } from './workspaceEstimate'
-import { defaultGalleryImportFilter, filterGalleryImportImages, galleryImportOptions, galleryImportSuccessMessage, type GalleryImportFilter } from './workspaceGalleryImport'
+import { defaultGalleryImportFilter, filterGalleryImportImages, galleryImportOptions, galleryImportSuccessMessage, generatedImageAsGalleryItem, splitGalleryImportSelection, uploadedAssetAsGalleryItem, type GalleryImportFilter, type GalleryImportItem } from './workspaceGalleryImport'
 import { WorkspaceStatusRail } from './WorkspaceStatusRail'
 import { workspaceTaskCardView, workspaceTaskFailureView } from './workspaceTaskFailure'
 import { generationSlots, workspaceBaseResolutionLabel, type WorkspaceProgressNode } from './workspaceTaskProgress'
@@ -240,7 +240,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const [historyTaskDialog, setHistoryTaskDialog] = useState<ImageTask | null>(null)
   const [historyPreviewReturnTarget, setHistoryPreviewReturnTarget] = useState<{ taskId: string; imageId: string } | null>(null)
   const [galleryImportTarget, setGalleryImportTarget] = useState<'edit' | null>(null)
-  const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([])
+  const [galleryImages, setGalleryImages] = useState<GalleryImportItem[]>([])
+  const galleryUploadAssetsRef = useRef(new Map<string, MediaAsset>())
   const [galleryImportLoading, setGalleryImportLoading] = useState(false)
   const [galleryImportBusy, setGalleryImportBusy] = useState(false)
   const [galleryImportFilter, setGalleryImportFilter] = useState<GalleryImportFilter>(defaultGalleryImportFilter)
@@ -724,7 +725,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     const clean = userNativeImageFields(nativeDraft, selectedModel.native_image_profile, editRefs.length)
     if (JSON.stringify(clean) !== JSON.stringify(nativeDraft)) setNativeDraft(clean)
   }, [nativeDraft, selectedModel, editRefs.length])
-  const referenceFilePolicy = editProfile ? nativeImageReferencePolicy(editProfile, nativeDraft.operation) : referenceImagePolicy(capability)
+  const platformReferencePolicy = referenceImagePolicy(capability)
+  const referenceFilePolicy = editProfile ? nativeImageReferencePolicy(editProfile, nativeDraft.operation, platformReferencePolicy.maxBytes) : platformReferencePolicy
   const incompatibleReference = editRefs.some((asset) => asset.mime_type && !referenceFilePolicy.allowedMIMETypes.includes(asset.mime_type) || (asset.file_size_bytes ?? 0) > referenceFilePolicy.maxBytes)
   const layerParameterError = nativeDraft.operation === 'layer_decomposition' ? nativeLayerUnavailableReason(selectedModel?.native_image_profile, editRefs.length, selectedModel?.native_image_layer_pricing_confirmed === true, selectedModel?.native_image_layer_unavailable_reason) : ''
   const nativeParameterError = incompatibleReference ? '已有引用格式或大小不受当前型号支持，请移除对应引用或手动选择型号。' : layerParameterError || (pendingMarks ? '请先保存或放弃引用标记' : nativeImageValidation(selectedModel?.native_image_profile, cleanNativeDraft, editRefs.length))
@@ -852,7 +854,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     }
   }
   function referenceAssetError(asset: { mime_type?: string; size_bytes?: number; file_size_bytes?: number }) {
-    const policy = admissionLive.current.profile ? nativeImageReferencePolicy(admissionLive.current.profile, admissionLive.current.operation) : referencePolicy
+    const policy = admissionLive.current.profile ? nativeImageReferencePolicy(admissionLive.current.profile, admissionLive.current.operation, platformReferencePolicy.maxBytes) : referencePolicy
     if (asset.mime_type && !policy.allowedMIMETypes.includes(asset.mime_type)) return '资产图片格式不受当前型号支持，本批未导入。'
     if ((asset.file_size_bytes ?? asset.size_bytes ?? 0) > policy.maxBytes) return '资产图片超过当前型号大小限制，本批未导入。'
     return ''
@@ -970,7 +972,16 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     setGalleryImportFilter(defaultGalleryImportFilter)
     setGalleryImportLoading(true)
     try {
-      setGalleryImages(await userApi.listGalleryImages(1, 100, selectedProjectID))
+      const [generated, uploaded] = await Promise.all([
+        userApi.listGalleryImages(1, 100, selectedProjectID).then((items) => items.map(generatedImageAsGalleryItem)),
+        userApi.listMediaAssets({ media_type: 'image', source_type: 'local_upload', ...(selectedProjectID ? { project_id: selectedProjectID } : {}), limit: 100, sort_by: 'created_at', sort_order: 'desc' })
+          .then(({ items }) => {
+            galleryUploadAssetsRef.current = new Map(items.map((asset) => [asset.id, asset]))
+            return items.map(uploadedAssetAsGalleryItem)
+          })
+          .catch(() => [] as GalleryImportItem[]),
+      ])
+      setGalleryImages([...uploaded, ...generated])
     } catch (err) {
       app.notify('error', errorMessage(err))
     } finally {
@@ -981,9 +992,22 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   async function confirmGalleryImport(selectedIds: string[]) {
     if (!galleryImportTarget || !selectedIds.length) return
     if (selectedIds.some((id) => { const image = galleryImages.find((item) => item.id === id); return !image || referenceAssetError(image) })) { app.notify('warn', '所选资产格式或大小不符合当前型号要求，本批未导入。'); return }
+    const selection = [...new Set(selectedIds)]
+    const { galleryIds, uploadIds } = splitGalleryImportSelection(selection, galleryImages)
     setGalleryImportBusy(true)
     try {
-      const assets = await admitReferences([...new Set(selectedIds)], (id) => id, () => userApi.importReferenceAssetsFromGallery([...new Set(selectedIds)]))
+      const assets = await admitReferences(selection, (id) => id, async () => {
+        const imported: ReferenceAsset[] = []
+        // Unified media IDs project to references directly; no alias conversion.
+        if (uploadIds.length) {
+          imported.push(...await Promise.all(uploadIds.map(async (id) => {
+            const asset = galleryUploadAssetsRef.current.get(id) ?? await userApi.getMediaAsset(id)
+            return userApi.getReadyMediaReference(asset, selectedProjectID)
+          })))
+        }
+        if (galleryIds.length) imported.push(...await userApi.importReferenceAssetsFromGallery(galleryIds))
+        return imported
+      })
       if (!assets) return
       const promptInsertTarget = pendingPromptAssetInsertRef.current
       const promptEditorRef = promptInsertTarget === 'expanded' ? expandedPromptEditorRef : promptInsertTarget === 'compact' ? compactPromptEditorRef : null
@@ -1010,7 +1034,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     const accepted: File[] = []
     const rejected: string[] = []
     for (const file of files) {
-      const nativeError = editProfile ? nativeImageReferenceFileError(file, editProfile, nativeDraft.operation) : null
+      const nativeError = editProfile ? nativeImageReferenceFileError(file, editProfile, nativeDraft.operation, platformReferencePolicy.maxBytes) : null
       const validation = nativeError !== null ? { ok: !nativeError, message: nativeError } : validateReferenceImageFile(file, referencePolicy)
       if (validation.ok) accepted.push(file)
       else rejected.push(validation.message ?? `${file.name} 不符合图片上传要求。`)
@@ -1764,7 +1788,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
         {qualityControls}
           <NativeImageControls persistenceKey={`mgs.reference-marks.${app.profile?.id}.${projects.selectedProjectID}`} layerPriceReady={editModel?.native_image_layer_pricing_confirmed === true} layerUnavailableReason={editModel?.native_image_layer_unavailable_reason} accessToken={app.session?.token} profile={editProfile ?? selectedModel?.native_image_profile} value={nativeDraft} onChange={(next) => { setNativeDraft(next); if (next.operation === 'layer_decomposition') setCount(1) }} disabled={busy} references={editRefs} editingReferenceID={editingReferenceID} onEditingReferenceChange={setEditingReferenceID} onPendingChange={setPendingMarks} onEditedChange={setEditedReferenceIDs} onRestoreReference={async (assetID, originalID) => { const original = originalReferences.current.get(originalID) ?? await userApi.getReferenceAsset(originalID); setEditRefs((items) => items.map((item) => item.id === assetID ? original : item)) }} onUploadMarkedReference={async (file, assetID) => {
             const original = editRefs.find((item) => item.id === assetID); if (!original) throw new Error('引用已移除，请重新选择')
-            const validation = selectedModel?.native_image_profile ? nativeImageReferenceFileError(file, selectedModel.native_image_profile, nativeDraft.operation) : ''
+            const validation = selectedModel?.native_image_profile ? nativeImageReferenceFileError(file, selectedModel.native_image_profile, nativeDraft.operation, platformReferencePolicy.maxBytes) : ''
             if (validation) throw new Error(validation)
             const uploadContext = JSON.stringify(workspaceMarkContext.current)
             const uploaded = await userApi.uploadReferenceAsset(file, selectedProjectID, { accessToken: app.session?.token })
@@ -2101,12 +2125,12 @@ function CloseGlyph() {
 }
 
 function GalleryImportModal({ images, filter, loading, busy, remainingLimit, assetError, accessToken, onFilterChange, onConfirm, onMediaRefresh, onClose }: {
-  images: GalleryImage[]
+  images: GalleryImportItem[]
   filter: GalleryImportFilter
   loading: boolean
   busy: boolean
   remainingLimit: number
-  assetError: (asset: GalleryImage) => string
+  assetError: (asset: { mime_type?: string; size_bytes?: number; file_size_bytes?: number }) => string
   accessToken?: string | null
   onFilterChange: (filter: GalleryImportFilter) => void
   onConfirm: (ids: string[]) => void
@@ -2128,7 +2152,7 @@ function GalleryImportModal({ images, filter, loading, busy, remainingLimit, ass
         next.delete(id)
         return next
       }
-      if (next.size >= remainingLimit || assetError(images.find((image) => image.id === id) ?? {} as GalleryImage)) return next
+      if (next.size >= remainingLimit || assetError(images.find((image) => image.id === id) ?? {} as GalleryImportItem)) return next
       next.add(id)
       return next
     })
@@ -2137,7 +2161,12 @@ function GalleryImportModal({ images, filter, loading, busy, remainingLimit, ass
   return (
     <Modal title="从资产导入参考图" onClose={onClose}>
       <div className="u-toolbar cr-import-toolbar">
-        <input className="u-input" type="search" value={filter.query} onChange={(event) => updateFilter({ query: event.target.value })} placeholder="搜索提示词、模型、分组" />
+        <input className="u-input" type="search" value={filter.query} onChange={(event) => updateFilter({ query: event.target.value })} placeholder="搜索名称、提示词、模型、分组" />
+        <select className="u-filter" value={filter.source} onChange={(event) => updateFilter({ source: event.target.value as GalleryImportFilter['source'] })}>
+          <option value="all">全部来源</option>
+          <option value="uploaded">上传图片</option>
+          <option value="generated">生成图片</option>
+        </select>
         <select className="u-filter" value={filter.group} onChange={(event) => updateFilter({ group: event.target.value })}>
           <option value="all">全部分组</option>
           {options.groups.map((item) => <option key={item} value={item}>{item}</option>)}
@@ -2163,7 +2192,7 @@ function GalleryImportModal({ images, filter, loading, busy, remainingLimit, ass
           {rows.map((image) => {
             const selected = selectedIds.has(image.id)
             const disabled = Boolean(assetError(image)) || !selected && selectedIds.size >= remainingLimit
-            const imageUrl = userApi.imageAssetUrl(image.url || image.download_url || '', accessToken)
+            const imageUrl = image.import_kind === 'uploaded' ? '' : userApi.imageAssetUrl(image.url || image.download_url || '', accessToken)
             return (
               <button
                 key={image.id}
@@ -2175,7 +2204,9 @@ function GalleryImportModal({ images, filter, loading, busy, remainingLimit, ass
               >
                 <span className="u-card__media">
                   <span className="cr-import-check" aria-hidden="true">{selected ? '✓' : ''}</span>
-                  {imageUrl ? (
+                  {image.import_kind === 'uploaded' ? (
+                    <GalleryUploadThumb assetId={image.id} name={image.name || image.id} accessToken={accessToken} />
+                  ) : imageUrl ? (
                     <RefreshableMediaImage
                       src={imageUrl}
                       mediaExpiresAt={image.preview_expires_at}
@@ -2187,8 +2218,17 @@ function GalleryImportModal({ images, filter, loading, busy, remainingLimit, ass
                 <span className="u-card__body">
                   <span className="u-card__title">{image.prompt || image.id}</span>
                   <span className="u-card__meta">
-                    <span>{image.route_model_code || image.abstract_model || '未知模型'}</span>
-                    <span>{image.aspect_ratio || '未知比例'}</span>
+                    {image.import_kind === 'uploaded' ? (
+                      <>
+                        <span>本地上传</span>
+                        <span>{image.width && image.height ? `${image.width}×${image.height}` : (image.mime_type || '')}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>{image.route_model_code || image.abstract_model || '未知模型'}</span>
+                        <span>{image.aspect_ratio || '未知比例'}</span>
+                      </>
+                    )}
                   </span>
                 </span>
               </button>
@@ -2203,6 +2243,37 @@ function GalleryImportModal({ images, filter, loading, busy, remainingLimit, ass
         <Button busy={busy} disabled={!selectedIds.size || selectedIds.size > remainingLimit || images.some((image) => selectedIds.has(image.id) && assetError(image))} onClick={() => onConfirm(Array.from(selectedIds))}>确定</Button>
       </div>
     </Modal>
+  )
+}
+
+// Uploaded assets resolve preview URLs lazily through the media access endpoint;
+// generated images already carry expiring URLs from the gallery list response.
+function GalleryUploadThumb({ assetId, name, accessToken }: { assetId: string; name: string; accessToken?: string | null }) {
+  const [url, setUrl] = useState('')
+  const [expiresAt, setExpiresAt] = useState<string | undefined>()
+  useEffect(() => {
+    let alive = true
+    void userApi.getMediaAssetAccess(assetId, 'thumbnail').then((access) => {
+      if (!alive) return
+      setUrl(userApi.mediaAssetUrl(access.url, accessToken))
+      setExpiresAt(access.expires_at)
+    }).catch(() => {})
+    return () => { alive = false }
+  }, [assetId, accessToken])
+  if (!url) return null
+  return (
+    <RefreshableMediaImage
+      src={url}
+      mediaExpiresAt={expiresAt}
+      alt={name}
+      onMediaRefresh={async () => {
+        const access = await userApi.getMediaAssetAccess(assetId, 'preview')
+        const refreshed = userApi.mediaAssetUrl(access.url, accessToken)
+        setUrl(refreshed)
+        setExpiresAt(access.expires_at)
+        return refreshed
+      }}
+    />
   )
 }
 

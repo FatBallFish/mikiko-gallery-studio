@@ -82,7 +82,7 @@ export function CanvasGenerationConsole(props: CanvasGenerationConsoleProps) {
   const nativeError = !video ? layerError || nativeImageValidation(model?.native_image_profile, draft as NativeImageRequestFields, references.length) : ''
   if (nativeError) errors.push(nativeError)
   if (!video && draft.operation === 'layer_decomposition' && Number(draft.output_image_count ?? 1) !== 1) errors.push('图层拆分输出数量固定为 1')
-  const referencePolicy = !video && model?.native_image_profile ? nativeImageReferencePolicy(model.native_image_profile, draft.operation === 'layer_decomposition' ? 'layer_decomposition' : 'edit') : undefined
+  const referencePolicy = !video && model?.native_image_profile ? nativeImageReferencePolicy(model.native_image_profile, draft.operation === 'layer_decomposition' ? 'layer_decomposition' : 'edit', imageCapability?.reference_image_max_bytes ?? 0) : undefined
   if (referencePolicy && references.some(({ asset }) => asset.mime_type && !referencePolicy.allowedMIMETypes.includes(asset.mime_type) || (asset.file_size_bytes ?? 0) > referencePolicy.maxBytes)) errors.push('已有来源图片格式或大小不受当前生成方式支持，请移除或切换生成方式')
   const parsed = parsePromptTemplate(template)
   const missingVariable = parsed.variableNames.some((name) => !variables[name]?.trim())

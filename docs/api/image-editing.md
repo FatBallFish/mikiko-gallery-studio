@@ -6,6 +6,8 @@
 2. 通过与画布、工作台共用的[上传会话](reference-images.md)上传自己的文件，保存统一资产 ID。完成上传后轮询 `get_asset`（REST：`GET /api/open/v1/assets/{asset_id}`），直到 `ready` 或 `ready_original`。
 3. 检查模型允许的参考数量、格式与文件大小。将同一个 ID 直接填入 `reference_asset_ids`、`reference_bindings[].asset_id` 或模型支持的 `mask_asset_id`；视频输入也使用此 ID，无需 alias 转换。
 
+参考图大小限制统一为 `min(平台附件策略, 上游模型硬限制)`：平台附件策略（管理后台"附件策略"的 `image_max_mb`，默认 20MB）约束上传入口；上游硬限制（qwen_image 10MB、seedream_image 30MB）由后端在调用供应商前兜底校验。调整管理后台数值即全局生效，但各模型实际可用上限不会超过其上游限制。
+
 ## 预检与创建
 
 向 `POST https://mikiko.studio/api/open/v1/image-tasks/preflight` 提交完整请求，选择 `operation: edit`，包含自己的项目、模型、提示词和参考资产。

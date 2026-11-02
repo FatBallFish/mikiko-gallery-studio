@@ -138,7 +138,7 @@ export function validateCanvasReference(document: CanvasDocument, source: Canvas
     const model = context.image.model_groups.find((item) => item.code === (draft.route_model_code ?? draft.abstract_model))
     const profile = model?.capabilities_by_task_type?.image_edit?.native_image_profile ?? model?.native_image_profile
     if (profile) {
-      const policy = nativeImageReferencePolicy(profile, draft.operation === 'layer_decomposition' ? 'layer_decomposition' : 'edit')
+      const policy = nativeImageReferencePolicy(profile, draft.operation === 'layer_decomposition' ? 'layer_decomposition' : 'edit', context.image?.reference_image_max_bytes ?? 0)
       if (source.payload?.mime_type && !policy.allowedMIMETypes.includes(String(source.payload.mime_type))) return '当前生成方式不支持此来源图片格式'
       if (Number(source.payload?.file_size_bytes ?? 0) > policy.maxBytes) return '来源图片大小超出当前生成方式限制'
     }

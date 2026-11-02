@@ -16,7 +16,9 @@ assert.ok(workspace.includes('Promise.allSettled(accepted.map'), 'all sibling up
 assert.ok(workspace.includes('admitReferences(accepted, undefined, async () => {'), 'file upload batches must retain native atomic admission')
 assert.ok(workspace.includes('admitReferences([detail.asset], (asset) => asset.id, async () => {'), 'completion events must reserve capacity while polling')
 assert.ok(workspace.includes('reserved: reservations.pending(request.token)'), 'completion must revalidate capacity excluding only its own reservation')
-assert.ok(workspace.includes('userApi.importReferenceAssetsFromGallery([...new Set(selectedIds)])'), 'gallery imports keep their snapshot-bearing API')
+assert.ok(workspace.includes('userApi.importReferenceAssetsFromGallery(galleryIds)'), 'gallery imports keep their snapshot-bearing API')
+assert.ok(workspace.includes("source_type: 'local_upload'"), 'gallery import must list uploads without duplicating generated media rows')
+assert.ok(workspace.includes('galleryUploadAssetsRef.current.get(id) ?? await userApi.getMediaAsset(id)'), 'upload imports project unified media IDs directly without alias conversion')
 const snapshot = { task_type: 'image_edit', route_model_code: 'existing-model', native_options: { seed: 42 } }
 assert.deepEqual(toReferenceAsset({ id: 'legacy-reference', generation_snapshot: snapshot }).generation_snapshot, snapshot, 'reference DTO keeps gallery generation snapshots')
 assert.ok(api.includes('native_options: JSON.stringify(native_options)'), 'native estimate options keep their main serialization')

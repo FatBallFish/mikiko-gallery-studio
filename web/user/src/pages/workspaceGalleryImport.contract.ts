@@ -1,11 +1,34 @@
 import type { GalleryImage } from '../../../shared/api-types'
-import { defaultGalleryImportFilter, filterGalleryImportImages, firstGalleryReferenceReuse, galleryImportOptions, galleryImportSuccessMessage, mergeReferenceAssets } from './workspaceGalleryImport'
+import { defaultGalleryImportFilter, filterGalleryImportImages, firstGalleryReferenceReuse, galleryImportOptions, galleryImportSuccessMessage, generatedImageAsGalleryItem, mergeReferenceAssets, splitGalleryImportSelection, uploadedAssetAsGalleryItem } from './workspaceGalleryImport'
 
 const images = [
   galleryImage({ id: '1', prompt: 'blue city skyline', route_model_code: 'plus', image_group: '城市', aspect_ratio: '16:9', visibility_status: 'private', url: '/1.png' }),
   galleryImage({ id: '2', prompt: 'green forest', abstract_model: 'pro', image_group: '自然', aspect_ratio: '1:1', visibility_status: 'public', download_url: '/2.png' }),
   galleryImage({ id: '3', prompt: 'red icon', route_model_code: 'plus', image_group: '图标', aspect_ratio: '1:1', visibility_status: 'private', url: '' }),
 ]
+
+const uploadItem = uploadedAssetAsGalleryItem({ id: 'upload-9', project_id: 'p1', name: 'dodoco-reference-main', group_name: '', media_type: 'image', source_type: 'local_upload', status: 'ready', visibility_status: 'private', storage_driver: 's3', mime_type: 'image/jpeg', file_size_bytes: 690743, width: 1279, height: 1706, version: 2, created_at: '2026-11-02T09:07:23Z', updated_at: '2026-11-02T09:07:26Z' })
+const mergedList = [uploadItem, ...images.map(generatedImageAsGalleryItem)]
+
+const withUploads = filterGalleryImportImages(mergedList, defaultGalleryImportFilter)
+if (!withUploads.some((item) => item.id === 'upload-9')) {
+  throw new Error('gallery import must include uploaded assets without a preloaded URL')
+}
+const uploadOnly = filterGalleryImportImages(mergedList, { ...defaultGalleryImportFilter, source: 'uploaded' })
+if (uploadOnly.length !== 1 || uploadOnly[0].id !== 'upload-9') {
+  throw new Error(`source filter must isolate uploaded assets, got ${JSON.stringify(uploadOnly)}`)
+}
+if (filterGalleryImportImages(mergedList, { ...defaultGalleryImportFilter, source: 'generated' }).some((item) => item.id === 'upload-9')) {
+  throw new Error('source filter must exclude uploaded assets when filtering generated images')
+}
+if (!filterGalleryImportImages(mergedList, { ...defaultGalleryImportFilter, query: 'dodoco 本地上传' }).some((item) => item.id === 'upload-9')) {
+  throw new Error('gallery import search should match uploaded asset names and the upload label')
+}
+
+const split = splitGalleryImportSelection(['upload-9', '1', '2'], mergedList)
+if (split.uploadIds.join(',') !== 'upload-9' || split.galleryIds.join(',') !== '1,2') {
+  throw new Error(`import selection must split uploads from gallery images, got ${JSON.stringify(split)}`)
+}
 
 const searched = filterGalleryImportImages(images, { ...defaultGalleryImportFilter, query: 'blue plus' })
 if (searched.length !== 1 || searched[0].id !== '1') {
