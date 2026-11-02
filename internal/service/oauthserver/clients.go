@@ -58,9 +58,11 @@ func parseRedirectURI(raw string) (*url.URL, error) {
 	return u, nil
 }
 
-// redirectURIMatches implements RFC 8252's port-only exception for HTTP
-// loopback IP literals. Compare the original strings with only ports removed so
-// path escaping, query order, empty query markers and all other bytes stay exact.
+// redirectURIMatches implements RFC 8252's port-only exception for HTTP loopback
+// redirects, covering both IP literals and the exact localhost hostname that
+// clients such as Claude Code register port-less. Compare the original strings
+// with only ports removed so path escaping, query order, empty query markers and
+// all other bytes stay exact.
 func redirectURIMatches(registered, requested string) bool {
 	r, err := parseRedirectURI(registered)
 	if err != nil {
@@ -73,8 +75,7 @@ func redirectURIMatches(registered, requested string) bool {
 	if registered == requested {
 		return true
 	}
-	ip, err := netip.ParseAddr(r.Hostname())
-	if err != nil || !ip.IsLoopback() || ip.Zone() != "" || r.Scheme != "http" || q.Scheme != "http" || r.Hostname() != q.Hostname() {
+	if !loopbackRedirectHost(r.Hostname()) || r.Scheme != "http" || q.Scheme != "http" || r.Hostname() != q.Hostname() {
 		return false
 	}
 	withoutPort := func(raw string, u *url.URL) string {
@@ -85,6 +86,16 @@ func redirectURIMatches(registered, requested string) bool {
 		return strings.Replace(raw, "://"+u.Host, "://"+host, 1)
 	}
 	return withoutPort(registered, r) == withoutPort(requested, q)
+}
+
+// loopbackRedirectHost reports whether a redirect host may use RFC 8252's
+// any-port exception: a loopback IP literal or the literal name localhost.
+func loopbackRedirectHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip, err := netip.ParseAddr(host)
+	return err == nil && ip.IsLoopback() && ip.Zone() == ""
 }
 
 type cachedClient struct {
