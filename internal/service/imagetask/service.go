@@ -3197,6 +3197,10 @@ func setTaskProgress(task *domainimagetask.Task, stage, message string) {
 }
 
 func normalizeCreateRequest(req domainimagetask.CreateRequest) (domainimagetask.CreateRequest, error) {
+	// Explicit operation/native options mark a native request: generic ratio
+	// defaults (aspect_ratio 1:1, base_resolution auto) must not be injected,
+	// because native candidates reject any aspect_ratio and would all drop out.
+	explicitNativeRequest := req.Operation != "" || req.NativeOptions != nil
 	var nativeErr error
 	req, nativeErr = normalizeNativeCreate(req)
 	if nativeErr != nil {
@@ -3210,7 +3214,7 @@ func normalizeCreateRequest(req domainimagetask.CreateRequest) (domainimagetask.
 	if !provider.IsSupportedTaskType(req.TaskType) {
 		return req, errs.BadRequest("unsupported task_type")
 	}
-	normalized, err := modelhub.NormalizeResolveRequest(modelhub.ResolveRequest{
+	normalizeInput := modelhub.ResolveRequest{
 		SizeMode:          req.SizeMode,
 		AspectRatio:       req.AspectRatio,
 		BaseResolution:    req.BaseResolution,
@@ -3220,7 +3224,11 @@ func normalizeCreateRequest(req domainimagetask.CreateRequest) (domainimagetask.
 		OutputCompression: req.OutputCompression,
 		Moderation:        req.Moderation,
 		RequestedSize:     req.RequestedSize,
-	})
+	}
+	if explicitNativeRequest {
+		normalizeInput.Operation, normalizeInput.NativeOptions = req.Operation, req.NativeOptions
+	}
+	normalized, err := modelhub.NormalizeResolveRequest(normalizeInput)
 	if err != nil {
 		return req, err
 	}

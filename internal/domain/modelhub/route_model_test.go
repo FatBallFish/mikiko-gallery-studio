@@ -532,8 +532,22 @@ func TestVisibleRouteModelScopesCapabilitiesByTaskType(t *testing.T) {
 			MaxOutputImageCount: 1, MaxReferenceImageCount: 3,
 		},
 	}
-	if !reflect.DeepEqual(items[0].CapabilitiesByTaskType, want) {
-		t.Fatalf("task capabilities = %#v, want %#v", items[0].CapabilitiesByTaskType, want)
+	// capability_version is a content fingerprint; assert it separately from the
+	// deterministic capability projection.
+	versions := map[string]string{}
+	scoped := map[string]VisibleRouteModelTaskCapability{}
+	for taskType, capability := range items[0].CapabilitiesByTaskType {
+		versions[taskType] = capability.CapabilityVersion
+		capability.CapabilityVersion = ""
+		scoped[taskType] = capability
+	}
+	if !reflect.DeepEqual(scoped, want) {
+		t.Fatalf("task capabilities = %#v, want %#v", scoped, want)
+	}
+	for taskType, version := range versions {
+		if version == "" {
+			t.Fatalf("%s task capability must expose the preflight capability_version", taskType)
+		}
 	}
 }
 

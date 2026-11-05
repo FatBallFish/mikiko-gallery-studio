@@ -124,6 +124,8 @@ client_id, resource, code, redirect_uri, code_verifier
 
 `list_image_models` 和 `list_video_models` 默认返回选型摘要，包含模型 code、名称、任务类型和可用的价格下限／版本字段，不再重复传输完整能力、图标和参数组合。每个模型给出 `details_path`，响应的 `details` 给出 `read_tool_result` 的 token。生成前按模型路径读取真实任务约束、价格、参考图／mask、视频 combinations 和输入角色；各维度不代表任意组合都可用，最终仍以 preflight 校验为准。
 
+图片任务的能力版本以 `capabilities_by_task_type.<task_type>.capability_version` 为准（与 preflight 响应中的 `capability_version` 同一指纹）。首次 preflight 省略 `capability_version`，之后如需检测能力变化再回传该值。`native_image_profile.version` 是与能力无关的 schema 日期，绝不能作为 `capability_version` 回传，否则会持续返回 `capability_changed`。原生图片模型的尺寸约束：省略全部尺寸字段即自动；`size_mode=pixel` 搭配 `requested_size`；`base_resolution`（如 1k/1.5k/2k）作为分辨率档位可单独使用；原生模型不接受 `aspect_ratio`。
+
 其他工具的超长结果返回 `snapshot_token`、`type`、`path`、`offset` 和 `complete:false`。用只读工具继续查询：
 
 ```json
