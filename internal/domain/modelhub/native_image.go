@@ -190,6 +190,7 @@ func (r *Resolver) resolveNativeRoute(req ResolveRequest, route RouteModelConfig
 	if req.ReferenceImageCount < 0 || req.RequestedOutputImageCount < 0 {
 		return partial, errs.BadRequest("negative image counts")
 	}
+	var firstCandidateError error
 	for _, rc := range routing.Candidates {
 		if !rc.Enabled || rc.RouteModelID != route.ID {
 			continue
@@ -200,6 +201,9 @@ func (r *Resolver) resolveNativeRoute(req ResolveRequest, route RouteModelConfig
 			}
 			n, err := nativeCandidateRequest(c, req)
 			if err != nil {
+				if firstCandidateError == nil {
+					firstCandidateError = err
+				}
 				continue
 			}
 			cfg, _ := NativeConfig(c)
@@ -226,6 +230,12 @@ func (r *Resolver) resolveNativeRoute(req ResolveRequest, route RouteModelConfig
 		}
 	}
 	if len(partial.Providers) == 0 {
+		if firstCandidateError != nil {
+			return partial, errs.WithDetails(
+				errs.New(400, errs.CodeImageCapabilityMismatch, "no native model supports all requested image parameters"),
+				map[string]any{"first_rejection": firstCandidateError.Error()},
+			)
+		}
 		return partial, errs.New(400, errs.CodeImageCapabilityMismatch, "no native model supports all requested image parameters")
 	}
 	sort.SliceStable(partial.Providers, func(i, j int) bool {

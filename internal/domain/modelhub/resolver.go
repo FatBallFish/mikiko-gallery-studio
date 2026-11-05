@@ -181,6 +181,11 @@ func (r *Resolver) ListVisibleRouteModels(ctx context.Context, userGroupCodes []
 			}
 			taskCapability := r.visibleRouteModelTaskCapability(routeModel, routing, taskType)
 			taskCapability.AutoBaseResolution = autoBaseResolution
+			// Expose the preflight fingerprint so catalogue readers can echo a
+			// valid ExpectedCapabilityVersion instead of the profile schema date.
+			if version, versionErr := r.routeCapabilityVersion(routeModel, routing, taskType, visibility[routeModel.ID], taskCapability); versionErr == nil {
+				taskCapability.CapabilityVersion = version
+			}
 			capabilitiesByTaskType[taskType] = taskCapability
 		}
 		aggregateCapability := r.visibleRouteModelLimits(routeModel, routing, "")
@@ -797,24 +802,28 @@ type VisibleRouteModelTaskCapability struct {
 	NativeImageLayerUnavailableReason string                         `json:"native_image_layer_unavailable_reason,omitempty"`
 	NativeImageLayerPricingConfirmed  bool                           `json:"native_image_layer_pricing_confirmed"`
 	NativeImageProfile                *nativeimage.CapabilityProfile `json:"native_image_profile,omitempty"`
-	BaseResolution                    []string                       `json:"base_resolution"`
-	AutoBaseResolution                string                         `json:"auto_base_resolution,omitempty"`
-	Quality                           []string                       `json:"quality"`
-	SizeModes                         []string                       `json:"size_modes"`
-	AspectRatios                      []string                       `json:"aspect_ratios"`
-	PixelSizes                        []string                       `json:"pixel_sizes"`
-	OutputFormat                      []string                       `json:"output_format"`
-	SupportsOutputCompression         bool                           `json:"supports_output_compression"`
-	SupportsCustomSize                bool                           `json:"supports_custom_size"`
-	SupportsCustomRatio               bool                           `json:"supports_custom_ratio"`
-	SupportedBackgrounds              []string                       `json:"supported_backgrounds"`
-	MinWidth                          int                            `json:"min_width,omitempty"`
-	MaxWidth                          int                            `json:"max_width,omitempty"`
-	MinHeight                         int                            `json:"min_height,omitempty"`
-	MaxHeight                         int                            `json:"max_height,omitempty"`
-	Moderation                        []string                       `json:"moderation"`
-	MaxOutputImageCount               int                            `json:"max_output_image_count"`
-	MaxReferenceImageCount            int                            `json:"max_reference_image_count"`
+	// CapabilityVersion is the fingerprint preflight compares against
+	// ExpectedCapabilityVersion. It is the only version clients may echo back;
+	// NativeImageProfile.Version is an unrelated schema date.
+	CapabilityVersion         string   `json:"capability_version,omitempty"`
+	BaseResolution            []string `json:"base_resolution"`
+	AutoBaseResolution        string   `json:"auto_base_resolution,omitempty"`
+	Quality                   []string `json:"quality"`
+	SizeModes                 []string `json:"size_modes"`
+	AspectRatios              []string `json:"aspect_ratios"`
+	PixelSizes                []string `json:"pixel_sizes"`
+	OutputFormat              []string `json:"output_format"`
+	SupportsOutputCompression bool     `json:"supports_output_compression"`
+	SupportsCustomSize        bool     `json:"supports_custom_size"`
+	SupportsCustomRatio       bool     `json:"supports_custom_ratio"`
+	SupportedBackgrounds      []string `json:"supported_backgrounds"`
+	MinWidth                  int      `json:"min_width,omitempty"`
+	MaxWidth                  int      `json:"max_width,omitempty"`
+	MinHeight                 int      `json:"min_height,omitempty"`
+	MaxHeight                 int      `json:"max_height,omitempty"`
+	Moderation                []string `json:"moderation"`
+	MaxOutputImageCount       int      `json:"max_output_image_count"`
+	MaxReferenceImageCount    int      `json:"max_reference_image_count"`
 }
 
 type VisibleRouteModelPrice struct {

@@ -667,15 +667,18 @@
           "type": "string"
         },
         "aspect_ratio": {
+          "description": "Like 16:9; only for models that list aspect_ratios in the catalogue. Native image models reject aspect_ratio — use requested_size or a base_resolution tier instead.",
           "type": "string"
         },
         "background": {
           "type": "string"
         },
         "base_resolution": {
+          "description": "Resolution tier (e.g. 1k/1.5k/2k). Only for models whose catalogue lists base_resolution values; combine with the tier's size_mode, never with size_mode=auto on generic models. For native models base_resolution selects the tier.",
           "type": "string"
         },
         "capability_version": {
+          "description": "Omit on the first preflight. Echo the capability_version from the previous preflight/estimate response (or capabilities_by_task_type.\u003ctask\u003e.capability_version from list_image_models) to detect model changes. Never use native_image_profile.version — it is an unrelated schema date and will always return capability_changed.",
           "type": "string"
         },
         "idempotency_key": {
@@ -961,6 +964,7 @@
           "type": "integer"
         },
         "requested_size": {
+          "description": "Explicit pixels like 1024x1024; required with size_mode=pixel and replaces base_resolution/aspect_ratio.",
           "type": "string"
         },
         "route_model_code": {
@@ -984,6 +988,7 @@
           ]
         },
         "size_mode": {
+          "description": "auto, pixel, or ratio depending on the model catalogue size_modes. Native models accept auto and pixel; omitting size fields entirely is also valid for native models.",
           "type": "string"
         },
         "task_type": {
@@ -5462,6 +5467,9 @@
                         "array"
                       ]
                     },
+                    "capability_version": {
+                      "type": "string"
+                    },
                     "max_height": {
                       "type": "integer"
                     },
@@ -7468,15 +7476,18 @@
           "type": "string"
         },
         "aspect_ratio": {
+          "description": "Like 16:9; only for models that list aspect_ratios in the catalogue. Native image models reject aspect_ratio — use requested_size or a base_resolution tier instead.",
           "type": "string"
         },
         "background": {
           "type": "string"
         },
         "base_resolution": {
+          "description": "Resolution tier (e.g. 1k/1.5k/2k). Only for models whose catalogue lists base_resolution values; combine with the tier's size_mode, never with size_mode=auto on generic models. For native models base_resolution selects the tier.",
           "type": "string"
         },
         "capability_version": {
+          "description": "Omit on the first preflight. Echo the capability_version from the previous preflight/estimate response (or capabilities_by_task_type.\u003ctask\u003e.capability_version from list_image_models) to detect model changes. Never use native_image_profile.version — it is an unrelated schema date and will always return capability_changed.",
           "type": "string"
         },
         "idempotency_key": {
@@ -7762,6 +7773,7 @@
           "type": "integer"
         },
         "requested_size": {
+          "description": "Explicit pixels like 1024x1024; required with size_mode=pixel and replaces base_resolution/aspect_ratio.",
           "type": "string"
         },
         "route_model_code": {
@@ -7785,6 +7797,7 @@
           ]
         },
         "size_mode": {
+          "description": "auto, pixel, or ratio depending on the model catalogue size_modes. Native models accept auto and pixel; omitting size fields entirely is also valid for native models.",
           "type": "string"
         },
         "task_type": {
